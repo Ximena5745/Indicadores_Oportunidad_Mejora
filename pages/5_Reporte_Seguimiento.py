@@ -78,6 +78,23 @@ def _col_nombre(df):
     return None
 
 
+def _aplicar_filtros_tabla(df: pd.DataFrame, txt_id: str, txt_nombre: str,
+                           sel_proc: str, sel_estado: str) -> pd.DataFrame:
+    """Aplica los 4 filtros estándar (Id, Nombre, Proceso, Estado) sobre df."""
+    mask = pd.Series(True, index=df.index)
+    if txt_id.strip() and "Id" in df.columns:
+        mask &= df["Id"].astype(str).str.contains(txt_id.strip(), case=False, na=False)
+    if txt_nombre.strip():
+        col_nom = next((c for c in ["Indicador", "Nombre"] if c in df.columns), None)
+        if col_nom:
+            mask &= df[col_nom].astype(str).str.contains(txt_nombre.strip(), case=False, na=False)
+    if sel_proc and "Proceso" in df.columns:
+        mask &= df["Proceso"] == sel_proc
+    if sel_estado and "Estado del indicador" in df.columns:
+        mask &= df["Estado del indicador"] == sel_estado
+    return df[mask].reset_index(drop=True)
+
+
 def _estilo_estado(row):
     estilos = []
     for col in row.index:
@@ -411,8 +428,36 @@ with tabs[1]:
     COL_REP    = "Reportado"
 
     st.markdown("### Tabla Consolidada")
-    cols_mostrar = _cols_pres(df_con, COLS_DESC_CON) or list(df_con.columns)[:10]
-    df_tabla_con = df_con[cols_mostrar].copy()
+
+    # ── Filtros ───────────────────────────────────────────────────────────────
+    with st.expander("🔍 Filtros", expanded=True):
+        ff1, ff2, ff3, ff4 = st.columns(4)
+        with ff1:
+            f_id_con = st.text_input("ID", key="con_id", placeholder="Buscar ID...")
+        with ff2:
+            f_nom_con = st.text_input("Nombre del indicador", key="con_nom",
+                                      placeholder="Buscar nombre...")
+        with ff3:
+            opts_proc_con = [""] + sorted(df_con["Proceso"].dropna().unique().tolist()) \
+                            if "Proceso" in df_con.columns else [""]
+            f_proc_con = st.selectbox("Proceso", opts_proc_con, key="con_proc",
+                                      format_func=lambda x: "— Todos —" if x == "" else x)
+        with ff4:
+            opts_est_con = [""] + sorted(df_con[COL_ESTADO].dropna().unique().tolist()) \
+                           if COL_ESTADO in df_con.columns else [""]
+            f_est_con = st.selectbox("Estado del indicador", opts_est_con, key="con_estado",
+                                     format_func=lambda x: "— Todos —" if x == "" else x)
+
+    # ── Aplicar filtros ───────────────────────────────────────────────────────
+    df_filtrado = _aplicar_filtros_tabla(df_con, f_id_con, f_nom_con, f_proc_con, f_est_con)
+
+    total_fil = len(df_filtrado)
+    total_ori = len(df_con)
+    st.caption(f"Mostrando **{total_fil}** de **{total_ori}** indicadores")
+
+    # ── Tabla ─────────────────────────────────────────────────────────────────
+    cols_mostrar = _cols_pres(df_filtrado, COLS_DESC_CON) or list(df_filtrado.columns)[:10]
+    df_tabla_con = df_filtrado[cols_mostrar].copy()
     st.dataframe(
         df_tabla_con.style.apply(_estilo_estado, axis=1),
         use_container_width=True, hide_index=True,
@@ -490,14 +535,38 @@ for tab_idx, perio in enumerate(perios, 2):
         st.markdown("---")
         st.markdown("#### Detalle de Indicadores")
 
-        cols_desc_p  = [c for c in COLS_DESC if c in df_p.columns and c not in (COL_E, COL_R)]
-        cols_estado_p = [c for c in (COL_E, COL_R) if c in df_p.columns]
+        # ── Filtros de la tab ─────────────────────────────────────────────────
+        with st.expander("🔍 Filtros", expanded=True):
+            pf1, pf2, pf3, pf4 = st.columns(4)
+            with pf1:
+                f_id_p = st.text_input("ID", key=f"p_id_{nombre_p}",
+                                       placeholder="Buscar ID...")
+            with pf2:
+                f_nom_p = st.text_input("Nombre del indicador", key=f"p_nom_{nombre_p}",
+                                        placeholder="Buscar nombre...")
+            with pf3:
+                opts_proc_p = [""] + sorted(df_p["Proceso"].dropna().unique().tolist()) \
+                              if "Proceso" in df_p.columns else [""]
+                f_proc_p = st.selectbox("Proceso", opts_proc_p, key=f"p_proc_{nombre_p}",
+                                        format_func=lambda x: "— Todos —" if x == "" else x)
+            with pf4:
+                opts_est_p = [""] + sorted(df_p[COL_E].dropna().unique().tolist()) \
+                             if COL_E in df_p.columns else [""]
+                f_est_p = st.selectbox("Estado del indicador", opts_est_p,
+                                       key=f"p_est_{nombre_p}",
+                                       format_func=lambda x: "— Todos —" if x == "" else x)
+
+        df_p_fil = _aplicar_filtros_tabla(df_p, f_id_p, f_nom_p, f_proc_p, f_est_p)
+        st.caption(f"Mostrando **{len(df_p_fil)}** de **{len(df_p)}** indicadores")
+
+        cols_desc_p  = [c for c in COLS_DESC if c in df_p_fil.columns and c not in (COL_E, COL_R)]
+        cols_estado_p = [c for c in (COL_E, COL_R) if c in df_p_fil.columns]
         cols_finales  = cols_desc_p + cols_p + cols_estado_p
         seen = set()
         cols_finales = [c for c in cols_finales
-                        if c in df_p.columns and not (c in seen or seen.add(c))]
+                        if c in df_p_fil.columns and not (c in seen or seen.add(c))]
 
-        df_tabla_p = df_p[cols_finales].copy()
+        df_tabla_p = df_p_fil[cols_finales].copy()
 
         for c in cols_p:
             if c in df_tabla_p.columns:
