@@ -662,18 +662,46 @@ for tab_idx, perio in enumerate(perios, 2):
         with kc4: st.metric("% Reporte", f"{pct_rep_p}%",
                             delta_color="normal" if pct_rep_p >= 80 else "inverse")
 
-        # Gráfico por Proceso ordenado descendente
-        col_proc_p = "Proceso" if "Proceso" in df_p.columns else None
+        # Gráfico por Proceso — interactivo: clic filtra la tabla inferior
+        col_proc_p  = "Proceso" if "Proceso" in df_p.columns else None
+        _key_chart  = f"chart_proc_{nombre_p}"
+        _key_sel    = f"sel_proc_chart_{nombre_p}"
+
         if col_proc_p and COL_E in df_p.columns:
             proc_p_s = _agg_estado(df_p, col_proc_p)
-            fig_pg   = _bar_h(proc_p_s, col_proc_p)   # altura automática
-            st.plotly_chart(fig_pg, use_container_width=True)
+            fig_pg   = _bar_h(proc_p_s, col_proc_p)
+            ev_pg    = st.plotly_chart(fig_pg, use_container_width=True,
+                                       on_select="rerun", key=_key_chart)
 
+            # Capturar clic en barra
+            if ev_pg.selection and ev_pg.selection.get("points"):
+                clicked = ev_pg.selection["points"][0].get("y")
+                if clicked != st.session_state.get(_key_sel):
+                    st.session_state[_key_sel] = clicked
+
+        # Proceso seleccionado desde el gráfico (puede ser None)
+        chart_proc = st.session_state.get(_key_sel)
+
+        # Encabezado + botón limpiar selección del gráfico
         st.markdown("---")
-        st.markdown("#### Detalle de Indicadores")
+        if chart_proc:
+            hc1, hc2 = st.columns([7, 1])
+            with hc1:
+                st.markdown(f"#### Detalle de Indicadores — 📊 *{chart_proc}*")
+            with hc2:
+                if st.button("✖ Todos", key=f"clear_chart_{nombre_p}"):
+                    st.session_state[_key_sel] = None
+                    st.rerun()
+        else:
+            st.markdown("#### Detalle de Indicadores")
+            st.caption("💡 Haz clic en una barra del gráfico para filtrar por proceso.")
 
-        f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p = _filtros_cascada(df_p, f"p_{nombre_p}")
-        df_p_fil = _aplicar_filtros_tabla(df_p, f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p)
+        # Datos pre-filtrados por selección del gráfico
+        df_p_base = df_p[df_p[col_proc_p] == chart_proc].copy() \
+                    if chart_proc and col_proc_p else df_p
+
+        f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p = _filtros_cascada(df_p_base, f"p_{nombre_p}")
+        df_p_fil = _aplicar_filtros_tabla(df_p_base, f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p)
         st.caption(f"Mostrando **{len(df_p_fil)}** de **{len(df_p)}** indicadores")
 
         cols_desc_p   = [c for c in COLS_DESC if c in df_p_fil.columns and c not in (COL_E, COL_R)]
