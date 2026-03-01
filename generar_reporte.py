@@ -252,7 +252,10 @@ def leer_kawak(ruta: str) -> dict:
         return {}
 
     try:
-        df = pd.read_excel(ruta, engine="openpyxl")
+        # keep_default_na=False evita que "N/A" (texto) se convierta en NaN.
+        # Las celdas vacías siguen siendo NaN (null del motor openpyxl).
+        df = pd.read_excel(ruta, engine="openpyxl",
+                           keep_default_na=False, na_values=[""])
     except Exception as exc:
         print(f"    ADVERTENCIA kawak: no se pudo leer el archivo: {exc}")
         return {}
@@ -287,11 +290,12 @@ def leer_kawak(ruta: str) -> dict:
                 ts = pd.Timestamp("1899-12-30") + pd.Timedelta(days=int(fecha_raw))
             else:
                 ts = pd.Timestamp(str(fecha_raw).strip())
-            # NaN en kawak (Excel #N/A) = indicador procesado sin valor aplicable.
-            # Se guarda como string "N/A" para que _tiene_dato_kawak lo reconozca
-            # como dato válido y marque el indicador como Reportado.
-            val = "N/A" if pd.isna(resultado) else resultado
-            lookup[(kid, ts.year, ts.month)] = val
+            # Celda vacía (NaN) = dato no ingresado → no se registra en el lookup.
+            # "N/A" (string, cuando el indicador se calculó como no-aplicable) SÍ
+            # se registra porque keep_default_na=False preservó el texto original.
+            if pd.isna(resultado):
+                continue
+            lookup[(kid, ts.year, ts.month)] = resultado
         except Exception:
             omitidas += 1
 
