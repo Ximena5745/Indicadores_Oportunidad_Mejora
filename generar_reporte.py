@@ -343,28 +343,23 @@ def enriquecer_desde_kawak(df_p: pd.DataFrame, kawak: dict,
         # ── Recalcular Reportado y Estado si algo cambió ──────────────────────
         if cambiado:
             p1_ok = _tiene_dato(df_p.at[i, col_p1])
-            p2_ok = _tiene_dato(df_p.at[i, col_p2]) if col_p2 else True
             df_p.at[i, "Reportado"]            = "Sí" if p1_ok else "No"
             df_p.at[i, "Estado del indicador"] = (
-                "Reportado" if (p1_ok and p2_ok) else "Pendiente de reporte"
+                "Reportado" if p1_ok else "Pendiente de reporte"
             )
-            if p1_ok or p2_ok:
+            if p1_ok:
                 n_act += 1
 
     return df_p, n_act
 
 
-def agregar_columnas_seguimiento(df: pd.DataFrame, col_p1: str, col_p2: str) -> pd.DataFrame:
+def agregar_columnas_seguimiento(df: pd.DataFrame, col_p1: str, col_p2: str = None) -> pd.DataFrame:
     """
     Agrega las columnas 'Reportado' y 'Estado del indicador'.
 
-    Reportado:
-      - "Sí"  si el período más reciente (col_p1) tiene dato
-      - "No"  si está vacío o es '-'
-
-    Estado del indicador (últimos 2 períodos):
-      - "Reportado"           si ambos col_p1 y col_p2 tienen dato
-      - "Pendiente de reporte" si alguno está vacío / sin dato
+    Ambas dependen únicamente del período más reciente (col_p1):
+      - "Sí" / "Reportado"          si col_p1 tiene dato
+      - "No" / "Pendiente de reporte" si col_p1 está vacío o es '-'
     """
     df = df.copy()
 
@@ -372,12 +367,9 @@ def agregar_columnas_seguimiento(df: pd.DataFrame, col_p1: str, col_p2: str) -> 
         lambda v: "Sí" if _tiene_dato(v) else "No"
     )
 
-    def _estado(row):
-        p1_ok = _tiene_dato(row[col_p1])
-        p2_ok = _tiene_dato(row[col_p2]) if col_p2 else True
-        return "Reportado" if (p1_ok and p2_ok) else "Pendiente de reporte"
-
-    df["Estado del indicador"] = df.apply(_estado, axis=1)
+    df["Estado del indicador"] = df[col_p1].apply(
+        lambda v: "Reportado" if _tiene_dato(v) else "Pendiente de reporte"
+    )
     return df
 
 
