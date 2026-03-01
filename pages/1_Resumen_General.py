@@ -54,7 +54,7 @@ if ids_sel:
     df = df[df["Id"].isin(ids_sel)]
 
 # ── Título ────────────────────────────────────────────────────────────────────
-st.markdown("# 🏠 Resumen General")
+st.markdown("# 🏠 Reporte de Cumplimiento")
 st.markdown("---")
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
