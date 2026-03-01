@@ -129,13 +129,33 @@ def cargar_ficha_tecnica() -> pd.DataFrame:
     return df
 
 
+def df_indicadores_unicos(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Retorna solo las filas que representan indicadores únicos.
+    Prioridad:
+      1. Si existe columna 'Revisar', filtra Revisar == 1 y luego deduplica por Id.
+      2. Si no existe, deduplica por Id (keep='last' para tomar el registro más reciente).
+    """
+    if df.empty or "Id" not in df.columns:
+        return df
+    if "Revisar" in df.columns:
+        revisar = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
+        return df[revisar == 1].drop_duplicates(subset="Id", keep="first").reset_index(drop=True)
+    col_fecha = "Fecha" if "Fecha" in df.columns else None
+    if col_fecha:
+        return df.sort_values(col_fecha).drop_duplicates(subset="Id", keep="last").reset_index(drop=True)
+    return df.drop_duplicates(subset="Id", keep="last").reset_index(drop=True)
+
+
 def construir_opciones_indicadores(df: pd.DataFrame) -> dict:
     """
     Retorna dict {label: id_str} con etiquetas "Id — Nombre" únicas.
+    Usa Revisar == 1 si la columna existe; si no, deduplica por Id.
     """
     if df.empty or "Id" not in df.columns:
         return {}
-    sub = df[["Id", "Indicador"]].drop_duplicates(subset="Id").dropna(subset=["Id"])
+    unicos = df_indicadores_unicos(df)
+    sub = unicos[["Id", "Indicador"]].dropna(subset=["Id"])
     sub = sub[sub["Id"] != ""]
     opciones = {}
     for _, row in sub.iterrows():

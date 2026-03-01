@@ -136,12 +136,25 @@ def generar_recomendaciones(categoria, cum_series):
 
 
 def obtener_ultimo_registro(df):
-    """Retorna el último registro por indicador (dedup por Id, keep=last)."""
+    """
+    Retorna un registro único por indicador para KPIs y tablas de resumen.
+    Prioridad:
+      1. Si existe 'Revisar', filtra Revisar == 1 y deduplica por Id.
+      2. Si no, ordena por Fecha y toma el registro más reciente por Id.
+    """
     if df.empty or "Id" not in df.columns:
         return df
+    if "Revisar" in df.columns:
+        revisar = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
+        return (
+            df[revisar == 1]
+            .drop_duplicates(subset="Id", keep="first")
+            .reset_index(drop=True)
+        )
     return (
         df.sort_values("Fecha")
         .drop_duplicates(subset="Id", keep="last")
+        .reset_index(drop=True)
     )
 
 
