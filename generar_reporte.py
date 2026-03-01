@@ -287,7 +287,11 @@ def leer_kawak(ruta: str) -> dict:
                 ts = pd.Timestamp("1899-12-30") + pd.Timedelta(days=int(fecha_raw))
             else:
                 ts = pd.Timestamp(str(fecha_raw).strip())
-            lookup[(kid, ts.year, ts.month)] = resultado
+            # NaN en kawak (Excel #N/A) = indicador procesado sin valor aplicable.
+            # Se guarda como string "N/A" para que _tiene_dato_kawak lo reconozca
+            # como dato válido y marque el indicador como Reportado.
+            val = "N/A" if pd.isna(resultado) else resultado
+            lookup[(kid, ts.year, ts.month)] = val
         except Exception:
             omitidas += 1
 
