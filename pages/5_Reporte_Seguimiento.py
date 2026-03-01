@@ -4,6 +4,10 @@ pages/5_Reporte_Seguimiento.py — Indicadores con Reporte de Seguimiento.
 Fuente: data/raw/Seguimiento_Reporte.xlsx (generado por generar_reporte.py).
 Solo muestra indicadores con Revisar == 1 (indicador único/primero).
 Página autocontenida: no depende de funciones externas de data_loader.
+
+Mapeo de procesos:
+  "Proceso" en LMI/Seguimiento == "Subproceso" en Subproceso-Proceso-Area.xlsx
+  El archivo de mapeo agrega: Proceso (padre) y Unidad (Área).
 """
 from datetime import datetime
 from pathlib import Path
@@ -15,31 +19,32 @@ import streamlit as st
 from utils.charts import exportar_excel
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
-_DATA_RAW  = Path(__file__).parent.parent / "data" / "raw"
-_RUTA_XLSX = _DATA_RAW / "Seguimiento_Reporte.xlsx"
-_CORTE     = datetime(2024, 1, 1)
+_DATA_RAW   = Path(__file__).parent.parent / "data" / "raw"
+_RUTA_XLSX  = _DATA_RAW / "Seguimiento_Reporte.xlsx"
+_RUTA_MAPA  = _DATA_RAW / "Subproceso-Proceso-Area.xlsx"
+_CORTE      = datetime(2024, 1, 1)
 
 # ── Paleta corporativa ────────────────────────────────────────────────────────
 CORP = {
-    "reportado":  "#A6CE38",   # lima  → positivo
-    "pendiente":  "#EC0677",   # magenta → atención
-    "primario":   "#0F385A",   # azul marino
-    "secundario": "#1FB2DE",   # azul claro
-    "acento":     "#42F2F2",   # cian
-    "alerta":     "#FBAF17",   # ámbar
+    "reportado":  "#A6CE38",
+    "pendiente":  "#EC0677",
+    "primario":   "#0F385A",
+    "secundario": "#1FB2DE",
+    "acento":     "#42F2F2",
+    "alerta":     "#FBAF17",
 }
 
-# ── Colores de celda (fondo suave de los corporativos) ────────────────────────
+# ── Colores de celda ──────────────────────────────────────────────────────────
 COLOR_ESTADO    = {"Reportado": "#EDF7D6", "Pendiente de reporte": "#FDE8F3"}
 COLOR_REPORTADO = {"Si": "#EDF7D6", "Sí": "#EDF7D6", "No": "#FDE8F3"}
 
 # ── Columnas descriptivas ─────────────────────────────────────────────────────
-# Tabla consolidada: Estado y Reportado justo después de Id e Indicador
+# Tabla consolidada: Estado y Reportado después de Id e Indicador
 COLS_DESC_CON = ["Id", "Indicador", "Estado del indicador", "Reportado",
-                 "Proceso", "Subproceso", "Tipo", "Sentido", "Periodicidad"]
+                 "Unidad", "Proceso", "Subproceso", "Tipo", "Sentido", "Periodicidad"]
 
 # Tabla de periodicidad: Estado y Reportado al final
-COLS_DESC = ["Id", "Indicador", "Proceso", "Subproceso", "Tipo", "Sentido",
+COLS_DESC = ["Id", "Indicador", "Unidad", "Proceso", "Subproceso", "Tipo", "Sentido",
              "Periodicidad", "Estado del indicador", "Reportado"]
 
 
@@ -79,8 +84,8 @@ def _col_nombre(df):
 
 
 def _aplicar_filtros_tabla(df: pd.DataFrame, txt_id: str, txt_nombre: str,
-                           sel_proc: str, sel_estado: str) -> pd.DataFrame:
-    """Aplica los 4 filtros estándar (Id, Nombre, Proceso, Estado) sobre df."""
+                           sel_proc: str, sel_sub: str, sel_estado: str) -> pd.DataFrame:
+    """Aplica los 5 filtros estándar sobre df."""
     mask = pd.Series(True, index=df.index)
     if txt_id.strip() and "Id" in df.columns:
         mask &= df["Id"].astype(str).str.contains(txt_id.strip(), case=False, na=False)
@@ -90,6 +95,8 @@ def _aplicar_filtros_tabla(df: pd.DataFrame, txt_id: str, txt_nombre: str,
             mask &= df[col_nom].astype(str).str.contains(txt_nombre.strip(), case=False, na=False)
     if sel_proc and "Proceso" in df.columns:
         mask &= df["Proceso"] == sel_proc
+    if sel_sub and "Subproceso" in df.columns:
+        mask &= df["Subproceso"] == sel_sub
     if sel_estado and "Estado del indicador" in df.columns:
         mask &= df["Estado del indicador"] == sel_estado
     return df[mask].reset_index(drop=True)
@@ -108,17 +115,84 @@ def _estilo_estado(row):
     return estilos
 
 
+def _filtros_cascada(df: pd.DataFrame, prefix: str):
+    """
+    Renderiza filtros: ID (texto), Nombre (texto), Proceso (dropdown),
+    Subproceso (dropdown dinámico según Proceso), Estado (dropdown).
+    Retorna (txt_id, txt_nom, sel_proc, sel_sub, sel_estado).
+    """
+    with st.expander("🔍 Filtros", expanded=True):
+        r1c1, r1c2 = st.columns(2)
+        with r1c1:
+            txt_id = st.text_input("ID", key=f"{prefix}_id", placeholder="Buscar ID...")
+        with r1c2:
+            txt_nom = st.text_input("Nombre del indicador", key=f"{prefix}_nom",
+                                    placeholder="Buscar nombre...")
+
+        r2c1, r2c2, r2c3 = st.columns(3)
+        with r2c1:
+            opts_proc = [""] + sorted(df["Proceso"].dropna().unique().tolist()) \
+                        if "Proceso" in df.columns else [""]
+            sel_proc = st.selectbox("Proceso", opts_proc, key=f"{prefix}_proc",
+                                    format_func=lambda x: "— Todos —" if x == "" else x)
+        with r2c2:
+            # Subproceso filtrado según Proceso seleccionado
+            if sel_proc and "Proceso" in df.columns and "Subproceso" in df.columns:
+                sub_opts = [""] + sorted(
+                    df.loc[df["Proceso"] == sel_proc, "Subproceso"].dropna().unique().tolist()
+                )
+            else:
+                sub_opts = [""] + (sorted(df["Subproceso"].dropna().unique().tolist())
+                                   if "Subproceso" in df.columns else [])
+            sel_sub = st.selectbox("Subproceso", sub_opts, key=f"{prefix}_sub",
+                                   format_func=lambda x: "— Todos —" if x == "" else x)
+        with r2c3:
+            opts_est = [""] + sorted(df["Estado del indicador"].dropna().unique().tolist()) \
+                       if "Estado del indicador" in df.columns else [""]
+            sel_estado = st.selectbox("Estado del indicador", opts_est, key=f"{prefix}_est",
+                                      format_func=lambda x: "— Todos —" if x == "" else x)
+    return txt_id, txt_nom, sel_proc, sel_sub, sel_estado
+
+
+# ── Carga de mapeo Subproceso → Proceso → Unidad ─────────────────────────────
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cargar_mapa_procesos() -> pd.DataFrame:
+    """
+    Retorna DataFrame con columnas: Subproceso, Proceso, Unidad.
+    La columna 'Subproceso' del mapeo = la columna 'Proceso' de LMI/Seguimiento.
+    """
+    if not _RUTA_MAPA.exists():
+        return pd.DataFrame()
+    df = pd.read_excel(str(_RUTA_MAPA), engine="openpyxl")
+    df.columns = [str(c).strip() for c in df.columns]
+    # Detectar columnas por contenido (tolera problemas de encoding en el nombre)
+    col_sub  = next((c for c in df.columns if c.lower() == "subproceso"), None)
+    col_proc = next((c for c in df.columns if c.lower() == "proceso"), None)
+    col_area = next((c for c in df.columns if "rea" in c.lower()), None)  # Área / Area
+    if not col_sub or not col_proc:
+        return pd.DataFrame()
+    rename = {col_sub: "Subproceso", col_proc: "Proceso"}
+    if col_area:
+        rename[col_area] = "Unidad"
+    df = df.rename(columns=rename)
+    cols_keep = [c for c in ["Subproceso", "Proceso", "Unidad"] if c in df.columns]
+    return (df[cols_keep]
+            .dropna(subset=["Subproceso"])
+            .drop_duplicates(subset=["Subproceso"])
+            .reset_index(drop=True))
+
+
 # ── Carga de datos (caché local, no depende de data_loader) ──────────────────
 
 @st.cache_data(ttl=300, show_spinner="Cargando Seguimiento_Reporte.xlsx...")
 def _cargar_datos() -> dict:
     """
     Retorna dict:
-      consolidado   : DataFrame combinado de todas las periodicidades
-                      (tiene Estado del indicador + Reportado, sin columnas de período)
+      consolidado   : DataFrame combinado de todas las periodicidades,
+                      con Subproceso (original "Proceso"), Proceso y Unidad del mapeo.
       resumen       : DataFrame hoja Resumen
       periodicidades: list de dict {nombre, df, cols_periodo}
-                      (df deduplicado por Id, tiene Estado + período + Reportado)
     """
     if not _RUTA_XLSX.exists():
         return {}
@@ -127,8 +201,11 @@ def _cargar_datos() -> dict:
     hojas = xl.sheet_names
     out   = {"consolidado": pd.DataFrame(), "resumen": pd.DataFrame(), "periodicidades": []}
 
-    COLS_MANTENER = ["Id", "Indicador", "Proceso", "Subproceso", "Tipo", "Sentido",
-                     "Periodicidad", "Estado del indicador", "Reportado", "Revisar"]
+    mapa = _cargar_mapa_procesos()   # Subproceso → Proceso, Unidad
+
+    COLS_MANTENER = ["Id", "Indicador", "Unidad", "Proceso", "Subproceso",
+                     "Tipo", "Sentido", "Periodicidad",
+                     "Estado del indicador", "Reportado", "Revisar"]
 
     if "Resumen" in hojas:
         df = xl.parse("Resumen")
@@ -143,12 +220,21 @@ def _cargar_datos() -> dict:
         df = xl.parse(hoja)
         df.columns = [str(c).strip() for c in df.columns]
 
+        # Filtrar Revisar == 1 y deduplicar por Id
         if "Revisar" in df.columns:
             revisar = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
             df = df[revisar == 1].copy()
         if "Id" in df.columns:
             df["Id"] = df["Id"].apply(_id_limpio)
             df = df.drop_duplicates(subset="Id", keep="first").reset_index(drop=True)
+
+        # Renombrar "Proceso" → "Subproceso" (es el subproceso en el mapeo)
+        if "Proceso" in df.columns:
+            df = df.rename(columns={"Proceso": "Subproceso"})
+
+        # Unir mapeo para obtener Proceso (padre) y Unidad
+        if not mapa.empty and "Subproceso" in df.columns:
+            df = df.merge(mapa, on="Subproceso", how="left")
 
         cols_p = _cols_periodo_desde_2024(df.columns)
         out["periodicidades"].append({"nombre": hoja, "df": df, "cols_periodo": cols_p})
@@ -204,7 +290,6 @@ tabs = st.tabs(nombres_tabs)
 with tabs[0]:
     COL_ESTADO = "Estado del indicador"
     COL_REP    = "Reportado"
-    col_proc   = next((c for c in df_con.columns if c.lower() == "proceso"), None)
 
     total        = len(df_con)
     n_reportados = int((df_con[COL_ESTADO] == "Reportado").sum())            if COL_ESTADO in df_con.columns else 0
@@ -239,7 +324,6 @@ with tabs[0]:
         col_pen = next((c for c in df_res.columns if "pendiente" in c.lower()), None)
 
         gc1, gc2 = st.columns([1, 2])
-
         with gc1:
             st.markdown("#### Estado general")
             if n_reportados + n_pendientes > 0:
@@ -254,14 +338,12 @@ with tabs[0]:
                     hovertemplate="<b>%{label}</b><br>%{value} indicadores (%{percent})<extra></extra>",
                 ))
                 fig_pie.update_layout(
-                    height=280,
-                    showlegend=False,
+                    height=280, showlegend=False,
                     margin=dict(t=10, b=10, l=10, r=10),
                     paper_bgcolor="white",
                     annotations=[dict(
                         text=f"<b>{total}</b><br>total",
-                        x=0.5, y=0.5, font_size=16,
-                        showarrow=False,
+                        x=0.5, y=0.5, font_size=16, showarrow=False,
                     )],
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -289,18 +371,88 @@ with tabs[0]:
                     margin=dict(t=15, b=80),
                 )
                 st.plotly_chart(fig_per, use_container_width=True)
-
         st.dataframe(df_res, use_container_width=True, hide_index=True)
         st.markdown("")
 
-    # ── Por Proceso ───────────────────────────────────────────────────────────
-    if col_proc and COL_ESTADO in df_con.columns:
-        st.markdown("#### Por Proceso")
-        proc_stats = (
-            df_con.groupby(col_proc)[COL_ESTADO]
+    # ── Por Unidad ────────────────────────────────────────────────────────────
+    if "Unidad" in df_con.columns and COL_ESTADO in df_con.columns:
+        st.markdown("#### Por Unidad")
+        unidad_stats = (
+            df_con.groupby("Unidad")[COL_ESTADO]
             .value_counts().unstack(fill_value=0).reset_index()
         )
-        proc_stats["_t"] = proc_stats.drop(columns=[col_proc]).sum(axis=1)
+        unidad_stats["_t"] = unidad_stats.drop(columns=["Unidad"]).sum(axis=1)
+        unidad_stats = unidad_stats.sort_values("_t", ascending=False).drop(columns="_t")
+
+        col_rep_u = "Reportado"            if "Reportado"            in unidad_stats.columns else None
+        col_pen_u = "Pendiente de reporte" if "Pendiente de reporte" in unidad_stats.columns else None
+
+        ug1, ug2 = st.columns([3, 2])
+        with ug1:
+            fig_uni = go.Figure()
+            if col_rep_u:
+                fig_uni.add_trace(go.Bar(
+                    y=unidad_stats["Unidad"], x=unidad_stats[col_rep_u],
+                    orientation="h", name="Reportado", marker_color=CORP["reportado"],
+                    text=unidad_stats[col_rep_u], textposition="outside",
+                ))
+            if col_pen_u:
+                fig_uni.add_trace(go.Bar(
+                    y=unidad_stats["Unidad"], x=unidad_stats[col_pen_u],
+                    orientation="h", name="Pendiente", marker_color=CORP["pendiente"],
+                    text=unidad_stats[col_pen_u], textposition="outside",
+                ))
+            fig_uni.update_layout(
+                barmode="stack",
+                height=max(300, len(unidad_stats) * 38 + 60),
+                xaxis_title="Indicadores", yaxis_title="",
+                yaxis=dict(autorange="reversed"),
+                plot_bgcolor="white", paper_bgcolor="white",
+                legend=dict(orientation="h", y=-0.15),
+                margin=dict(t=15, b=50, l=10, r=10),
+            )
+            st.plotly_chart(fig_uni, use_container_width=True)
+        with ug2:
+            total_uni = unidad_stats.drop(columns=["Unidad"]).sum(axis=1)
+            df_uni_t = unidad_stats[["Unidad"]].copy()
+            if col_rep_u:
+                df_uni_t["Reportados"] = unidad_stats[col_rep_u]
+                df_uni_t["% Reporte"]  = (unidad_stats[col_rep_u] / total_uni * 100).round(1).astype(str) + "%"
+            df_uni_t["Total"] = total_uni
+            st.dataframe(df_uni_t, use_container_width=True, hide_index=True)
+
+        # ── Detalle de subprocesos al seleccionar una Unidad ──────────────────
+        opts_unidad = [""] + unidad_stats["Unidad"].tolist()
+        sel_uni_det = st.selectbox(
+            "Ver subprocesos de la Unidad:",
+            opts_unidad,
+            key="res_uni_det",
+            format_func=lambda x: "— Seleccionar —" if x == "" else x,
+        )
+        if sel_uni_det:
+            df_sub_uni = df_con[df_con["Unidad"] == sel_uni_det]
+            if not df_sub_uni.empty and "Proceso" in df_sub_uni.columns and COL_ESTADO in df_sub_uni.columns:
+                proc_sub = (
+                    df_sub_uni.groupby(["Proceso", "Subproceso"] if "Subproceso" in df_sub_uni.columns else ["Proceso"])[COL_ESTADO]
+                    .value_counts().unstack(fill_value=0).reset_index()
+                )
+                cols_show = ["Proceso"] + (["Subproceso"] if "Subproceso" in proc_sub.columns else [])
+                for est in ["Reportado", "Pendiente de reporte"]:
+                    if est in proc_sub.columns:
+                        cols_show.append(est)
+                st.dataframe(proc_sub[cols_show], use_container_width=True, hide_index=True)
+
+        st.markdown("")
+
+    # ── Por Proceso (padre, del mapeo) ────────────────────────────────────────
+    col_proc_res = "Proceso" if "Proceso" in df_con.columns else None
+    if col_proc_res and COL_ESTADO in df_con.columns:
+        st.markdown("#### Por Proceso")
+        proc_stats = (
+            df_con.groupby(col_proc_res)[COL_ESTADO]
+            .value_counts().unstack(fill_value=0).reset_index()
+        )
+        proc_stats["_t"] = proc_stats.drop(columns=[col_proc_res]).sum(axis=1)
         proc_stats = proc_stats.sort_values("_t", ascending=False).drop(columns="_t")
 
         col_rep_p = "Reportado"            if "Reportado"            in proc_stats.columns else None
@@ -311,13 +463,13 @@ with tabs[0]:
             fig_proc = go.Figure()
             if col_rep_p:
                 fig_proc.add_trace(go.Bar(
-                    y=proc_stats[col_proc], x=proc_stats[col_rep_p],
+                    y=proc_stats[col_proc_res], x=proc_stats[col_rep_p],
                     orientation="h", name="Reportado", marker_color=CORP["reportado"],
                     text=proc_stats[col_rep_p], textposition="outside",
                 ))
             if col_pen_p:
                 fig_proc.add_trace(go.Bar(
-                    y=proc_stats[col_proc], x=proc_stats[col_pen_p],
+                    y=proc_stats[col_proc_res], x=proc_stats[col_pen_p],
                     orientation="h", name="Pendiente", marker_color=CORP["pendiente"],
                     text=proc_stats[col_pen_p], textposition="outside",
                 ))
@@ -332,36 +484,57 @@ with tabs[0]:
             )
             st.plotly_chart(fig_proc, use_container_width=True)
         with cg2:
-            total_proc = proc_stats.drop(columns=[col_proc]).sum(axis=1)
-            df_pct = proc_stats[[col_proc]].copy()
+            total_proc = proc_stats.drop(columns=[col_proc_res]).sum(axis=1)
+            df_pct = proc_stats[[col_proc_res]].copy()
             if col_rep_p:
                 df_pct["Reportados"] = proc_stats[col_rep_p]
                 df_pct["% Reporte"]  = (proc_stats[col_rep_p] / total_proc * 100).round(1).astype(str) + "%"
             df_pct["Total"] = total_proc
             st.dataframe(df_pct, use_container_width=True, hide_index=True)
 
+        # ── Subprocesos del proceso seleccionado ──────────────────────────────
+        if "Subproceso" in df_con.columns:
+            opts_proc_det = [""] + proc_stats[col_proc_res].tolist()
+            sel_proc_det = st.selectbox(
+                "Ver subprocesos del Proceso:",
+                opts_proc_det,
+                key="res_proc_det",
+                format_func=lambda x: "— Seleccionar —" if x == "" else x,
+            )
+            if sel_proc_det:
+                df_sub_det = df_con[df_con[col_proc_res] == sel_proc_det]
+                if not df_sub_det.empty and COL_ESTADO in df_sub_det.columns:
+                    sub_det = (
+                        df_sub_det.groupby("Subproceso")[COL_ESTADO]
+                        .value_counts().unstack(fill_value=0).reset_index()
+                    )
+                    sub_det["Total"] = sub_det.drop(columns=["Subproceso"]).sum(axis=1)
+                    if "Reportado" in sub_det.columns:
+                        sub_det["% Reporte"] = (sub_det["Reportado"] / sub_det["Total"] * 100).round(1).astype(str) + "%"
+                    st.dataframe(sub_det, use_container_width=True, hide_index=True)
+
     st.markdown("---")
 
     # ── 🚨 Ranking procesos sin reporte ───────────────────────────────────────
-    if col_proc and COL_ESTADO in df_con.columns:
+    if col_proc_res and COL_ESTADO in df_con.columns:
         df_pen = df_con[df_con[COL_ESTADO] == "Pendiente de reporte"]
 
         if not df_pen.empty:
             st.markdown("#### 🚨 Procesos con más indicadores sin reporte")
             ranking = (
-                df_pen.groupby(col_proc).size()
+                df_pen.groupby(col_proc_res).size()
                 .reset_index(name="Sin reporte")
                 .sort_values("Sin reporte", ascending=False)
             )
-            tot_p   = df_con.groupby(col_proc).size().reset_index(name="Total")
-            ranking = ranking.merge(tot_p, on=col_proc, how="left")
+            tot_p   = df_con.groupby(col_proc_res).size().reset_index(name="Total")
+            ranking = ranking.merge(tot_p, on=col_proc_res, how="left")
             ranking["% Sin reporte"] = (ranking["Sin reporte"] / ranking["Total"] * 100).round(1)
 
             cr1, cr2 = st.columns([3, 2])
             with cr1:
                 fig_rank = go.Figure(go.Bar(
                     x=ranking["Sin reporte"],
-                    y=ranking[col_proc],
+                    y=ranking[col_proc_res],
                     orientation="h",
                     marker=dict(
                         color=ranking["% Sin reporte"],
@@ -391,7 +564,7 @@ with tabs[0]:
                 st.plotly_chart(fig_rank, use_container_width=True)
 
             with cr2:
-                df_rk = ranking.rename(columns={col_proc: "Proceso"}).copy()
+                df_rk = ranking.rename(columns={col_proc_res: "Proceso"}).copy()
                 df_rk["% Sin reporte"] = df_rk["% Sin reporte"].astype(str) + "%"
 
                 def _color_rank(row):
@@ -421,41 +594,20 @@ with tabs[0]:
             st.success("✅ No hay indicadores pendientes de reporte.")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 1 — CONSOLIDADO (tabla de todos los indicadores únicos)
+# TAB 1 — CONSOLIDADO
 # ─────────────────────────────────────────────────────────────────────────────
 with tabs[1]:
     COL_ESTADO = "Estado del indicador"
-    COL_REP    = "Reportado"
 
     st.markdown("### Tabla Consolidada")
 
-    # ── Filtros ───────────────────────────────────────────────────────────────
-    with st.expander("🔍 Filtros", expanded=True):
-        ff1, ff2, ff3, ff4 = st.columns(4)
-        with ff1:
-            f_id_con = st.text_input("ID", key="con_id", placeholder="Buscar ID...")
-        with ff2:
-            f_nom_con = st.text_input("Nombre del indicador", key="con_nom",
-                                      placeholder="Buscar nombre...")
-        with ff3:
-            opts_proc_con = [""] + sorted(df_con["Proceso"].dropna().unique().tolist()) \
-                            if "Proceso" in df_con.columns else [""]
-            f_proc_con = st.selectbox("Proceso", opts_proc_con, key="con_proc",
-                                      format_func=lambda x: "— Todos —" if x == "" else x)
-        with ff4:
-            opts_est_con = [""] + sorted(df_con[COL_ESTADO].dropna().unique().tolist()) \
-                           if COL_ESTADO in df_con.columns else [""]
-            f_est_con = st.selectbox("Estado del indicador", opts_est_con, key="con_estado",
-                                     format_func=lambda x: "— Todos —" if x == "" else x)
+    # Filtros con cascada Proceso → Subproceso
+    f_id_con, f_nom_con, f_proc_con, f_sub_con, f_est_con = _filtros_cascada(df_con, "con")
 
-    # ── Aplicar filtros ───────────────────────────────────────────────────────
-    df_filtrado = _aplicar_filtros_tabla(df_con, f_id_con, f_nom_con, f_proc_con, f_est_con)
+    df_filtrado = _aplicar_filtros_tabla(df_con, f_id_con, f_nom_con,
+                                         f_proc_con, f_sub_con, f_est_con)
+    st.caption(f"Mostrando **{len(df_filtrado)}** de **{len(df_con)}** indicadores")
 
-    total_fil = len(df_filtrado)
-    total_ori = len(df_con)
-    st.caption(f"Mostrando **{total_fil}** de **{total_ori}** indicadores")
-
-    # ── Tabla ─────────────────────────────────────────────────────────────────
     cols_mostrar = _cols_pres(df_filtrado, COLS_DESC_CON) or list(df_filtrado.columns)[:10]
     df_tabla_con = df_filtrado[cols_mostrar].copy()
     st.dataframe(
@@ -501,8 +653,8 @@ for tab_idx, perio in enumerate(perios, 2):
         with kc4: st.metric("% Reporte", f"{pct_rep_p}%",
                             delta_color="normal" if pct_rep_p >= 80 else "inverse")
 
-        # Gráfico por proceso (ordenado descendente)
-        col_proc_p = next((c for c in df_p.columns if c.lower() == "proceso"), None)
+        # Gráfico por Proceso (padre, ordenado descendente)
+        col_proc_p = "Proceso" if "Proceso" in df_p.columns else None
         if col_proc_p and COL_E in df_p.columns:
             proc_p = (
                 df_p.groupby(col_proc_p)[COL_E]
@@ -535,31 +687,13 @@ for tab_idx, perio in enumerate(perios, 2):
         st.markdown("---")
         st.markdown("#### Detalle de Indicadores")
 
-        # ── Filtros de la tab ─────────────────────────────────────────────────
-        with st.expander("🔍 Filtros", expanded=True):
-            pf1, pf2, pf3, pf4 = st.columns(4)
-            with pf1:
-                f_id_p = st.text_input("ID", key=f"p_id_{nombre_p}",
-                                       placeholder="Buscar ID...")
-            with pf2:
-                f_nom_p = st.text_input("Nombre del indicador", key=f"p_nom_{nombre_p}",
-                                        placeholder="Buscar nombre...")
-            with pf3:
-                opts_proc_p = [""] + sorted(df_p["Proceso"].dropna().unique().tolist()) \
-                              if "Proceso" in df_p.columns else [""]
-                f_proc_p = st.selectbox("Proceso", opts_proc_p, key=f"p_proc_{nombre_p}",
-                                        format_func=lambda x: "— Todos —" if x == "" else x)
-            with pf4:
-                opts_est_p = [""] + sorted(df_p[COL_E].dropna().unique().tolist()) \
-                             if COL_E in df_p.columns else [""]
-                f_est_p = st.selectbox("Estado del indicador", opts_est_p,
-                                       key=f"p_est_{nombre_p}",
-                                       format_func=lambda x: "— Todos —" if x == "" else x)
+        # Filtros con cascada Proceso → Subproceso
+        f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p = _filtros_cascada(df_p, f"p_{nombre_p}")
 
-        df_p_fil = _aplicar_filtros_tabla(df_p, f_id_p, f_nom_p, f_proc_p, f_est_p)
+        df_p_fil = _aplicar_filtros_tabla(df_p, f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p)
         st.caption(f"Mostrando **{len(df_p_fil)}** de **{len(df_p)}** indicadores")
 
-        cols_desc_p  = [c for c in COLS_DESC if c in df_p_fil.columns and c not in (COL_E, COL_R)]
+        cols_desc_p   = [c for c in COLS_DESC if c in df_p_fil.columns and c not in (COL_E, COL_R)]
         cols_estado_p = [c for c in (COL_E, COL_R) if c in df_p_fil.columns]
         cols_finales  = cols_desc_p + cols_p + cols_estado_p
         seen = set()
@@ -600,16 +734,22 @@ for tab_idx, perio in enumerate(perios, 2):
             id_ind  = str(fila.get("Id", ""))
             col_nom = _col_nombre(df_tabla_p)
             nombre_ind = str(fila.get(col_nom, "")) if col_nom else ""
-            proceso_i = str(fila.get("Proceso", ""))
-            tipo_i    = str(fila.get("Tipo", ""))
-            sentido_i = str(fila.get("Sentido", ""))
-            estado_i  = str(fila.get(COL_E, ""))
-            badge_c   = COLOR_ESTADO.get(estado_i, "#9E9E9E")
+            proceso_i  = str(fila.get("Proceso", ""))
+            subproc_i  = str(fila.get("Subproceso", ""))
+            unidad_i   = str(fila.get("Unidad", ""))
+            tipo_i     = str(fila.get("Tipo", ""))
+            sentido_i  = str(fila.get("Sentido", ""))
+            estado_i   = str(fila.get(COL_E, ""))
+            badge_c    = COLOR_ESTADO.get(estado_i, "#9E9E9E")
 
             @st.dialog(f"{id_ind} — {nombre_ind[:60]}", width="large")
             def _panel_detalle():
                 st.markdown(
-                    f"**Proceso:** {proceso_i} &nbsp;|&nbsp; "
+                    f"**Unidad:** {unidad_i}  \n"
+                    f"**Proceso:** {proceso_i}  \n"
+                    f"**Subproceso:** {subproc_i}"
+                )
+                st.markdown(
                     f"**Tipo:** {tipo_i} &nbsp;|&nbsp; **Sentido:** {sentido_i}"
                 )
                 st.markdown(
@@ -626,7 +766,7 @@ for tab_idx, perio in enumerate(perios, 2):
                     st.info("No hay columnas de período disponibles desde 2024.")
                 st.markdown("---")
                 st.markdown("**Ficha técnica**")
-                for fc in ["Id", "Indicador", "Proceso", "Subproceso",
+                for fc in ["Id", "Indicador", "Unidad", "Proceso", "Subproceso",
                            "Tipo", "Sentido", "Periodicidad"]:
                     if fc in fila.index:
                         st.markdown(f"- **{fc}:** {fila.get(fc, '—')}")
