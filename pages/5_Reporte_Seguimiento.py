@@ -15,18 +15,32 @@ import streamlit as st
 from utils.charts import exportar_excel
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
-_DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
+_DATA_RAW  = Path(__file__).parent.parent / "data" / "raw"
 _RUTA_XLSX = _DATA_RAW / "Seguimiento_Reporte.xlsx"
-_CORTE = datetime(2024, 1, 1)
+_CORTE     = datetime(2024, 1, 1)
 
-# ── Columnas descriptivas preferidas ─────────────────────────────────────────
+# ── Paleta corporativa ────────────────────────────────────────────────────────
+CORP = {
+    "reportado":  "#A6CE38",   # lima  → positivo
+    "pendiente":  "#EC0677",   # magenta → atención
+    "primario":   "#0F385A",   # azul marino
+    "secundario": "#1FB2DE",   # azul claro
+    "acento":     "#42F2F2",   # cian
+    "alerta":     "#FBAF17",   # ámbar
+}
+
+# ── Colores de celda (fondo suave de los corporativos) ────────────────────────
+COLOR_ESTADO    = {"Reportado": "#EDF7D6", "Pendiente de reporte": "#FDE8F3"}
+COLOR_REPORTADO = {"Si": "#EDF7D6", "Sí": "#EDF7D6", "No": "#FDE8F3"}
+
+# ── Columnas descriptivas ─────────────────────────────────────────────────────
+# Tabla consolidada: Estado y Reportado justo después de Id e Indicador
+COLS_DESC_CON = ["Id", "Indicador", "Estado del indicador", "Reportado",
+                 "Proceso", "Subproceso", "Tipo", "Sentido", "Periodicidad"]
+
+# Tabla de periodicidad: Estado y Reportado al final
 COLS_DESC = ["Id", "Indicador", "Proceso", "Subproceso", "Tipo", "Sentido",
              "Periodicidad", "Estado del indicador", "Reportado"]
-
-# ── Colores ───────────────────────────────────────────────────────────────────
-COLOR_ESTADO    = {"Reportado": "#C8E6C9", "Pendiente de reporte": "#FFF9C4"}
-COLOR_REPORTADO = {"Si": "#C8E6C9", "No": "#FFCDD2",
-                   "Sí": "#C8E6C9"}   # con y sin tilde
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -96,17 +110,14 @@ def _cargar_datos() -> dict:
     hojas = xl.sheet_names
     out   = {"consolidado": pd.DataFrame(), "resumen": pd.DataFrame(), "periodicidades": []}
 
-    # Columnas descriptivas a conservar para el consolidado
     COLS_MANTENER = ["Id", "Indicador", "Proceso", "Subproceso", "Tipo", "Sentido",
                      "Periodicidad", "Estado del indicador", "Reportado", "Revisar"]
 
-    # Hoja Resumen
     if "Resumen" in hojas:
         df = xl.parse("Resumen")
         df.columns = [str(c).strip() for c in df.columns]
         out["resumen"] = df
 
-    # Hojas de periodicidad
     trozos_consolidado = []
     for hoja in hojas:
         if hoja in ("Seguimiento", "Resumen"):
@@ -115,7 +126,6 @@ def _cargar_datos() -> dict:
         df = xl.parse(hoja)
         df.columns = [str(c).strip() for c in df.columns]
 
-        # Filtrar Revisar == 1 y deduplicar por Id (elimina duplicados reales)
         if "Revisar" in df.columns:
             revisar = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
             df = df[revisar == 1].copy()
@@ -123,16 +133,12 @@ def _cargar_datos() -> dict:
             df["Id"] = df["Id"].apply(_id_limpio)
             df = df.drop_duplicates(subset="Id", keep="first").reset_index(drop=True)
 
-        # Identificar columnas de período desde 2024
         cols_p = _cols_periodo_desde_2024(df.columns)
-
         out["periodicidades"].append({"nombre": hoja, "df": df, "cols_periodo": cols_p})
 
-        # Acumular solo columnas descriptivas para el consolidado
         cols_desc = [c for c in COLS_MANTENER if c in df.columns]
         trozos_consolidado.append(df[cols_desc].copy())
 
-    # Construir consolidado combinando todas las periodicidades
     if trozos_consolidado:
         df_con = pd.concat(trozos_consolidado, ignore_index=True)
         if "Id" in df_con.columns:
@@ -154,7 +160,7 @@ if not datos:
     )
     st.stop()
 
-df_con = datos["consolidado"]   # combinado de periodicidades: tiene Estado del indicador
+df_con = datos["consolidado"]
 df_res = datos["resumen"]
 perios = datos["periodicidades"]
 
@@ -172,11 +178,11 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
-nombres_tabs = ["📋 Consolidado"] + [f"📅 {p['nombre']}" for p in perios]
+nombres_tabs = ["📋 Resumen", "📊 Consolidado"] + [f"📅 {p['nombre']}" for p in perios]
 tabs = st.tabs(nombres_tabs)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 0 — CONSOLIDADO
+# TAB 0 — RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 with tabs[0]:
     COL_ESTADO = "Estado del indicador"
@@ -190,7 +196,7 @@ with tabs[0]:
     pct_rep      = round(n_rep_hoy / total * 100, 1) if total else 0
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
-    st.markdown("### Vista Consolidada")
+    st.markdown("### Vista Resumen")
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.metric("Total indicadores", total)
@@ -209,34 +215,64 @@ with tabs[0]:
 
     st.markdown("---")
 
-    # ── Por Periodicidad ──────────────────────────────────────────────────────
+    # ── Gráfica circular + Por Periodicidad ───────────────────────────────────
     if not df_res.empty:
-        st.markdown("#### Por Periodicidad")
         col_per = df_res.columns[0]
         col_rpt = next((c for c in df_res.columns if "reportad" in c.lower()), None)
         col_pen = next((c for c in df_res.columns if "pendiente" in c.lower()), None)
 
-        if col_rpt:
-            fig_per = go.Figure()
-            fig_per.add_trace(go.Bar(
-                x=df_res[col_per], y=df_res[col_rpt],
-                name="Reportados", marker_color="#2E7D32",
-                text=df_res[col_rpt], textposition="outside",
-            ))
-            if col_pen:
-                fig_per.add_trace(go.Bar(
-                    x=df_res[col_per], y=df_res[col_pen],
-                    name="Pendientes", marker_color="#F57F17",
-                    text=df_res[col_pen], textposition="outside",
+        gc1, gc2 = st.columns([1, 2])
+
+        with gc1:
+            st.markdown("#### Estado general")
+            if n_reportados + n_pendientes > 0:
+                fig_pie = go.Figure(go.Pie(
+                    labels=["Reportados", "Pendientes"],
+                    values=[n_reportados, n_pendientes],
+                    hole=0.52,
+                    marker=dict(colors=[CORP["reportado"], CORP["pendiente"]],
+                                line=dict(color="white", width=2)),
+                    textinfo="label+percent",
+                    textfont=dict(size=13),
+                    hovertemplate="<b>%{label}</b><br>%{value} indicadores (%{percent})<extra></extra>",
                 ))
-            fig_per.update_layout(
-                barmode="group", height=300,
-                xaxis_title="Periodicidad", yaxis_title="Indicadores",
-                plot_bgcolor="white", paper_bgcolor="white",
-                legend=dict(orientation="h", y=-0.3),
-                margin=dict(t=15, b=70),
-            )
-            st.plotly_chart(fig_per, use_container_width=True)
+                fig_pie.update_layout(
+                    height=280,
+                    showlegend=False,
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    paper_bgcolor="white",
+                    annotations=[dict(
+                        text=f"<b>{total}</b><br>total",
+                        x=0.5, y=0.5, font_size=16,
+                        showarrow=False,
+                    )],
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+        with gc2:
+            st.markdown("#### Por Periodicidad")
+            if col_rpt:
+                fig_per = go.Figure()
+                fig_per.add_trace(go.Bar(
+                    x=df_res[col_per], y=df_res[col_rpt],
+                    name="Reportados", marker_color=CORP["reportado"],
+                    text=df_res[col_rpt], textposition="outside",
+                ))
+                if col_pen:
+                    fig_per.add_trace(go.Bar(
+                        x=df_res[col_per], y=df_res[col_pen],
+                        name="Pendientes", marker_color=CORP["pendiente"],
+                        text=df_res[col_pen], textposition="outside",
+                    ))
+                fig_per.update_layout(
+                    barmode="group", height=280,
+                    xaxis_title="Periodicidad", yaxis_title="Indicadores",
+                    plot_bgcolor="white", paper_bgcolor="white",
+                    legend=dict(orientation="h", y=-0.35),
+                    margin=dict(t=15, b=80),
+                )
+                st.plotly_chart(fig_per, use_container_width=True)
+
         st.dataframe(df_res, use_container_width=True, hide_index=True)
         st.markdown("")
 
@@ -259,19 +295,20 @@ with tabs[0]:
             if col_rep_p:
                 fig_proc.add_trace(go.Bar(
                     y=proc_stats[col_proc], x=proc_stats[col_rep_p],
-                    orientation="h", name="Reportado", marker_color="#2E7D32",
+                    orientation="h", name="Reportado", marker_color=CORP["reportado"],
                     text=proc_stats[col_rep_p], textposition="outside",
                 ))
             if col_pen_p:
                 fig_proc.add_trace(go.Bar(
                     y=proc_stats[col_proc], x=proc_stats[col_pen_p],
-                    orientation="h", name="Pendiente", marker_color="#F57F17",
+                    orientation="h", name="Pendiente", marker_color=CORP["pendiente"],
                     text=proc_stats[col_pen_p], textposition="outside",
                 ))
             fig_proc.update_layout(
                 barmode="stack",
                 height=max(300, len(proc_stats) * 35 + 60),
                 xaxis_title="Indicadores", yaxis_title="",
+                yaxis=dict(autorange="reversed"),
                 plot_bgcolor="white", paper_bgcolor="white",
                 legend=dict(orientation="h", y=-0.15),
                 margin=dict(t=15, b=50, l=10, r=10),
@@ -311,7 +348,11 @@ with tabs[0]:
                     orientation="h",
                     marker=dict(
                         color=ranking["% Sin reporte"],
-                        colorscale=[[0, "#FFF9C4"], [0.5, "#FF8C00"], [1, "#C62828"]],
+                        colorscale=[
+                            [0,   CORP["reportado"]],
+                            [0.5, CORP["alerta"]],
+                            [1,   CORP["pendiente"]],
+                        ],
                         showscale=True,
                         colorbar=dict(title="% sin<br>reporte", ticksuffix="%"),
                     ),
@@ -341,7 +382,7 @@ with tabs[0]:
                         pct = float(str(row["% Sin reporte"]).replace("%", ""))
                     except ValueError:
                         pct = 0
-                    bg = "#FFCDD2" if pct >= 80 else "#FFF9C4" if pct >= 50 else "#C8E6C9"
+                    bg = "#FDE8F3" if pct >= 80 else "#FEF3D0" if pct >= 50 else "#EDF7D6"
                     return ["", f"background-color: {bg}", "", f"background-color: {bg}"]
 
                 st.dataframe(
@@ -362,11 +403,15 @@ with tabs[0]:
         else:
             st.success("✅ No hay indicadores pendientes de reporte.")
 
-    st.markdown("---")
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB 1 — CONSOLIDADO (tabla de todos los indicadores únicos)
+# ─────────────────────────────────────────────────────────────────────────────
+with tabs[1]:
+    COL_ESTADO = "Estado del indicador"
+    COL_REP    = "Reportado"
 
-    # ── Tabla consolidada ─────────────────────────────────────────────────────
-    st.markdown("#### Tabla Consolidada (todos los indicadores únicos)")
-    cols_mostrar = _cols_pres(df_con, COLS_DESC) or list(df_con.columns)[:10]
+    st.markdown("### Tabla Consolidada")
+    cols_mostrar = _cols_pres(df_con, COLS_DESC_CON) or list(df_con.columns)[:10]
     df_tabla_con = df_con[cols_mostrar].copy()
     st.dataframe(
         df_tabla_con.style.apply(_estilo_estado, axis=1),
@@ -381,9 +426,9 @@ with tabs[0]:
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TABS DE PERIODICIDAD
+# TABS DE PERIODICIDAD (inician en tabs[2])
 # ─────────────────────────────────────────────────────────────────────────────
-for tab_idx, perio in enumerate(perios, 1):
+for tab_idx, perio in enumerate(perios, 2):
     nombre_p = perio["nombre"]
     df_p     = perio["df"]
     cols_p   = perio["cols_periodo"]
@@ -411,15 +456,19 @@ for tab_idx, perio in enumerate(perios, 1):
         with kc4: st.metric("% Reporte", f"{pct_rep_p}%",
                             delta_color="normal" if pct_rep_p >= 80 else "inverse")
 
-        # Gráfico por proceso
+        # Gráfico por proceso (ordenado descendente)
         col_proc_p = next((c for c in df_p.columns if c.lower() == "proceso"), None)
         if col_proc_p and COL_E in df_p.columns:
             proc_p = (
                 df_p.groupby(col_proc_p)[COL_E]
                 .value_counts().unstack(fill_value=0).reset_index()
             )
+            proc_p["_t"] = proc_p.drop(columns=[col_proc_p]).sum(axis=1)
+            proc_p = proc_p.sort_values("_t", ascending=False).drop(columns="_t")
+
             fig_pg = go.Figure()
-            for est, color in [("Reportado", "#2E7D32"), ("Pendiente de reporte", "#F57F17")]:
+            for est, color in [("Reportado", CORP["reportado"]),
+                                ("Pendiente de reporte", CORP["pendiente"])]:
                 if est in proc_p.columns:
                     fig_pg.add_trace(go.Bar(
                         x=proc_p[col_proc_p], y=proc_p[est],
@@ -428,7 +477,9 @@ for tab_idx, perio in enumerate(perios, 1):
                     ))
             fig_pg.update_layout(
                 barmode="stack", height=280,
-                xaxis=dict(title="Proceso", tickangle=-30),
+                xaxis=dict(title="Proceso", tickangle=-30,
+                           categoryorder="array",
+                           categoryarray=proc_p[col_proc_p].tolist()),
                 yaxis_title="Indicadores",
                 plot_bgcolor="white", paper_bgcolor="white",
                 legend=dict(orientation="h", y=-0.35),
