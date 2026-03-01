@@ -129,6 +129,80 @@ def cargar_ficha_tecnica() -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=300, show_spinner="Cargando reporte de seguimiento...")
+def cargar_seguimiento_reporte() -> dict:
+    """
+    Carga Seguimiento_Reporte.xlsx (generado por generar_reporte.py).
+
+    Retorna dict con:
+      "seguimiento"  : DataFrame hoja Seguimiento (Revisar==1 ya filtrado)
+      "resumen"      : DataFrame hoja Resumen
+      "periodicidades": dict {nombre_hoja: DataFrame} por cada hoja de periodicidad
+                        (Revisar==1 filtrado, col. de período como strings dd/mm/yyyy)
+    """
+    from datetime import datetime
+
+    path = DATA_RAW / "Seguimiento_Reporte.xlsx"
+    if not path.exists():
+        return {}
+
+    xl = pd.ExcelFile(path, engine="openpyxl")
+    hojas = xl.sheet_names
+
+    resultado = {"seguimiento": pd.DataFrame(), "resumen": pd.DataFrame(), "periodicidades": {}}
+
+    # ── Hoja Seguimiento ──────────────────────────────────────────────────────
+    if "Seguimiento" in hojas:
+        df_seg = xl.parse("Seguimiento")
+        df_seg.columns = [str(c).strip() for c in df_seg.columns]
+        if "Revisar" in df_seg.columns:
+            df_seg["Revisar"] = pd.to_numeric(df_seg["Revisar"], errors="coerce").fillna(0)
+            df_seg = df_seg[df_seg["Revisar"] == 1].reset_index(drop=True)
+        if "Id" in df_seg.columns:
+            df_seg["Id"] = df_seg["Id"].apply(_id_a_str)
+        resultado["seguimiento"] = df_seg
+
+    # ── Hoja Resumen ──────────────────────────────────────────────────────────
+    if "Resumen" in hojas:
+        df_res = xl.parse("Resumen")
+        df_res.columns = [str(c).strip() for c in df_res.columns]
+        resultado["resumen"] = df_res
+
+    # ── Hojas de periodicidad ─────────────────────────────────────────────────
+    CORTE = datetime(2024, 1, 1)
+    hojas_perio = [h for h in hojas if h not in ("Seguimiento", "Resumen")]
+
+    for hoja in hojas_perio:
+        df_p = xl.parse(hoja)
+        df_p.columns = [str(c).strip() for c in df_p.columns]
+
+        # Filtrar Revisar==1
+        if "Revisar" in df_p.columns:
+            df_p["Revisar"] = pd.to_numeric(df_p["Revisar"], errors="coerce").fillna(0)
+            df_p = df_p[df_p["Revisar"] == 1].reset_index(drop=True)
+
+        if "Id" in df_p.columns:
+            df_p["Id"] = df_p["Id"].apply(_id_a_str)
+
+        # Identificar columnas de período (formato dd/mm/yyyy) y filtrar desde 2024
+        cols_fecha = []
+        for col in df_p.columns:
+            try:
+                d = datetime.strptime(str(col), "%d/%m/%Y")
+                if d >= CORTE:
+                    cols_fecha.append(col)
+            except ValueError:
+                pass
+
+        # Ordenar fechas ascendente
+        cols_fecha_ord = sorted(cols_fecha, key=lambda c: datetime.strptime(c, "%d/%m/%Y"))
+
+        df_p.attrs["cols_periodo"] = cols_fecha_ord
+        resultado["periodicidades"][hoja] = df_p
+
+    return resultado
+
+
 def construir_opciones_indicadores(df: pd.DataFrame) -> dict:
     """
     Retorna dict {label: id_str} con etiquetas "Id — Nombre" únicas.

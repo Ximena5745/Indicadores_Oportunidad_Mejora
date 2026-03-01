@@ -2,6 +2,9 @@
   "permissions": {
     "additionalDirectories": [
       "c:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora\\data"
+    ],
+    "allow": [
+      "Bash(python -c \":*)"
     ]
   }
 }
