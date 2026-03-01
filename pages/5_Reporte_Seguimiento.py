@@ -83,31 +83,22 @@ def _estilo_estado(row):
 def _cargar_datos() -> dict:
     """
     Retorna dict:
-      seguimiento   : DataFrame (Revisar==1)
+      consolidado   : DataFrame combinado de todas las periodicidades
+                      (tiene Estado del indicador + Reportado, sin columnas de período)
       resumen       : DataFrame hoja Resumen
       periodicidades: list de dict {nombre, df, cols_periodo}
+                      (df deduplicado por Id, tiene Estado + período + Reportado)
     """
     if not _RUTA_XLSX.exists():
         return {}
 
-    xl = pd.ExcelFile(str(_RUTA_XLSX), engine="openpyxl")
+    xl    = pd.ExcelFile(str(_RUTA_XLSX), engine="openpyxl")
     hojas = xl.sheet_names
-    out = {
-        "seguimiento":    pd.DataFrame(),
-        "resumen":        pd.DataFrame(),
-        "periodicidades": [],
-    }
+    out   = {"consolidado": pd.DataFrame(), "resumen": pd.DataFrame(), "periodicidades": []}
 
-    # Hoja Seguimiento
-    if "Seguimiento" in hojas:
-        df = xl.parse("Seguimiento")
-        df.columns = [str(c).strip() for c in df.columns]
-        if "Revisar" in df.columns:
-            df["Revisar"] = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
-            df = df[df["Revisar"] == 1].reset_index(drop=True)
-        if "Id" in df.columns:
-            df["Id"] = df["Id"].apply(_id_limpio)
-        out["seguimiento"] = df
+    # Columnas descriptivas a conservar para el consolidado
+    COLS_MANTENER = ["Id", "Indicador", "Proceso", "Subproceso", "Tipo", "Sentido",
+                     "Periodicidad", "Estado del indicador", "Reportado", "Revisar"]
 
     # Hoja Resumen
     if "Resumen" in hojas:
@@ -116,18 +107,37 @@ def _cargar_datos() -> dict:
         out["resumen"] = df
 
     # Hojas de periodicidad
+    trozos_consolidado = []
     for hoja in hojas:
         if hoja in ("Seguimiento", "Resumen"):
             continue
+
         df = xl.parse(hoja)
         df.columns = [str(c).strip() for c in df.columns]
+
+        # Filtrar Revisar == 1 y deduplicar por Id (elimina duplicados reales)
         if "Revisar" in df.columns:
-            df["Revisar"] = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
-            df = df[df["Revisar"] == 1].reset_index(drop=True)
+            revisar = pd.to_numeric(df["Revisar"], errors="coerce").fillna(0)
+            df = df[revisar == 1].copy()
         if "Id" in df.columns:
             df["Id"] = df["Id"].apply(_id_limpio)
+            df = df.drop_duplicates(subset="Id", keep="first").reset_index(drop=True)
+
+        # Identificar columnas de período desde 2024
         cols_p = _cols_periodo_desde_2024(df.columns)
+
         out["periodicidades"].append({"nombre": hoja, "df": df, "cols_periodo": cols_p})
+
+        # Acumular solo columnas descriptivas para el consolidado
+        cols_desc = [c for c in COLS_MANTENER if c in df.columns]
+        trozos_consolidado.append(df[cols_desc].copy())
+
+    # Construir consolidado combinando todas las periodicidades
+    if trozos_consolidado:
+        df_con = pd.concat(trozos_consolidado, ignore_index=True)
+        if "Id" in df_con.columns:
+            df_con = df_con.drop_duplicates(subset="Id", keep="first").reset_index(drop=True)
+        out["consolidado"] = df_con
 
     return out
 
@@ -144,12 +154,12 @@ if not datos:
     )
     st.stop()
 
-df_seg = datos["seguimiento"]
+df_con = datos["consolidado"]   # combinado de periodicidades: tiene Estado del indicador
 df_res = datos["resumen"]
 perios = datos["periodicidades"]
 
-if df_seg.empty:
-    st.error("La hoja 'Seguimiento' no contiene indicadores con Revisar = 1.")
+if df_con.empty and not perios:
+    st.error("No se encontraron hojas de periodicidad con indicadores (Revisar = 1).")
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -171,12 +181,12 @@ tabs = st.tabs(nombres_tabs)
 with tabs[0]:
     COL_ESTADO = "Estado del indicador"
     COL_REP    = "Reportado"
-    col_proc   = next((c for c in df_seg.columns if c.lower() == "proceso"), None)
+    col_proc   = next((c for c in df_con.columns if c.lower() == "proceso"), None)
 
-    total        = len(df_seg)
-    n_reportados = int((df_seg[COL_ESTADO] == "Reportado").sum())            if COL_ESTADO in df_seg.columns else 0
-    n_pendientes = int((df_seg[COL_ESTADO] == "Pendiente de reporte").sum()) if COL_ESTADO in df_seg.columns else 0
-    n_rep_hoy    = int((df_seg[COL_REP].isin(["Sí", "Si"])).sum())           if COL_REP    in df_seg.columns else 0
+    total        = len(df_con)
+    n_reportados = int((df_con[COL_ESTADO] == "Reportado").sum())            if COL_ESTADO in df_con.columns else 0
+    n_pendientes = int((df_con[COL_ESTADO] == "Pendiente de reporte").sum()) if COL_ESTADO in df_con.columns else 0
+    n_rep_hoy    = int((df_con[COL_REP].isin(["Sí", "Si"])).sum())           if COL_REP    in df_con.columns else 0
     pct_rep      = round(n_rep_hoy / total * 100, 1) if total else 0
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
@@ -231,10 +241,10 @@ with tabs[0]:
         st.markdown("")
 
     # ── Por Proceso ───────────────────────────────────────────────────────────
-    if col_proc and COL_ESTADO in df_seg.columns:
+    if col_proc and COL_ESTADO in df_con.columns:
         st.markdown("#### Por Proceso")
         proc_stats = (
-            df_seg.groupby(col_proc)[COL_ESTADO]
+            df_con.groupby(col_proc)[COL_ESTADO]
             .value_counts().unstack(fill_value=0).reset_index()
         )
         proc_stats["_t"] = proc_stats.drop(columns=[col_proc]).sum(axis=1)
@@ -279,8 +289,8 @@ with tabs[0]:
     st.markdown("---")
 
     # ── 🚨 Ranking procesos sin reporte ───────────────────────────────────────
-    if col_proc and COL_ESTADO in df_seg.columns:
-        df_pen = df_seg[df_seg[COL_ESTADO] == "Pendiente de reporte"]
+    if col_proc and COL_ESTADO in df_con.columns:
+        df_pen = df_con[df_con[COL_ESTADO] == "Pendiente de reporte"]
 
         if not df_pen.empty:
             st.markdown("#### 🚨 Procesos con más indicadores sin reporte")
@@ -289,7 +299,7 @@ with tabs[0]:
                 .reset_index(name="Sin reporte")
                 .sort_values("Sin reporte", ascending=False)
             )
-            tot_p   = df_seg.groupby(col_proc).size().reset_index(name="Total")
+            tot_p   = df_con.groupby(col_proc).size().reset_index(name="Total")
             ranking = ranking.merge(tot_p, on=col_proc, how="left")
             ranking["% Sin reporte"] = (ranking["Sin reporte"] / ranking["Total"] * 100).round(1)
 
@@ -356,8 +366,8 @@ with tabs[0]:
 
     # ── Tabla consolidada ─────────────────────────────────────────────────────
     st.markdown("#### Tabla Consolidada (todos los indicadores únicos)")
-    cols_mostrar = _cols_pres(df_seg, COLS_DESC) or list(df_seg.columns)[:10]
-    df_tabla_con = df_seg[cols_mostrar].copy()
+    cols_mostrar = _cols_pres(df_con, COLS_DESC) or list(df_con.columns)[:10]
+    df_tabla_con = df_con[cols_mostrar].copy()
     st.dataframe(
         df_tabla_con.style.apply(_estilo_estado, axis=1),
         use_container_width=True, hide_index=True,
