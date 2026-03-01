@@ -351,6 +351,7 @@ def _fig_barras_nivel(df, col_cat):
         fig.add_trace(go.Bar(
             y=cats, x=vals, orientation="h", name=nivel,
             marker_color=_NIVEL_COLOR.get(nivel, "#BDBDBD"),
+            customdata=[nivel] * len(cats),
             text=[v if v > 0 else "" for v in vals],
             textposition="inside", insidetextanchor="middle",
             textfont=dict(size=10, color="white"),
@@ -513,79 +514,112 @@ with tab_res:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB CONSOLIDADO — Cascada interactiva + todos los filtros + tabla
+# TAB CONSOLIDADO — Dos gráficas lado a lado + tabla abajo
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_con:
     st.markdown("### Vista Consolidada")
+    st.caption("💡 Clic en un segmento de color para filtrar por Nivel de cumplimiento y categoría.")
 
-    _KEY_V = "rc_con_vicerr"
-    _KEY_P = "rc_con_proc"
+    _KEY_V     = "rc_con_vicerr"
+    _KEY_V_NIV = "rc_con_vicerr_niv"
+    _KEY_P     = "rc_con_proc"
+    _KEY_P_NIV = "rc_con_proc_niv"
 
-    # ── Gráfico Vicerrectoría → filtra Proceso + tabla ───────────────────────
-    if "Vicerrectoria" in df_raw.columns:
+    # ── Dos gráficas lado a lado ──────────────────────────────────────────────
+    col_v, col_p = st.columns(2)
+
+    # ── Izquierda: Vicerrectoría ──────────────────────────────────────────────
+    with col_v:
         st.markdown("#### Por Vicerrectoría")
-        st.caption("💡 Clic en una barra para filtrar el gráfico de Proceso y la tabla.")
+        if "Vicerrectoria" in df_raw.columns:
+            ev_cv = st.plotly_chart(
+                _fig_barras_nivel(df_raw, "Vicerrectoria"),
+                use_container_width=True,
+                on_select="rerun", key="con_vicerr_chart",
+            )
+            if ev_cv.selection and ev_cv.selection.get("points"):
+                pt = ev_cv.selection["points"][0]
+                st.session_state[_KEY_V]     = pt.get("y")
+                st.session_state[_KEY_V_NIV] = pt.get("customdata")
+                st.session_state[_KEY_P]     = None
+                st.session_state[_KEY_P_NIV] = None
 
-        ev_cv = st.plotly_chart(_fig_barras_nivel(df_raw, "Vicerrectoria"),
-                                use_container_width=True,
-                                on_select="rerun", key="con_vicerr_chart")
-
-        if ev_cv.selection and ev_cv.selection.get("points"):
-            clicked_v = ev_cv.selection["points"][0].get("y")
-            if clicked_v != st.session_state.get(_KEY_V):
-                st.session_state[_KEY_V] = clicked_v
-                st.session_state[_KEY_P] = None
-                st.rerun()
-
-        sel_v = st.session_state.get(_KEY_V)
-        if sel_v:
+        sel_v     = st.session_state.get(_KEY_V)
+        sel_v_niv = st.session_state.get(_KEY_V_NIV)
+        if sel_v or sel_v_niv:
+            parts = []
+            if sel_v:     parts.append(f"**{sel_v}**")
+            if sel_v_niv: parts.append(f"*{sel_v_niv}*")
             hv1, hv2 = st.columns([7, 1])
             with hv1:
-                st.info(f"📊 Vicerrectoría: **{sel_v}**")
+                st.info(f"Filtro: {' · '.join(parts)}")
             with hv2:
-                if st.button("✖ Todos", key="con_clear_vicerr"):
-                    st.session_state[_KEY_V] = None
-                    st.session_state[_KEY_P] = None
+                if st.button("✖", key="con_clear_v"):
+                    st.session_state[_KEY_V]     = None
+                    st.session_state[_KEY_V_NIV] = None
+                    st.session_state[_KEY_P]     = None
+                    st.session_state[_KEY_P_NIV] = None
                     st.rerun()
-        st.markdown("---")
 
-    sel_v = st.session_state.get(_KEY_V)
-    df_por_vicerr = df_raw[df_raw["Vicerrectoria"] == sel_v].copy() \
-                    if sel_v and "Vicerrectoria" in df_raw.columns else df_raw.copy()
+    # ── Filtrar datos según selección de Vicerrectoría ────────────────────────
+    sel_v     = st.session_state.get(_KEY_V)
+    sel_v_niv = st.session_state.get(_KEY_V_NIV)
+    df_por_vicerr = df_raw.copy()
+    if sel_v and "Vicerrectoria" in df_por_vicerr.columns:
+        df_por_vicerr = df_por_vicerr[df_por_vicerr["Vicerrectoria"] == sel_v]
+    if sel_v_niv:
+        df_por_vicerr = df_por_vicerr[df_por_vicerr["Nivel de cumplimiento"] == sel_v_niv]
 
-    # ── Gráfico Proceso → filtra tabla ───────────────────────────────────────
-    if "Proceso" in df_por_vicerr.columns:
+    # ── Derecha: Proceso (filtrado por selección de Vicerrectoría) ───────────
+    with col_p:
         st.markdown("#### Por Proceso")
-        st.caption("💡 Clic en una barra para filtrar la tabla.")
+        if "Proceso" in df_por_vicerr.columns:
+            ev_cp = st.plotly_chart(
+                _fig_barras_nivel(df_por_vicerr, "Proceso"),
+                use_container_width=True,
+                on_select="rerun", key="con_proc_chart",
+            )
+            if ev_cp.selection and ev_cp.selection.get("points"):
+                pt = ev_cp.selection["points"][0]
+                st.session_state[_KEY_P]     = pt.get("y")
+                st.session_state[_KEY_P_NIV] = pt.get("customdata")
 
-        ev_cp = st.plotly_chart(_fig_barras_nivel(df_por_vicerr, "Proceso"),
-                                use_container_width=True,
-                                on_select="rerun", key="con_proc_chart")
-
-        if ev_cp.selection and ev_cp.selection.get("points"):
-            clicked_p = ev_cp.selection["points"][0].get("y")
-            if clicked_p != st.session_state.get(_KEY_P):
-                st.session_state[_KEY_P] = clicked_p
-                st.rerun()
-
-        sel_p = st.session_state.get(_KEY_P)
-        if sel_p:
+        sel_p     = st.session_state.get(_KEY_P)
+        sel_p_niv = st.session_state.get(_KEY_P_NIV)
+        if sel_p or sel_p_niv:
+            parts = []
+            if sel_p:     parts.append(f"**{sel_p}**")
+            if sel_p_niv: parts.append(f"*{sel_p_niv}*")
             hp1, hp2 = st.columns([7, 1])
             with hp1:
-                st.info(f"📊 Proceso: **{sel_p}**")
+                st.info(f"Filtro: {' · '.join(parts)}")
             with hp2:
-                if st.button("✖ Todos", key="con_clear_proc"):
-                    st.session_state[_KEY_P] = None
+                if st.button("✖", key="con_clear_p"):
+                    st.session_state[_KEY_P]     = None
+                    st.session_state[_KEY_P_NIV] = None
                     st.rerun()
-        st.markdown("---")
 
-    sel_p = st.session_state.get(_KEY_P)
-    df_por_proc = df_por_vicerr[df_por_vicerr["Proceso"] == sel_p].copy() \
-                  if sel_p and "Proceso" in df_por_vicerr.columns else df_por_vicerr
+    st.markdown("---")
+
+    # ── Aplicar todos los filtros de gráficas a la tabla ─────────────────────
+    sel_v     = st.session_state.get(_KEY_V)
+    sel_v_niv = st.session_state.get(_KEY_V_NIV)
+    sel_p     = st.session_state.get(_KEY_P)
+    sel_p_niv = st.session_state.get(_KEY_P_NIV)
+
+    df_chart_filt = df_raw.copy()
+    if sel_v and "Vicerrectoria" in df_chart_filt.columns:
+        df_chart_filt = df_chart_filt[df_chart_filt["Vicerrectoria"] == sel_v]
+    if sel_v_niv:
+        df_chart_filt = df_chart_filt[df_chart_filt["Nivel de cumplimiento"] == sel_v_niv]
+    if sel_p and "Proceso" in df_chart_filt.columns:
+        df_chart_filt = df_chart_filt[df_chart_filt["Proceso"] == sel_p]
+    if sel_p_niv:
+        df_chart_filt = df_chart_filt[df_chart_filt["Nivel de cumplimiento"] == sel_p_niv]
 
     # ── Filtros UI ─────────────────────────────────────────────────────────────
     f_id, f_nom, f_vicerr_ui, f_proc_ui, f_sub, f_niv = _filtros_ui(df_raw, "con")
-    df_tabla = _aplicar_filtros(df_por_proc, f_id, f_nom, f_vicerr_ui, f_proc_ui, f_sub, f_niv)
+    df_tabla = _aplicar_filtros(df_chart_filt, f_id, f_nom, f_vicerr_ui, f_proc_ui, f_sub, f_niv)
 
     st.caption(f"Mostrando **{len(df_tabla)}** de **{total}** indicadores")
     st.markdown("---")
