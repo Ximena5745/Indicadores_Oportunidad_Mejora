@@ -129,6 +129,133 @@ def cargar_ficha_tecnica() -> pd.DataFrame:
     return df
 
 
+def _leer_excel(path: Path, header: int = 0) -> pd.DataFrame:
+    """
+    Lee un archivo Excel (.xlsx preferido, .xls como fallback con xlrd).
+    Si la ruta apunta a .xls pero existe la versión .xlsx, usa la .xlsx.
+    """
+    # Preferir .xlsx si existe
+    xlsx = path.with_suffix(".xlsx")
+    if path.suffix.lower() == ".xls" and xlsx.exists():
+        path = xlsx
+
+    ext = path.suffix.lower()
+    if ext == ".xlsx":
+        return pd.read_excel(str(path), header=header, engine="openpyxl")
+    # Fallback .xls → requiere xlrd
+    return pd.read_excel(str(path), header=header, engine="xlrd")
+
+
+@st.cache_data(ttl=300, show_spinner="Cargando Oportunidades de Mejora...")
+def cargar_om() -> pd.DataFrame:
+    """
+    Carga OM.xlsx (preferido) o OM.xls.
+    · OM.xlsx (convertido): encabezados ya en fila 1 → header=0
+    · OM.xls  (original):   encabezados en fila 8   → header=7
+    """
+    xlsx = DATA_RAW / "OM.xlsx"
+    xls  = DATA_RAW / "OM.xls"
+
+    if xlsx.exists():
+        path, header = xlsx, 0
+    elif xls.exists():
+        path, header = xls, 7
+    else:
+        return pd.DataFrame()
+
+    try:
+        engine = "openpyxl" if path.suffix.lower() == ".xlsx" else "xlrd"
+        df = pd.read_excel(str(path), header=header, engine=engine)
+    except Exception as e:
+        st.error(f"Error leyendo {path.name}: {e}")
+        return pd.DataFrame()
+
+    df.columns = [str(c).strip() for c in df.columns]
+    df = df.dropna(how="all").reset_index(drop=True)
+
+    # Eliminar filas sin Id
+    if "Id" in df.columns:
+        df = df[df["Id"].notna() & (df["Id"].astype(str).str.strip() != "")].reset_index(drop=True)
+        df["Id"] = df["Id"].apply(_id_a_str)
+
+    # Fechas
+    for col in ["Fecha de identificación", "Fecha de creación",
+                "Fecha estimada de cierre", "Fecha real de cierre"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    # Avance: normalizar a escala 0-100
+    col_av = next((c for c in df.columns if "avance" in c.lower()), None)
+    if col_av:
+        df[col_av] = pd.to_numeric(df[col_av], errors="coerce")
+        mask = df[col_av].notna()
+        if mask.any() and df.loc[mask, col_av].max() <= 1.5:
+            df[col_av] = df[col_av] * 100
+
+    return df
+
+
+@st.cache_data(ttl=300, show_spinner="Cargando Plan de Acción...")
+def cargar_plan_accion() -> pd.DataFrame:
+    """
+    Consolida todos los archivos de data/raw/Plan de accion/.
+    Prioriza .xlsx sobre .xls (mismo nombre base).
+    """
+    folder = DATA_RAW / "Plan de accion"
+    if not folder.exists():
+        return pd.DataFrame()
+
+    # Construir lista sin duplicados: si existe .xlsx, omitir el .xls homónimo
+    xlsx_stems = {p.stem for p in folder.glob("*.xlsx")}
+    archivos = []
+    for p in sorted(folder.iterdir()):
+        ext = p.suffix.lower()
+        if ext == ".xlsx":
+            archivos.append(p)
+        elif ext == ".xls" and p.stem not in xlsx_stems:
+            archivos.append(p)
+
+    frames = []
+    for p in archivos:
+        try:
+            engine = "openpyxl" if p.suffix.lower() == ".xlsx" else "xlrd"
+            df = pd.read_excel(str(p), engine=engine)
+            df.columns = [str(c).strip() for c in df.columns]
+            df = df.dropna(how="all").reset_index(drop=True)
+            frames.append(df)
+        except Exception:
+            pass
+
+    if not frames:
+        return pd.DataFrame()
+
+    df_all = pd.concat(frames, ignore_index=True)
+
+    # Fechas
+    for col in df_all.columns:
+        low = col.lower()
+        if any(kw in low for kw in ["fecha", "ejecuci", "seguimiento", "evaluaci"]):
+            try:
+                df_all[col] = pd.to_datetime(df_all[col], errors="coerce")
+            except Exception:
+                pass
+
+    # Avance 0-100
+    col_av = next((c for c in df_all.columns if "avance" in c.lower()), None)
+    if col_av:
+        df_all[col_av] = pd.to_numeric(df_all[col_av], errors="coerce")
+        mask = df_all[col_av].notna()
+        if mask.any() and df_all.loc[mask, col_av].max() <= 1.5:
+            df_all[col_av] = df_all[col_av] * 100
+
+    # Id Oportunidad de mejora como string
+    for col in df_all.columns:
+        if "id oportunidad" in col.lower():
+            df_all[col] = df_all[col].apply(_id_a_str)
+
+    return df_all
+
+
 def df_indicadores_unicos(df: pd.DataFrame) -> pd.DataFrame:
     """
     Retorna solo las filas que representan indicadores únicos.
