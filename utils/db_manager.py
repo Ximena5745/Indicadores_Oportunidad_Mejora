@@ -230,5 +230,26 @@ def _leer_postgres(anio):
     return [dict(r) for r in rows]
 
 
+def registros_om_como_dict(anio: int = None) -> dict:
+    """
+    Retorna {id_indicador: {"tiene_om": bool, "numero_om": str, "periodo": str, "comentario": str}}
+    Útil para cruzar con tabla de indicadores en otros módulos.
+    Si un indicador tiene múltiples registros (distintos períodos), conserva el más reciente.
+    """
+    registros = leer_registros_om(anio=anio)
+    result = {}
+    for r in registros:
+        iid = r["id_indicador"]
+        if iid not in result:  # leer_registros_om ordena DESC → primer registro = más reciente
+            result[iid] = {
+                "tiene_om":   bool(r.get("tiene_om", 0)),
+                "numero_om":  r.get("numero_om", ""),
+                "periodo":    r.get("periodo", ""),
+                "comentario": r.get("comentario", ""),
+                "anio":       r.get("anio", ""),
+            }
+    return result
+
+
 # Inicializar al importar
 inicializar_db()

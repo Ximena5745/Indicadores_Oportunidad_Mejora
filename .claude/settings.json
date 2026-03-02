@@ -1,10 +1,11 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(python -:*)"
+    ],
     "additionalDirectories": [
       "c:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora\\data"
-    ],
-    "allow": [
-      "Bash(python -c \":*)"
     ]
   }
 }
