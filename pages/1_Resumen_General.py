@@ -102,11 +102,12 @@ def _to_num(v):
 
 def _nivel(row) -> str:
     """Determina el nivel de cumplimiento del indicador."""
-    resultado = str(row.get("Resultado", "")).strip().upper() if "Resultado" in row else ""
-    
-    if resultado in ("N/A", "NA", "NO APLICA", "NO", ""):
-        return _NO_APLICA
-    
+    # Solo bloquear si la columna existe y tiene un valor explícito de no aplica
+    if "Resultado" in row:
+        resultado = str(row.get("Resultado", "")).strip().upper()
+        if resultado in ("N/A", "NA", "NO APLICA", "NO"):
+            return _NO_APLICA
+
     c = _to_num(row.get("cumplimiento", ""))
     if c is None:
         return _PEND
@@ -259,27 +260,23 @@ def _cargar_consolidados() -> pd.DataFrame:
     
     if "fecha" in df.columns:
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+        # Derivar Anio desde Fecha para evitar dependencia de fórmulas Excel cacheadas
+        df["Anio"] = df["fecha"].dt.year
     
-    # Primero calcular cumplimiento desde Ejecución y Meta
-    if "Ejecucion" in df.columns and "Meta" in df.columns:
-        df["cumplimiento"] = df.apply(
-            lambda r: r["Ejecucion"] / r["Meta"] 
-            if pd.notna(r["Ejecucion"]) and pd.notna(r["Meta"]) and r["Meta"] != 0 
-            else None, 
-            axis=1
-        )
-    
-    # Sobrescribir con Cumplimiento Real si tiene más valores válidos
-    if "Cumplimiento Real" in df.columns:
-        mask_real = df["Cumplimiento Real"].notna()
-        mask_cum = df["cumplimiento"].isna()
-        df.loc[mask_real & mask_cum, "cumplimiento"] = df.loc[mask_real & mask_cum, "Cumplimiento Real"]
-    
-    # Sobrescribir con Cumplimiento si tiene más valores válidos
-    if "Cumplimiento" in df.columns:
-        mask_cum = df["Cumplimiento"].notna()
-        mask_null = df["cumplimiento"].isna()
-        df.loc[mask_cum & mask_null, "cumplimiento"] = df.loc[mask_cum & mask_null, "Cumplimiento"]
+    # Usar siempre los valores de la fórmula Excel (ya renombrados por col_renames)
+    if "cumplimiento" in df.columns:
+        df["cumplimiento"] = pd.to_numeric(df["cumplimiento"], errors="coerce")
+    else:
+        df["cumplimiento"] = None
+
+    if "cumplimiento_real" in df.columns:
+        df["cumplimiento_real"] = pd.to_numeric(df["cumplimiento_real"], errors="coerce")
+    else:
+        df["cumplimiento_real"] = None
+
+    # Si cumplimiento está vacío, rellenar desde cumplimiento_real
+    mask_fill = df["cumplimiento"].isna() & df["cumplimiento_real"].notna()
+    df.loc[mask_fill, "cumplimiento"] = df.loc[mask_fill, "cumplimiento_real"]
     
     return df
 
