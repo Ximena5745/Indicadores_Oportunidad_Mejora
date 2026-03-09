@@ -6,7 +6,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="repla
 """
 generar_reporte.py
 ==================
-Procesa 'lmi_reporte.xls' (descargado de plataforma externa) y genera
+Procesa 'lmi_reporte.xlsx' (descargado de plataforma externa) y genera
 'Seguimiento_Reporte.xlsx' con:
 
   1. Hoja "Seguimiento"  -> copia completa + columna "Revisar"
@@ -17,7 +17,7 @@ Procesa 'lmi_reporte.xls' (descargado de plataforma externa) y genera
 
 CONFIGURACIÓN
 ─────────────
-  RUTA_ORIGEN      : ruta al archivo fuente .xls
+  RUTA_ORIGEN      : ruta al archivo fuente .xlsx
   RUTA_SALIDA      : ruta de salida .xlsx
   COLUMNA_REVISAR  : columna usada para detectar inicio de nuevo indicador
   FECHA_REFERENCIA : fecha de corte; el Periodo 1 se asigna al período más
@@ -26,8 +26,8 @@ CONFIGURACIÓN
 
 import os
 from datetime import date, timedelta
+from typing import Optional  # Compatible con Python < 3.10
 
-import xlrd
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -36,48 +36,39 @@ from openpyxl.utils import get_column_letter
 # ── Configuración ──────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-RUTA_ORIGEN = os.path.join(BASE_DIR, "data", "raw", "lmi_reporte.xls")
+RUTA_ORIGEN = os.path.join(BASE_DIR, "data", "raw", "lmi_reporte.xlsx")
 RUTA_SALIDA = os.path.join(BASE_DIR, "data", "raw", "Seguimiento_Reporte.xlsx")
 
 # Archivo de respaldo Kawak (puede no existir; se omite sin error si falta).
 RUTA_KAWAK  = os.path.join(BASE_DIR, "data", "raw", "indicadores_kawak.xlsx")
 
 # Nombres de columnas en indicadores_kawak.xlsx
-# (el script los busca también por variantes comunes si no coinciden exactamente).
-KAWAK_COL_ID     = "Id"          # columna que identifica el indicador
-KAWAK_COL_FECHA  = "Fecha"       # columna de fecha / período
-KAWAK_COL_RESULT = "Resultado"   # columna de valor / resultado
+KAWAK_COL_ID     = "Id"
+KAWAK_COL_FECHA  = "Fecha"
+KAWAK_COL_RESULT = "Resultado"
 
 # Columna cuyo cambio entre filas consecutivas marca un nuevo indicador único.
-# Cambiar si la columna clave de la fuente tuviera otro nombre.
 COLUMNA_REVISAR = "Id"
 
-# Fecha de corte del reporte: el Periodo 1 corresponde al período cerrado
-# más reciente ≤ esta fecha según la periodicidad del indicador.
-# Ajustar antes de ejecutar si el reporte es de un período diferente.
+# Fecha de corte del reporte.
 FECHA_REFERENCIA = date(2025, 12, 31)
 
 # ── Paleta de colores ──────────────────────────────────────────────────────────
-C_HEADER    = "1F4E79"   # Azul institucional oscuro
-C_SI        = "C6EFCE"   # Verde claro -> Sí / Reportado
-C_NO        = "FFCCCC"   # Rojo claro  -> No
-C_PENDIENTE = "FFEB9C"   # Amarillo    -> Pendiente de reporte
-C_REVISAR1  = "DDEEFF"   # Azul suave  -> Revisar = 1 (nuevo indicador)
+C_HEADER    = "1F4E79"
+C_SI        = "C6EFCE"
+C_NO        = "FFCCCC"
+C_PENDIENTE = "FFEB9C"
+C_REVISAR1  = "DDEEFF"
 
 # ── Fechas de fin de período ───────────────────────────────────────────────────
 
 def _ultimo_dia(year: int, month: int) -> date:
-    """Retorna el último día calendario del mes indicado."""
     if month == 12:
         return date(year, 12, 31)
     return date(year, month + 1, 1) - timedelta(days=1)
 
 
 def _retroceder(year: int, mes_actual: int, meses_ciclo: list) -> tuple:
-    """
-    Dado un mes dentro de meses_ciclo, retorna el mes anterior del ciclo
-    (y el año ajustado si se pasa al año anterior).
-    """
     idx = meses_ciclo.index(mes_actual)
     if idx == 0:
         return year - 1, meses_ciclo[-1]
@@ -85,18 +76,6 @@ def _retroceder(year: int, mes_actual: int, meses_ciclo: list) -> tuple:
 
 
 def get_period_dates(periodicidad: str, n: int = 13) -> list:
-    """
-    Genera `n` fechas de fin de período hacia atrás desde FECHA_REFERENCIA.
-
-    Reglas por periodicidad:
-      Mensual    -> fin de cada mes calendario
-      Bimestral  -> fin de: Feb, Abr, Jun, Ago, Oct, Dic
-      Trimestral -> fin de: Mar, Jun, Sep, Dic
-      Semestral  -> fin de: Jun, Dic
-      Anual      -> 31 de diciembre de cada año
-
-    Returns: list[date]  [0] = más reciente … [n-1] = más antigua
-    """
     ref = FECHA_REFERENCIA
     dates = []
 
@@ -147,41 +126,41 @@ def get_period_dates(periodicidad: str, n: int = 13) -> list:
             dates.append(date(y - i, 12, 31))
 
     else:
-        # Periodicidad desconocida: retorna etiquetas genéricas como None
         dates = [None] * n
 
     return dates
 
 
 # ── Leer archivo fuente ────────────────────────────────────────────────────────
+# CAMBIO: se reemplazó leer_xls (basada en xlrd, solo para .xls legacy)
+# por leer_xlsx usando pandas + openpyxl, compatible con archivos .xlsx actuales.
 
-def leer_xls(ruta: str) -> pd.DataFrame:
+def leer_xlsx(ruta: str) -> pd.DataFrame:
     """
-    Lee lmi_reporte.xls usando xlrd con ignore_workbook_corruption=True
-    (la corrupción OLE2 menor es habitual en reportes exportados desde
-    plataformas web; el contenido de datos está íntegro).
+    Lee lmi_reporte.xlsx usando pandas con motor openpyxl.
+    - keep_default_na=False evita que textos como 'N/A' se conviertan en NaN.
+    - na_values=[""] trata celdas vacías como NaN.
+    - dtype=str carga todo como texto para evitar conversiones automáticas
+      no deseadas (p.ej. Ids numéricos leídos como float).
     """
-    wb = xlrd.open_workbook(
+    df = pd.read_excel(
         ruta,
-        ignore_workbook_corruption=True,
-        encoding_override="cp1252",
+        engine="openpyxl",
+        keep_default_na=False,
+        na_values=[""],
+        dtype=str,          # Leer todo como texto; se limpian tipos después
     )
-    sh = wb.sheets()[0]
-    headers = sh.row_values(0)
-    filas = [sh.row_values(r) for r in range(1, sh.nrows)]
-    return pd.DataFrame(filas, columns=headers)
+    # Limpiar nombres de columna con espacios extra
+    df.columns = [str(c).strip() for c in df.columns]
+    # Reemplazar 'nan' (string) producido por dtype=str en celdas vacías
+    df = df.where(df != "nan", other=None)
+    df = df.where(df != "NaN", other=None)
+    return df
 
 
 # ── Lógica de columnas "Revisar", "Reportado", "Estado" ───────────────────────
 
 def agregar_revisar(df: pd.DataFrame, col: str) -> pd.DataFrame:
-    """
-    Agrega columna 'Revisar' al final del DataFrame.
-
-    Regla:
-      - Fila 1 siempre -> 1
-      - Fila i: 0 si df[col][i] == df[col][i-1], de lo contrario 1
-    """
     df = df.copy()
     valores = df[col].tolist()
     revisar = [1] + [
@@ -193,7 +172,6 @@ def agregar_revisar(df: pd.DataFrame, col: str) -> pd.DataFrame:
 
 
 def _tiene_dato(v) -> bool:
-    """Retorna True si el valor representa un dato real (no vacío ni guión)."""
     if v is None:
         return False
     s = str(v).strip()
@@ -201,7 +179,6 @@ def _tiene_dato(v) -> bool:
 
 
 def _id_normalizar(x) -> str:
-    """Normaliza un Id a string limpio (mismo criterio que data_loader._id_a_str)."""
     if x is None:
         return ""
     try:
@@ -217,10 +194,6 @@ def _id_normalizar(x) -> str:
 
 
 def _tiene_dato_kawak(v) -> bool:
-    """
-    Igual que _tiene_dato pero más robusto ante tipos pandas.
-    N/A (string) SÍ cuenta como dato válido (indicador medido, no aplicable).
-    """
     try:
         if pd.isna(v):
             return False
@@ -230,8 +203,9 @@ def _tiene_dato_kawak(v) -> bool:
     return s not in ("", "-", "nan", "NaN", "None")
 
 
-def _detectar_col(df: pd.DataFrame, candidatos: list) -> str | None:
-    """Devuelve la primera columna que coincida (case-insensitive) con los candidatos."""
+def _detectar_col(df: pd.DataFrame, candidatos: list) -> Optional[str]:
+    # CAMBIO: tipo de retorno usa Optional[str] en vez de str | None
+    # para compatibilidad con Python 3.9 y anteriores.
     col_lower = {c.lower(): c for c in df.columns}
     for cand in candidatos:
         found = col_lower.get(cand.lower())
@@ -241,19 +215,11 @@ def _detectar_col(df: pd.DataFrame, candidatos: list) -> str | None:
 
 
 def leer_kawak(ruta: str) -> dict:
-    """
-    Carga indicadores_kawak.xlsx y construye un diccionario de búsqueda:
-        {(id_str, año, mes): resultado}
-
-    Retorna {} si el archivo no existe o si las columnas requeridas no se encuentran.
-    """
     if not os.path.exists(ruta):
         print(f"    INFO: {ruta} no encontrado — se omite cruce Kawak.")
         return {}
 
     try:
-        # keep_default_na=False evita que "N/A" (texto) se convierta en NaN.
-        # Las celdas vacías siguen siendo NaN (null del motor openpyxl).
         df = pd.read_excel(ruta, engine="openpyxl",
                            keep_default_na=False, na_values=[""])
     except Exception as exc:
@@ -281,18 +247,13 @@ def leer_kawak(ruta: str) -> dict:
         fecha_raw = row[col_fec]
         resultado = row[col_res]
 
-        # Convertir fecha a (año, mes)
         try:
             if isinstance(fecha_raw, (pd.Timestamp, date)):
                 ts = pd.Timestamp(fecha_raw)
             elif isinstance(fecha_raw, (int, float)) and not pd.isna(fecha_raw):
-                # Número de serie de Excel
                 ts = pd.Timestamp("1899-12-30") + pd.Timedelta(days=int(fecha_raw))
             else:
                 ts = pd.Timestamp(str(fecha_raw).strip())
-            # Celda vacía (NaN) = dato no ingresado → no se registra en el lookup.
-            # "N/A" (string, cuando el indicador se calculó como no-aplicable) SÍ
-            # se registra porque keep_default_na=False preservó el texto original.
             if pd.isna(resultado):
                 continue
             lookup[(kid, ts.year, ts.month)] = resultado
@@ -307,16 +268,8 @@ def leer_kawak(ruta: str) -> dict:
 
 
 def enriquecer_desde_kawak(df_p: pd.DataFrame, kawak: dict,
-                            col_p1: str, col_p2: str | None,
+                            col_p1: str, col_p2: Optional[str],  # CAMBIO: Optional[str]
                             fecha_p1, fecha_p2) -> tuple:
-    """
-    Para cada fila con 'Estado del indicador' == 'Pendiente de reporte':
-      - Busca el resultado en el diccionario kawak por (Id, año, mes).
-      - Si existe un dato (incluyendo 'N/A'), lo escribe en la columna de período
-        y recalcula 'Reportado' y 'Estado del indicador'.
-
-    Retorna (df_enriquecido, n_actualizados).
-    """
     if not kawak:
         return df_p, 0
 
@@ -330,21 +283,18 @@ def enriquecer_desde_kawak(df_p: pd.DataFrame, kawak: dict,
         kid      = _id_normalizar(row.get("Id", ""))
         cambiado = False
 
-        # ── Período 1 (más reciente) ──────────────────────────────────────────
         if fecha_p1 and not _tiene_dato(row.get(col_p1, "")):
             res1 = kawak.get((kid, fecha_p1.year, fecha_p1.month))
             if res1 is not None and _tiene_dato_kawak(res1):
                 df_p.at[i, col_p1] = res1
                 cambiado = True
 
-        # ── Período 2 ─────────────────────────────────────────────────────────
         if col_p2 and fecha_p2 and not _tiene_dato(row.get(col_p2, "")):
             res2 = kawak.get((kid, fecha_p2.year, fecha_p2.month))
             if res2 is not None and _tiene_dato_kawak(res2):
                 df_p.at[i, col_p2] = res2
                 cambiado = True
 
-        # ── Recalcular Reportado y Estado si algo cambió ──────────────────────
         if cambiado:
             p1_ok = _tiene_dato(df_p.at[i, col_p1])
             df_p.at[i, "Reportado"]            = "Sí" if p1_ok else "No"
@@ -357,14 +307,8 @@ def enriquecer_desde_kawak(df_p: pd.DataFrame, kawak: dict,
     return df_p, n_act
 
 
-def agregar_columnas_seguimiento(df: pd.DataFrame, col_p1: str, col_p2: str = None) -> pd.DataFrame:
-    """
-    Agrega las columnas 'Reportado' y 'Estado del indicador'.
-
-    Ambas dependen únicamente del período más reciente (col_p1):
-      - "Sí" / "Reportado"          si col_p1 tiene dato
-      - "No" / "Pendiente de reporte" si col_p1 está vacío o es '-'
-    """
+def agregar_columnas_seguimiento(df: pd.DataFrame, col_p1: str,
+                                  col_p2: Optional[str] = None) -> pd.DataFrame:  # CAMBIO
     df = df.copy()
 
     df["Reportado"] = df[col_p1].apply(
@@ -387,42 +331,26 @@ def _estilo_header(cell):
     cell.border = Border(left=borde, right=borde, bottom=borde)
 
 
-def _ancho_columna(ws, col_idx: int, max_ancho: int = 40):
-    letra = get_column_letter(col_idx)
-    ws.column_dimensions[letra].width = min(max_ancho, max(
-        ws.column_dimensions[letra].width, 8
-    ))
-
-
 def escribir_hoja(ws, df: pd.DataFrame, mapa_fechas: dict = None):
-    """
-    Escribe el DataFrame en la hoja de openpyxl.
-
-    mapa_fechas: {nombre_columna_original: date} para renombrar encabezados
-                 de período como 'dd/mm/aaaa'.
-    """
     mapa_fechas = mapa_fechas or {}
 
-    # ── Encabezados
     for ci, col in enumerate(df.columns, 1):
         val = col
         if col in mapa_fechas and mapa_fechas[col] is not None:
             val = mapa_fechas[col].strftime("%d/%m/%Y")
         cell = ws.cell(row=1, column=ci, value=val)
         _estilo_header(cell)
-        # Ancho inicial basado en el nombre del encabezado
         ws.column_dimensions[get_column_letter(ci)].width = max(len(str(val)) + 2, 10)
 
-    # ── Datos fila a fila
     for ri, row in enumerate(df.itertuples(index=False), 2):
         for ci, raw_val in enumerate(row, 1):
             col_name = df.columns[ci - 1]
 
-            # Limpiar floats enteros en Id
-            if col_name == "Id" and isinstance(raw_val, float):
-                val = int(raw_val) if raw_val == int(raw_val) else raw_val
-            # Guiones -> None para que la celda quede vacía
-            elif str(raw_val).strip() == "-":
+            # CAMBIO: con dtype=str en la lectura, los Ids ya vienen como string;
+            # se normaliza igual por si acaso quedó algún float residual.
+            if col_name == "Id":
+                val = _id_normalizar(raw_val) if raw_val is not None else None
+            elif raw_val is not None and str(raw_val).strip() == "-":
                 val = None
             else:
                 val = raw_val
@@ -430,7 +358,6 @@ def escribir_hoja(ws, df: pd.DataFrame, mapa_fechas: dict = None):
             cell = ws.cell(row=ri, column=ci, value=val)
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-            # Colores semáforo
             if col_name == "Reportado":
                 if val == "Sí":
                     cell.fill = PatternFill("solid", fgColor=C_SI)
@@ -443,10 +370,14 @@ def escribir_hoja(ws, df: pd.DataFrame, mapa_fechas: dict = None):
                 elif val == "Pendiente de reporte":
                     cell.fill = PatternFill("solid", fgColor=C_PENDIENTE)
 
-            elif col_name == "Revisar" and val == 1:
-                cell.fill = PatternFill("solid", fgColor=C_REVISAR1)
+            elif col_name == "Revisar":
+                # CAMBIO: Revisar es int (0/1); comparar con 1 directamente
+                try:
+                    if int(val) == 1:
+                        cell.fill = PatternFill("solid", fgColor=C_REVISAR1)
+                except (TypeError, ValueError):
+                    pass
 
-            # Ampliar columna si el contenido es mayor al ancho actual
             ancho_actual = ws.column_dimensions[get_column_letter(ci)].width
             contenido_ancho = len(str(val)) + 2 if val is not None else 0
             ws.column_dimensions[get_column_letter(ci)].width = min(
@@ -460,10 +391,6 @@ def escribir_hoja(ws, df: pd.DataFrame, mapa_fechas: dict = None):
 # ── Resumen por periodicidad ───────────────────────────────────────────────────
 
 def crear_hoja_resumen(wb, resumen_data: list):
-    """
-    Crea una hoja 'Resumen' con estadísticas por periodicidad.
-    resumen_data: lista de dict con claves: Periodicidad, Total, Reportados, Pendientes
-    """
     ws = wb.create_sheet(title="Resumen", index=0)
     headers = ["Periodicidad", "Total indicadores", "Reportados (período actual)",
                "Pendientes de reporte", "% Reporte"]
@@ -479,7 +406,6 @@ def crear_hoja_resumen(wb, resumen_data: list):
         ws.cell(row=ri, column=4, value=row["Pendientes"])
         pct = round(row["Reportados"] / row["Total"] * 100, 1) if row["Total"] else 0
         pct_cell = ws.cell(row=ri, column=5, value=f"{pct}%")
-        # Color semáforo sobre %
         if pct >= 80:
             pct_cell.fill = PatternFill("solid", fgColor=C_SI)
         elif pct >= 50:
@@ -501,7 +427,8 @@ def main():
     if not os.path.exists(RUTA_ORIGEN):
         sys.exit(f"    ERROR: No se encontró {RUTA_ORIGEN}")
 
-    df = leer_xls(RUTA_ORIGEN)
+    # CAMBIO: se llama leer_xlsx (openpyxl) en vez de leer_xls (xlrd)
+    df = leer_xlsx(RUTA_ORIGEN)
     print(f"    OK -> {len(df)} filas  |  {len(df.columns)} columnas")
 
     # ── 2. Columna Revisar ───────────────────────────────────────────────────
@@ -515,14 +442,16 @@ def main():
 
     # ── 3. Identificar columnas de período ───────────────────────────────────
     periodo_cols = [c for c in df.columns if str(c).startswith("Periodo ")]
+    if not periodo_cols:
+        sys.exit("    ERROR: No se encontraron columnas 'Periodo X' en la fuente.")
     n_periodos = len(periodo_cols)
     print(f"\n[3] Columnas de período: {n_periodos}  ({periodo_cols[0]} … {periodo_cols[-1]})")
 
     # ── 4. Crear workbook ────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)   # quitar hoja vacía por defecto
+    wb.remove(wb.active)
 
-    # ── 5. Hoja "Seguimiento" (copia completa) ───────────────────────────────
+    # ── 5. Hoja "Seguimiento" ────────────────────────────────────────────────
     print(f"\n[4] Hoja 'Seguimiento' -> {len(df)} filas...")
     ws_seg = wb.create_sheet(title="Seguimiento")
     escribir_hoja(ws_seg, df)
@@ -533,7 +462,11 @@ def main():
     kawak_lookup = leer_kawak(RUTA_KAWAK)
 
     # ── 7. Hojas por periodicidad ────────────────────────────────────────────
-    periodicidades = [p for p in df["Periodicidad"].dropna().unique() if p]
+    # CAMBIO: se filtra None y strings vacíos/nan en la lista de periodicidades
+    periodicidades = [
+        p for p in df["Periodicidad"].dropna().unique()
+        if p and str(p).strip() not in ("", "nan", "NaN", "None")
+    ]
     print(f"\n[6] Periodicidades: {periodicidades}")
     resumen_data = []
 
@@ -542,19 +475,16 @@ def main():
         total = len(df_p)
         print(f"\n    ── {perio} ({total} filas)")
 
-        # Fechas para cada columna de período
         fechas = get_period_dates(perio, n_periodos)
         mapa = {col: f for col, f in zip(periodo_cols, fechas)}
         if fechas[0]:
             print(f"       Periodo 1 -> {fechas[0].strftime('%d/%m/%Y')}  "
                   f"| Periodo {n_periodos} -> {fechas[-1].strftime('%d/%m/%Y')}")
 
-        # Columnas de seguimiento (usando datos LMI)
         col_p1 = periodo_cols[0]
         col_p2 = periodo_cols[1] if n_periodos >= 2 else None
         df_p = agregar_columnas_seguimiento(df_p, col_p1, col_p2)
 
-        # Enriquecer con Kawak los pendientes
         fecha_p1 = fechas[0] if fechas else None
         fecha_p2 = fechas[1] if len(fechas) > 1 else None
         df_p, n_kawak = enriquecer_desde_kawak(
@@ -569,7 +499,6 @@ def main():
         print(f"       Reportados total           : {reportados}/{total}")
         print(f"       Pendientes de reporte      : {pendientes}/{total}")
 
-        # Escribir hoja
         ws = wb.create_sheet(title=perio[:31])
         escribir_hoja(ws, df_p, mapa)
 
@@ -580,14 +509,14 @@ def main():
             "Pendientes": int(pendientes),
         })
 
-    # ── 7. Hoja Resumen ──────────────────────────────────────────────────────
-    print("\n[6] Hoja 'Resumen'...")
+    # ── 8. Hoja Resumen ──────────────────────────────────────────────────────
+    print("\n[7] Hoja 'Resumen'...")
     crear_hoja_resumen(wb, resumen_data)
     print("    OK")
 
-    # ── 8. Guardar ───────────────────────────────────────────────────────────
+    # ── 9. Guardar ───────────────────────────────────────────────────────────
     os.makedirs(os.path.dirname(RUTA_SALIDA), exist_ok=True)
-    print(f"\n[7] Guardando en {RUTA_SALIDA}...")
+    print(f"\n[8] Guardando en {RUTA_SALIDA}...")
     wb.save(RUTA_SALIDA)
     print(f"    OK -> archivo guardado.")
 
