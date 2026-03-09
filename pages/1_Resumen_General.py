@@ -102,6 +102,11 @@ def _to_num(v):
 
 def _nivel(row) -> str:
     """Determina el nivel de cumplimiento del indicador."""
+    resultado = str(row.get("Resultado", "")).strip().upper() if "Resultado" in row else ""
+    
+    if resultado in ("N/A", "NA", "NO APLICA", "NO", ""):
+        return _NO_APLICA
+    
     c = _to_num(row.get("cumplimiento", ""))
     if c is None:
         return _PEND
@@ -255,6 +260,27 @@ def _cargar_consolidados() -> pd.DataFrame:
     if "fecha" in df.columns:
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
     
+    # Primero calcular cumplimiento desde Ejecución y Meta
+    if "Ejecucion" in df.columns and "Meta" in df.columns:
+        df["cumplimiento"] = df.apply(
+            lambda r: r["Ejecucion"] / r["Meta"] 
+            if pd.notna(r["Ejecucion"]) and pd.notna(r["Meta"]) and r["Meta"] != 0 
+            else None, 
+            axis=1
+        )
+    
+    # Sobrescribir con Cumplimiento Real si tiene más valores válidos
+    if "Cumplimiento Real" in df.columns:
+        mask_real = df["Cumplimiento Real"].notna()
+        mask_cum = df["cumplimiento"].isna()
+        df.loc[mask_real & mask_cum, "cumplimiento"] = df.loc[mask_real & mask_cum, "Cumplimiento Real"]
+    
+    # Sobrescribir con Cumplimiento si tiene más valores válidos
+    if "Cumplimiento" in df.columns:
+        mask_cum = df["Cumplimiento"].notna()
+        mask_null = df["cumplimiento"].isna()
+        df.loc[mask_cum & mask_null, "cumplimiento"] = df.loc[mask_cum & mask_null, "Cumplimiento"]
+    
     return df
 
 
@@ -330,11 +356,26 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
     mapa = _cargar_mapa()
     if not mapa.empty:
         if "Proceso" in df.columns:
-            df = df.merge(mapa, left_on="Proceso", right_on="Subproceso", how="left")
-            if "Vicerrectoria_y" in df.columns:
-                df["Vicerrectoria"] = df["Vicerrectoria_y"]
-                df = df.drop(columns=["Vicerrectoria_y", "Subproceso_y", "Proceso_y"], errors="ignore")
-                df = df.rename(columns={"Subproceso_x": "Subproceso", "Proceso_x": "Proceso"})
+            mapa_cols = list(mapa.columns)
+            proc_col = next((c for c in mapa_cols if "proceso" in c.lower()), "Proceso")
+            vic_col = next((c for c in mapa_cols if "icerrector" in c.lower()), None)
+            sub_col = next((c for c in mapa_cols if "subproceso" in c.lower()), None)
+            
+            merge_cols = {}
+            if sub_col:
+                merge_cols["Subproceso"] = sub_col
+            if proc_col:
+                merge_cols["Proceso_mapa"] = proc_col
+            if vic_col:
+                merge_cols["Vicerrectoria"] = vic_col
+            
+            if merge_cols:
+                df = df.merge(mapa[list(merge_cols.keys())].drop_duplicates(), 
+                             left_on="Proceso", 
+                             right_on=proc_col if proc_col else "Proceso", 
+                             how="left")
+                if vic_col and vic_col in df.columns:
+                    df = df.rename(columns={vic_col: "Vicerrectoria"})
     
     return df
 
@@ -672,13 +713,13 @@ with tab_res:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB CONSOLIDADO — Drill-down interactivo + tabla + dialog
+# TAB CONSOLIDADO — Vista simplificada con filtros
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_con:
     st.markdown("### Vista Consolidada")
-    st.caption("💡 Clic en un segmento de color para filtrar. Clic en una fila de la tabla para ver el detalle.")
+    st.caption("💡 Seleccione filtros y clic en una fila para ver el detalle.")
     
-    # ── Filtros de Año y Mes para Consolidado ─────────────────────────────────
+    # ── Filtros de Período ─────────────────────────────────────────────────
     with st.expander("🔍 Filtros de Período", expanded=False):
         fc1, fc2 = st.columns(2)
         with fc1:
@@ -699,169 +740,62 @@ with tab_con:
     # Recalcular datos para consolidado con los valores seleccionados
     df_consolidado = _preparar_datos_por_fecha(_raw, anio_con, mes_con)
 
-    _KEY_V     = "rc_con_vicerr"
-    _KEY_V_NIV = "rc_con_vicerr_niv"
-    _KEY_P     = "rc_con_proc"
-    _KEY_P_NIV = "rc_con_proc_niv"
-    _KEY_S     = "rc_con_sub"
-    _KEY_S_NIV = "rc_con_sub_niv"
-    _KEY_DET   = "rc_con_det_id"
+    # ── Gráfica de nivel de cumplimiento ─────────────────────────────────
+    st.markdown("#### Distribución por Nivel de Cumplimiento")
+    if not df_consolidado.empty:
+        st.plotly_chart(_fig_donut(df_consolidado), use_container_width=True, key="con_donut")
 
-    for _k in [_KEY_V, _KEY_V_NIV, _KEY_P, _KEY_P_NIV, _KEY_S, _KEY_S_NIV, _KEY_DET]:
-        if _k not in st.session_state:
-            st.session_state[_k] = None
-
-    # ── Nivel 1: Vicerrectoría ──────────────────────────────────────────────
-    col_v, col_p = st.columns(2)
-    with col_v:
-        st.markdown("#### Por Vicerrectoría")
+    # ── Filtros de Vicerrectoría y Proceso ────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Filtros de Vista")
+    
+    col_f1, col_f2 = st.columns(2)
+    
+    with col_f1:
+        vicerrectorias = ["Todas"]
         if "Vicerrectoria" in df_consolidado.columns:
-            ev_cv = st.plotly_chart(
-                _fig_barras_nivel(df_consolidado, "Vicerrectoria"),
-                use_container_width=True, on_select="rerun", key="con_vicerr_chart",
-            )
-            if ev_cv.selection and ev_cv.selection.get("points"):
-                pt = ev_cv.selection["points"][0]
-                st.session_state[_KEY_V]     = pt.get("y")
-                st.session_state[_KEY_V_NIV] = pt.get("customdata")
-                st.session_state[_KEY_P]     = None
-                st.session_state[_KEY_P_NIV] = None
-                st.session_state[_KEY_S]     = None
-        sel_v     = st.session_state.get(_KEY_V)
-        sel_v_niv = st.session_state.get(_KEY_V_NIV)
-        if sel_v or sel_v_niv:
-            parts = []
-            if sel_v:     parts.append(f"**{sel_v}**")
-            if sel_v_niv: parts.append(f"*{sel_v_niv}*")
-            hv1, hv2 = st.columns([7, 1])
-            with hv1:
-                st.info(f"Filtro: {' · '.join(parts)}")
-            with hv2:
-                if st.button("✖", key="con_clear_v"):
-                    for k in [_KEY_V, _KEY_V_NIV, _KEY_P, _KEY_P_NIV, _KEY_S, _KEY_S_NIV]:
-                        st.session_state[k] = None
-                    st.rerun()
-
-    # Filtrar por Vicerrectoría seleccionada
-    sel_v     = st.session_state.get(_KEY_V)
-    sel_v_niv = st.session_state.get(_KEY_V_NIV)
-    df_por_vicerr = df_consolidado.copy()
-    if sel_v and "Vicerrectoria" in df_por_vicerr.columns:
-        df_por_vicerr = df_por_vicerr[df_por_vicerr["Vicerrectoria"] == sel_v]
-    if sel_v_niv:
-        df_por_vicerr = df_por_vicerr[df_por_vicerr["Nivel de cumplimiento"] == sel_v_niv]
-
-    # ── Nivel 2: Proceso ────────────────────────────────────────────────────
-    with col_p:
-        st.markdown("#### Por Proceso")
-        if "Proceso" in df_por_vicerr.columns:
-            ev_cp = st.plotly_chart(
-                _fig_barras_nivel(df_por_vicerr, "Proceso"),
-                use_container_width=True, on_select="rerun", key="con_proc_chart",
-            )
-            if ev_cp.selection and ev_cp.selection.get("points"):
-                pt = ev_cp.selection["points"][0]
-                st.session_state[_KEY_P]     = pt.get("y")
-                st.session_state[_KEY_P_NIV] = pt.get("customdata")
-                st.session_state[_KEY_S]     = None
-        sel_p     = st.session_state.get(_KEY_P)
-        sel_p_niv = st.session_state.get(_KEY_P_NIV)
-        if sel_p or sel_p_niv:
-            parts = []
-            if sel_p:     parts.append(f"**{sel_p}**")
-            if sel_p_niv: parts.append(f"*{sel_p_niv}*")
-            hp1, hp2 = st.columns([7, 1])
-            with hp1:
-                st.info(f"Filtro: {' · '.join(parts)}")
-            with hp2:
-                if st.button("✖", key="con_clear_p"):
-                    for k in [_KEY_P, _KEY_P_NIV, _KEY_S, _KEY_S_NIV]:
-                        st.session_state[k] = None
-                    st.rerun()
-
-    # ── Nivel 3: Subproceso (drill-down tras selección de Proceso) ───────────
-    sel_p = st.session_state.get(_KEY_P)
-    sel_p_niv = st.session_state.get(_KEY_P_NIV)
-    df_por_proc = df_por_vicerr.copy()
-    if sel_p and "Proceso" in df_por_proc.columns:
-        df_por_proc = df_por_proc[df_por_proc["Proceso"] == sel_p]
-    if sel_p_niv:
-        df_por_proc = df_por_proc[df_por_proc["Nivel de cumplimiento"] == sel_p_niv]
-
-    if sel_p and "Subproceso" in df_por_proc.columns and not df_por_proc.empty:
-        st.markdown(f"#### Por Subproceso — *{sel_p}*")
-        ev_cs = st.plotly_chart(
-            _fig_barras_nivel(df_por_proc, "Subproceso"),
-            use_container_width=True, on_select="rerun", key="con_sub_chart",
-        )
-        if ev_cs.selection and ev_cs.selection.get("points"):
-            pt = ev_cs.selection["points"][0]
-            st.session_state[_KEY_S]     = pt.get("y")
-            st.session_state[_KEY_S_NIV] = pt.get("customdata")
-        sel_s     = st.session_state.get(_KEY_S)
-        sel_s_niv = st.session_state.get(_KEY_S_NIV)
-        if sel_s or sel_s_niv:
-            parts = []
-            if sel_s:     parts.append(f"**{sel_s}**")
-            if sel_s_niv: parts.append(f"*{sel_s_niv}*")
-            hs1, hs2 = st.columns([7, 1])
-            with hs1:
-                st.info(f"Filtro subproceso: {' · '.join(parts)}")
-            with hs2:
-                if st.button("✖", key="con_clear_s"):
-                    st.session_state[_KEY_S]     = None
-                    st.session_state[_KEY_S_NIV] = None
-                    st.rerun()
+            vicerrectorias.extend(sorted(df_consolidado["Vicerrectoria"].dropna().unique()))
+        sel_vicerrectoria = st.selectbox("Vicerrectoría", vicerrectorias, key="sel_vicerrectoria")
+    
+    with col_f2:
+        procesos = ["Todos"]
+        df_filt_vicerrectoria = df_consolidado
+        if sel_vicerrectoria != "Todas" and "Vicerrectoria" in df_consolidado.columns:
+            df_filt_vicerrectoria = df_consolidado[df_consolidado["Vicerrectoria"] == sel_vicerrectoria]
+        if "Proceso" in df_filt_vicerrectoria.columns:
+            procesos.extend(sorted(df_filt_vicerrectoria["Proceso"].dropna().unique()))
+        sel_proceso = st.selectbox("Proceso", procesos, key="sel_proceso")
+    
+    # Aplicar filtros
+    df_filt = df_consolidado.copy()
+    if sel_vicerrectoria != "Todas" and "Vicerrectoria" in df_filt.columns:
+        df_filt = df_filt[df_filt["Vicerrectoria"] == sel_vicerrectoria]
+    if sel_proceso != "Todos" and "Proceso" in df_filt.columns:
+        df_filt = df_filt[df_filt["Proceso"] == sel_proceso]
 
     st.markdown("---")
-
-    # ── Filtros UI ──────────────────────────────────────────────────────────
-    # Aplicar todos los filtros gráficos primero
-    sel_v     = st.session_state.get(_KEY_V)
-    sel_v_niv = st.session_state.get(_KEY_V_NIV)
-    sel_p     = st.session_state.get(_KEY_P)
-    sel_p_niv = st.session_state.get(_KEY_P_NIV)
-    sel_s     = st.session_state.get(_KEY_S)
-    sel_s_niv = st.session_state.get(_KEY_S_NIV)
-
-    df_chart_filt = df_consolidado.copy()
-    if sel_v and "Vicerrectoria" in df_chart_filt.columns:
-        df_chart_filt = df_chart_filt[df_chart_filt["Vicerrectoria"] == sel_v]
-    if sel_v_niv:
-        df_chart_filt = df_chart_filt[df_chart_filt["Nivel de cumplimiento"] == sel_v_niv]
-    if sel_p and "Proceso" in df_chart_filt.columns:
-        df_chart_filt = df_chart_filt[df_chart_filt["Proceso"] == sel_p]
-    if sel_p_niv:
-        df_chart_filt = df_chart_filt[df_chart_filt["Nivel de cumplimiento"] == sel_p_niv]
-    if sel_s and "Subproceso" in df_chart_filt.columns:
-        df_chart_filt = df_chart_filt[df_chart_filt["Subproceso"] == sel_s]
-    if sel_s_niv:
-        df_chart_filt = df_chart_filt[df_chart_filt["Nivel de cumplimiento"] == sel_s_niv]
-
-    f_id, f_nom, f_vicerr_ui, f_proc_ui, f_sub, f_niv = _filtros_ui(df_consolidado, "con")
-    df_tabla = _aplicar_filtros(df_chart_filt, f_id, f_nom, f_vicerr_ui, f_proc_ui, f_sub, f_niv)
 
     total_consolidado = len(df_consolidado)
-    st.caption(f"Mostrando **{len(df_tabla)}** de **{total_consolidado}** indicadores · clic en fila para detalle")
-    st.markdown("---")
+    st.caption(f"Mostrando **{len(df_filt)}** de **{total_consolidado}** indicadores · clic en fila para detalle")
 
     # ── Tabla ───────────────────────────────────────────────────────────────
     COLS_TABLA = [
         "Id", "Indicador", "Nivel de cumplimiento", "Cumplimiento",
         "Resultado", "Meta", "Fecha reporte",
-        "Vicerrectoria", "Area", "Proceso", "Subproceso",
-        "Clasificacion", "Sentido", "Periodicidad",
+        "Vicerrectoria", "Proceso", "Periodicidad",
     ]
-    cols_show  = [c for c in COLS_TABLA if c in df_tabla.columns]
-    df_mostrar = df_tabla[cols_show].copy()
+    cols_show = [c for c in COLS_TABLA if c in df_filt.columns]
+    df_mostrar = df_filt[cols_show].copy()
 
     col_cfg = {
-        "Indicador":             st.column_config.TextColumn("Indicador",             width="large"),
+        "Indicador": st.column_config.TextColumn("Indicador", width="large"),
         "Nivel de cumplimiento": st.column_config.TextColumn("Nivel de cumplimiento", width="medium"),
-        "Cumplimiento":          st.column_config.TextColumn("Cumplimiento",          width="small"),
-        "Resultado":             st.column_config.TextColumn("Resultado",             width="small"),
-        "Meta":                  st.column_config.TextColumn("Meta",                  width="small"),
+        "Cumplimiento": st.column_config.TextColumn("Cumplimiento", width="small"),
     }
+
+    _KEY_DET = "rc_con_det_id"
+    if _KEY_DET not in st.session_state:
+        st.session_state[_KEY_DET] = None
 
     ev_tabla = st.dataframe(
         df_mostrar.style.apply(_estilo_nivel, axis=1),
@@ -873,20 +807,18 @@ with tab_con:
         key="con_tabla_detalle",
     )
 
-    # Dialog de detalle al seleccionar fila
+    # Dialog de detalle
     if ev_tabla.selection and ev_tabla.selection.get("rows"):
         idx_det = ev_tabla.selection["rows"][0]
-        id_det  = df_tabla["Id"].iloc[idx_det]
+        id_det = df_filt["Id"].iloc[idx_det]
         st.session_state[_KEY_DET] = id_det
 
     id_det = st.session_state.get(_KEY_DET)
     if id_det:
-        # Cargar histórico (Dataset_Unificado tiene más historia que kawak)
         df_hist = _cargar_historico_detalle()
         if not df_hist.empty and "Id" in df_hist.columns:
             df_ind_det = df_hist[df_hist["Id"] == id_det].copy()
         else:
-            # Fallback: usar kawak_raw completo
             df_ind_det = _raw[_raw["Id"] == id_det].copy()
             if "Cumplimiento_norm" not in df_ind_det.columns and "cumplimiento" in df_ind_det.columns:
                 df_ind_det["Cumplimiento_norm"] = df_ind_det["cumplimiento"].apply(
