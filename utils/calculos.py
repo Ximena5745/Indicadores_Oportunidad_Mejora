@@ -4,9 +4,7 @@ utils/calculos.py — Lógica de negocio: categorías, umbrales, salud instituci
 import pandas as pd
 import numpy as np
 
-UMBRAL_PELIGRO          = 0.80
-UMBRAL_ALERTA           = 1.00
-UMBRAL_SOBRECUMPLIMIENTO = 1.05
+from config import UMBRAL_PELIGRO, UMBRAL_ALERTA, UMBRAL_SOBRECUMPLIMIENTO
 
 
 def normalizar_cumplimiento(valor):
@@ -25,8 +23,18 @@ def normalizar_cumplimiento(valor):
 
 def categorizar_cumplimiento(cumplimiento, sentido="Positivo"):
     """Retorna: 'Peligro' | 'Alerta' | 'Cumplimiento' | 'Sobrecumplimiento' | 'Sin dato'
-    Umbrales fijos: <80% Peligro, 80-99% Alerta, 100-105% Cumplimiento, >105% Sobrecumplimiento.
+
+    Umbrales (aplican igual para Positivo y Negativo):
+      0 – 80%   → Peligro
+      80 – 100% → Alerta
+      100 – 105%→ Cumplimiento
+      > 105%    → Sobrecumplimiento
+
+    Para indicadores Negativo (menor = mejor) el ajuste se realiza
+    al calcular el cumplimiento (Meta / Ejecucion en lugar de Ejecucion / Meta),
+    de modo que los umbrales de categorización son invariantes al sentido.
     """
+    _ = sentido  # reservado; la inversión se aplica en el cálculo previo
     if pd.isna(cumplimiento):
         return "Sin dato"
     if cumplimiento < UMBRAL_PELIGRO:

@@ -17,14 +17,15 @@ import streamlit as st
 
 from utils.data_loader import cargar_om, cargar_plan_accion
 from utils.charts import exportar_excel
+from config import COLORES
 
 # ── Paleta ─────────────────────────────────────────────────────────────────────
 _C = {
-    "Cerrada":   "#43A047",
+    "Cerrada":   COLORES["cumplimiento"],
     "Ejecución": "#1976D2",
-    "Abierta":   "#FBAF17",
-    "Retrasada": "#D32F2F",
-    "primary":   "#1A3A5C",
+    "Abierta":   COLORES["alerta"],
+    "Retrasada": COLORES["peligro"],
+    "primary":   COLORES["primario"],
     "light":     "#E3EAF4",
 }
 

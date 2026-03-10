@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-from utils.calculos import normalizar_cumplimiento, categorizar_cumplimiento
+from utils.calculos import normalizar_cumplimiento, categorizar_cumplimiento, estado_tiempo_acciones
 
 DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
 
@@ -101,18 +101,7 @@ def cargar_acciones_mejora() -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Estado_Tiempo
-    df["Estado_Tiempo"] = "A tiempo"
-    if "DIAS_VENCIDA" in df.columns and "ESTADO" in df.columns:
-        df.loc[df["DIAS_VENCIDA"] > 0, "Estado_Tiempo"] = "Vencida"
-        df.loc[
-            (df["DIAS_VENCIDA"] >= -30)
-            & (df["DIAS_VENCIDA"] <= 0)
-            & (df["ESTADO"] != "Cerrada"),
-            "Estado_Tiempo",
-        ] = "Por vencer"
-        df.loc[df["ESTADO"] == "Cerrada", "Estado_Tiempo"] = "Cerrada"
-
+    df = estado_tiempo_acciones(df)
     return df
 
 
@@ -223,8 +212,8 @@ def cargar_plan_accion() -> pd.DataFrame:
             df.columns = [str(c).strip() for c in df.columns]
             df = df.dropna(how="all").reset_index(drop=True)
             frames.append(df)
-        except Exception:
-            pass
+        except Exception as e:
+            st.warning(f"No se pudo leer **{p.name}**: {e}")
 
     if not frames:
         return pd.DataFrame()

@@ -3,20 +3,23 @@ utils/niveles.py — Niveles de cumplimiento centralizados.
 
 Umbrales FIJOS (aplican en todas las vistas):
   > 105%   → Sobrecumplimiento  (azul oscuro #1A3A5C)
-  100–105% → Cumplimiento       (azul claro  #1FB2DE)
+  100–105% → Cumplimiento       (verde       #43A047)
    80–99%  → Alerta             (amarillo    #FBAF17)
-    < 80%  → Peligro            (rosa        #EC0677)
+    < 80%  → Peligro            (rojo        #D32F2F)
+
+Fuente única de umbrales: config.py
 """
+from config import UMBRAL_PELIGRO, UMBRAL_ALERTA, UMBRAL_SOBRECUMPLIMIENTO
 
-# ── Umbrales en escala porcentual (0-100+) ─────────────────────────────────────
-UMBRAL_PELIGRO_PCT           = 80.0
-UMBRAL_ALERTA_PCT            = 100.0
-UMBRAL_SOBRECUMPLIMIENTO_PCT = 105.0
+# ── Umbrales derivados en escala porcentual ────────────────────────────────────
+UMBRAL_PELIGRO_PCT           = UMBRAL_PELIGRO * 100           # 80.0
+UMBRAL_ALERTA_PCT            = UMBRAL_ALERTA * 100            # 100.0
+UMBRAL_SOBRECUMPLIMIENTO_PCT = UMBRAL_SOBRECUMPLIMIENTO * 100 # 105.0
 
-# ── Umbrales en escala decimal (0-1+) ──────────────────────────────────────────
-UMBRAL_PELIGRO_DEC           = 0.80
-UMBRAL_ALERTA_DEC            = 1.00
-UMBRAL_SOBRECUMPLIMIENTO_DEC = 1.05
+# ── Aliases decimales (compatibilidad con código existente) ────────────────────
+UMBRAL_PELIGRO_DEC           = UMBRAL_PELIGRO
+UMBRAL_ALERTA_DEC            = UMBRAL_ALERTA
+UMBRAL_SOBRECUMPLIMIENTO_DEC = UMBRAL_SOBRECUMPLIMIENTO
 
 # ── Colores de referencia (sólido) ─────────────────────────────────────────────
 NIVEL_COLOR = {

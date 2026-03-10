@@ -5,18 +5,12 @@ import io
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import openpyxl
 from openpyxl.styles import PatternFill, Font
 
-from config import COLORES, COLOR_CATEGORIA
+from config import COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
 
-COLOR_CAT = {
-    "Peligro":           "#D32F2F",
-    "Alerta":            "#FBAF17",
-    "Cumplimiento":      "#43A047",
-    "Sobrecumplimiento": "#1A3A5C",
-    "Sin dato":          "#BDBDBD",
-}
+# Alias para compatibilidad interna — fuente única en config.py
+COLOR_CAT = COLOR_CATEGORIA
 
 
 def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Figure:
@@ -40,7 +34,7 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
     # Zonas de fondo
     fig.add_hrect(
         y0=0, y1=80, fillcolor="#FFCDD2", opacity=0.45, line_width=0,
-        annotation_text="Peligro < 80%", annotation_position="top left",
+        annotation_text="Peligro 0–80%", annotation_position="top left",
         annotation_font_size=10,
     )
     fig.add_hrect(
@@ -138,18 +132,9 @@ def exportar_excel(df: pd.DataFrame, nombre_hoja: str = "Datos") -> bytes:
 
 
 def colorear_tabla_categoria(df: pd.DataFrame, col_categoria: str = "Categoria") -> pd.DataFrame.style:
-    """Aplica estilos de color a filas según categoría."""
-    COLOR_BG = {
-        "Peligro":           "#FDE8F3",
-        "Alerta":            "#FEF3D0",
-        "Cumplimiento":      "#E0F7FA",
-        "Sobrecumplimiento": "#D0E4FF",
-        "Sin dato":          "#F5F5F5",
-    }
-
+    """Aplica estilos de color a filas según categoría (colores desde config.py)."""
     def estilo_fila(row):
-        cat = row.get(col_categoria, "")
-        bg = COLOR_BG.get(cat, "")
+        bg = COLOR_CATEGORIA_CLARO.get(row.get(col_categoria, ""), "")
         return [f"background-color: {bg}" if bg else "" for _ in row]
 
     return df.style.apply(estilo_fila, axis=1)
@@ -160,7 +145,7 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
     Renderiza el panel completo de detalle de un indicador.
     Llamar desde un st.dialog o st.expander.
     """
-    from utils.calculos import generar_recomendaciones, calcular_tendencia
+    from utils.calculos import generar_recomendaciones
 
     if df_ind.empty:
         st.warning("Sin datos para este indicador.")

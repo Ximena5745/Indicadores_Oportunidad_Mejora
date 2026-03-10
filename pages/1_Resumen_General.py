@@ -117,20 +117,6 @@ def _nivel(row) -> str:
     return nivel_desde_pct(c * 100)
 
 
-def _nivel_negativo(cumplimiento: float) -> str:
-    """DEPRECATED — ya no se usa. La lógica se unificó en _nivel."""
-    try:
-        c = float(cumplimiento)
-    except (TypeError, ValueError):
-        return _PEND
-    pct = c * 100
-    if pct > 100:
-        return "Peligro"
-    if pct > 80:
-        return "Alerta"
-    return "Cumplimiento"
-
-
 def _limpiar(v) -> str:
     if _is_null(v):
         return ""
@@ -153,41 +139,6 @@ def _fmt_num(v) -> str:
         s = str(v).strip()
         return s if s and s.lower() not in ("nan", "none", "") else "—"
     return f"{n:,.2f}".rstrip("0").rstrip(".")
-
-
-# ── Periodicidad → fecha de corte ─────────────────────────────────────────────
-def _corte_periodicidad(periodicidad: str, hoy: _date) -> pd.Timestamp:
-    p = str(periodicidad).strip().lower()
-    y, m = hoy.year, hoy.month
-
-    def _fin(yr, mo):
-        return pd.Timestamp(yr, mo, calendar.monthrange(yr, mo)[1], 23, 59, 59)
-
-    if any(x in p for x in ("anual", "annual", "año")):
-        return pd.Timestamp(y - 1, 12, 31, 23, 59, 59)
-    if any(x in p for x in ("semestral", "bianual", "semest")):
-        return pd.Timestamp(y - 1, 12, 31, 23, 59, 59) if m <= 6 \
-               else pd.Timestamp(y, 6, 30, 23, 59, 59)
-    if any(x in p for x in ("cuatrimestral", "cuatrim")):
-        if m <= 4:
-            return pd.Timestamp(y - 1, 12, 31, 23, 59, 59)
-        if m <= 8:
-            return pd.Timestamp(y, 4, 30, 23, 59, 59)
-        return pd.Timestamp(y, 8, 31, 23, 59, 59)
-    if any(x in p for x in ("trimestral", "trim", "quarter")):
-        q = (m - 1) // 3
-        if q == 0:
-            return pd.Timestamp(y - 1, 12, 31, 23, 59, 59)
-        return _fin(y, q * 3)
-    if any(x in p for x in ("bimestral", "bimest")):
-        b = (m - 1) // 2
-        if b == 0:
-            return pd.Timestamp(y - 1, 12, 31, 23, 59, 59)
-        return _fin(y, b * 2)
-    if any(x in p for x in ("mensual", "monthly", "mes")):
-        return pd.Timestamp(y - 1, 12, 31, 23, 59, 59) if m == 1 \
-               else _fin(y, m - 1)
-    return pd.Timestamp(y - 1, 12, 31, 23, 59, 59)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -386,37 +337,6 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
                     df = df.rename(columns={vic_col: "Vicerrectoria"})
     
     return df
-
-
-def _corte_periodicidad_per(periodicidad: str, anio: int, mes: int) -> pd.Timestamp:
-    """Retorna la fecha de corte según periodicidad para el año/mes dado."""
-    p = str(periodicidad).strip().lower()
-    
-    def _fin(yr, mo):
-        return pd.Timestamp(yr, mo, calendar.monthrange(yr, mo)[1], 23, 59, 59)
-    
-    if any(x in p for x in ("anual", "annual", "año")):
-        return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
-    if any(x in p for x in ("semestral", "bianual", "semest")):
-        if mes <= 6:
-            return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
-        else:
-            return pd.Timestamp(anio, 6, 30, 23, 59, 59)
-    if any(x in p for x in ("trimestral", "trim", "quarter")):
-        q = (mes - 1) // 3
-        if q == 0:
-            return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
-        return _fin(anio, q * 3)
-    if any(x in p for x in ("bimestral", "bimest")):
-        b = (mes - 1) // 2
-        if b == 0:
-            return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
-        return _fin(anio, b * 2)
-    if any(x in p for x in ("mensual", "monthly", "mes")):
-        if mes == 1:
-            return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
-        return _fin(anio, mes - 1)
-    return pd.Timestamp(anio - 1, 12, 31, 23, 59, 59)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
