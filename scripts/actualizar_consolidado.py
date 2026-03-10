@@ -1128,11 +1128,13 @@ def main():
                                 metadatos_kawak=meta_kawak, metadatos_cmi=meta_cmi)
     print(f"  Catálogo: {len(df_cat):,} indicadores")
 
-    # Identificar IDs de tipo "Métrica" (no tienen meta de cumplimiento)
+    # Identificar IDs de tipo "Métrica" (no tienen meta de cumplimiento):
+    # aplica si Tipo_API contiene "metrica" O si el nombre del indicador contiene "metrica"
     ids_metrica = {
         str(row['Id']).strip()
         for _, row in df_cat.iterrows()
         if 'metrica' in str(row.get('Tipo_API', '')).lower()
+        or 'metrica' in str(row.get('Indicador', '')).lower()
     }
     if ids_metrica:
         print(f"  Indicadores tipo Métrica: {len(ids_metrica)} IDs → "
