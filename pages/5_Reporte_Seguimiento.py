@@ -1,7 +1,7 @@
 """
 pages/5_Reporte_Seguimiento.py — Indicadores con Reporte de Seguimiento.
 
-Fuente: data/raw/Seguimiento_Reporte.xlsx (generado por generar_reporte.py).
+Fuente: data/output/Seguimiento_Reporte.xlsx (generado por generar_reporte.py).
 Solo muestra indicadores con Revisar == 1 (indicador único/primero).
 
 Mapeo (Subproceso-Proceso-Area.xlsx):
@@ -19,7 +19,7 @@ from utils.charts import exportar_excel
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 _DATA_RAW  = Path(__file__).parent.parent / "data" / "raw"
-_RUTA_XLSX = _DATA_RAW / "Seguimiento_Reporte.xlsx"
+_RUTA_XLSX = Path(__file__).parent.parent / "data" / "output" / "Seguimiento_Reporte.xlsx"
 _RUTA_MAPA = _DATA_RAW / "Subproceso-Proceso-Area.xlsx"
 _CORTE     = datetime(2024, 1, 1)
 
@@ -37,9 +37,9 @@ COLOR_REPORTADO = {"Si": "#EDF7D6", "Sí": "#EDF7D6", "No": "#FDE8F3"}
 
 # ── Columnas ──────────────────────────────────────────────────────────────────
 COLS_DESC_CON = ["Id", "Indicador", "Estado del indicador", "Reportado",
-                 "Vicerrectoria", "Area", "Proceso", "Subproceso",
+                 "Vicerrectoria", "Proceso", "Subproceso",
                  "Tipo", "Sentido", "Periodicidad"]
-COLS_DESC     = ["Id", "Indicador", "Vicerrectoria", "Area", "Proceso", "Subproceso",
+COLS_DESC     = ["Id", "Indicador", "Vicerrectoria", "Proceso", "Subproceso",
                  "Tipo", "Sentido", "Periodicidad", "Estado del indicador", "Reportado"]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -157,6 +157,7 @@ def _bar_h(df_stats, col_cat, height=None):
         fig.add_trace(go.Bar(
             y=cats, x=vals,
             orientation="h", name="Reportado", marker_color=CORP["reportado"],
+            customdata=["Reportado"] * len(cats),
             text=[v if v > 0 else "" for v in vals],
             textposition="inside", insidetextanchor="middle",
             textfont=dict(size=11, color="white"),
@@ -166,6 +167,7 @@ def _bar_h(df_stats, col_cat, height=None):
         fig.add_trace(go.Bar(
             y=cats, x=vals,
             orientation="h", name="Pendiente", marker_color=CORP["pendiente"],
+            customdata=["Pendiente de reporte"] * len(cats),
             text=[v if v > 0 else "" for v in vals],
             textposition="inside", insidetextanchor="middle",
             textfont=dict(size=11, color="white"),
@@ -304,7 +306,7 @@ def _cargar_datos() -> dict:
 datos = _cargar_datos()
 
 if not datos:
-    st.error("No se encontró **Seguimiento_Reporte.xlsx** en `data/raw/`. "
+    st.error("No se encontró **Seguimiento_Reporte.xlsx** en `data/output/`. "
              "Ejecuta primero `generar_reporte.py`.")
     st.stop()
 
@@ -322,7 +324,7 @@ COL_REP    = "Reportado"
 # TÍTULO
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("# 📊 Reporte de Seguimiento de Indicadores")
-st.caption("Solo indicadores con **Revisar = 1** · Periodos desde **2024-01-01**")
+st.caption("Solo indicadores con **Revisar = 1** · Períodos desde **2024-01-01** · Corte: **Diciembre 2025**")
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -616,10 +618,11 @@ with tabs[1]:
     # ── Gráfico por Vicerrectoría (interactivo → filtra tabla) ────────────────
     _CON_V = "Vicerrectoria"
     _KEY_CON_V = "con_sel_vicerr"
+    _KEY_CON_E = "con_sel_estado"
 
     if _CON_V in df_con.columns and COL_ESTADO in df_con.columns:
         st.markdown("#### Por Vicerrectoría")
-        st.caption("💡 Haz clic en una barra para filtrar la tabla.")
+        st.caption("💡 Haz clic en una barra (Reportado/Pendiente) para filtrar la tabla por vicerrectoría y estado.")
 
         vicerr_stats_con = _agg_estado(df_con, _CON_V)
         fig_con_v = _bar_h(vicerr_stats_con, _CON_V)
@@ -627,27 +630,39 @@ with tabs[1]:
                                     on_select="rerun", key="con_chart_vicerr")
 
         if ev_con_v.selection and ev_con_v.selection.get("points"):
-            clicked_con_v = ev_con_v.selection["points"][0].get("y")
-            if clicked_con_v != st.session_state.get(_KEY_CON_V):
+            pt = ev_con_v.selection["points"][0]
+            clicked_con_v = pt.get("y")
+            clicked_con_e = pt.get("customdata")
+            if (clicked_con_v != st.session_state.get(_KEY_CON_V) or
+                    clicked_con_e != st.session_state.get(_KEY_CON_E)):
                 st.session_state[_KEY_CON_V] = clicked_con_v
+                st.session_state[_KEY_CON_E] = clicked_con_e
 
         sel_con_v = st.session_state.get(_KEY_CON_V)
-        if sel_con_v:
+        sel_con_e = st.session_state.get(_KEY_CON_E)
+        if sel_con_v or sel_con_e:
             hv1, hv2 = st.columns([7, 1])
             with hv1:
-                st.info(f"📊 Filtro activo: **{sel_con_v}**")
+                partes = []
+                if sel_con_v: partes.append(f"Vicerrectoría: **{sel_con_v}**")
+                if sel_con_e: partes.append(f"Estado: **{sel_con_e}**")
+                st.info("📊 Filtro activo: " + " · ".join(partes))
             with hv2:
                 if st.button("✖ Todos", key="con_clear_vicerr"):
                     st.session_state[_KEY_CON_V] = None
+                    st.session_state[_KEY_CON_E] = None
                     st.rerun()
 
         st.markdown("---")
 
     # ── Filtros y tabla ───────────────────────────────────────────────────────
-    # Pre-filtrar por Vicerrectoría seleccionada en gráfico
     _sel_v_con = st.session_state.get(_KEY_CON_V) if _CON_V in df_con.columns else None
-    df_con_base = df_con[df_con[_CON_V] == _sel_v_con].copy() \
-                  if _sel_v_con and _CON_V in df_con.columns else df_con
+    _sel_e_con = st.session_state.get(_KEY_CON_E) if COL_ESTADO in df_con.columns else None
+    df_con_base = df_con.copy()
+    if _sel_v_con and _CON_V in df_con_base.columns:
+        df_con_base = df_con_base[df_con_base[_CON_V] == _sel_v_con]
+    if _sel_e_con and COL_ESTADO in df_con_base.columns:
+        df_con_base = df_con_base[df_con_base[COL_ESTADO] == _sel_e_con]
 
     f_id_con, f_nom_con, f_proc_con, f_sub_con, f_est_con = _filtros_cascada(df_con_base, "con")
     df_filtrado = _aplicar_filtros_tabla(df_con_base, f_id_con, f_nom_con,
@@ -704,49 +719,64 @@ for tab_idx, perio in enumerate(perios, 2):
         _key_chart  = f"chart_proc_{nombre_p}"
         _key_sel    = f"sel_proc_chart_{nombre_p}"
 
+        _key_sel_e = f"sel_estado_chart_{nombre_p}"
+
         if col_proc_p and COL_E in df_p.columns:
             proc_p_s = _agg_estado(df_p, col_proc_p)
             fig_pg   = _bar_h(proc_p_s, col_proc_p)
             ev_pg    = st.plotly_chart(fig_pg, use_container_width=True,
                                        on_select="rerun", key=_key_chart)
 
-            # Capturar clic en barra
+            # Capturar clic: proceso (y) + estado (customdata)
             if ev_pg.selection and ev_pg.selection.get("points"):
-                clicked = ev_pg.selection["points"][0].get("y")
-                if clicked != st.session_state.get(_key_sel):
-                    st.session_state[_key_sel] = clicked
+                pt = ev_pg.selection["points"][0]
+                clicked   = pt.get("y")
+                clicked_e = pt.get("customdata")
+                if (clicked != st.session_state.get(_key_sel) or
+                        clicked_e != st.session_state.get(_key_sel_e)):
+                    st.session_state[_key_sel]   = clicked
+                    st.session_state[_key_sel_e] = clicked_e
 
-        # Proceso seleccionado desde el gráfico (puede ser None)
-        chart_proc = st.session_state.get(_key_sel)
+        # Proceso y estado seleccionados desde el gráfico
+        chart_proc   = st.session_state.get(_key_sel)
+        chart_estado = st.session_state.get(_key_sel_e)
 
-        # Encabezado + botón limpiar selección del gráfico
+        # Encabezado + botón limpiar
         st.markdown("---")
-        if chart_proc:
+        if chart_proc or chart_estado:
             hc1, hc2 = st.columns([7, 1])
             with hc1:
-                st.markdown(f"#### Detalle de Indicadores — 📊 *{chart_proc}*")
+                partes = []
+                if chart_proc:   partes.append(f"Proceso: *{chart_proc}*")
+                if chart_estado: partes.append(f"Estado: **{chart_estado}**")
+                st.markdown(f"#### Detalle de Indicadores — 📊 {' · '.join(partes)}")
             with hc2:
                 if st.button("✖ Todos", key=f"clear_chart_{nombre_p}"):
-                    st.session_state[_key_sel] = None
+                    st.session_state[_key_sel]   = None
+                    st.session_state[_key_sel_e] = None
                     st.rerun()
         else:
             st.markdown("#### Detalle de Indicadores")
-            st.caption("💡 Haz clic en una barra del gráfico para filtrar por proceso.")
+            st.caption("💡 Haz clic en una barra (Reportado/Pendiente) para filtrar por proceso y estado.")
 
         # Datos pre-filtrados por selección del gráfico
-        df_p_base = df_p[df_p[col_proc_p] == chart_proc].copy() \
-                    if chart_proc and col_proc_p else df_p
+        df_p_base = df_p.copy()
+        if chart_proc and col_proc_p:
+            df_p_base = df_p_base[df_p_base[col_proc_p] == chart_proc]
+        if chart_estado and COL_E in df_p_base.columns:
+            df_p_base = df_p_base[df_p_base[COL_E] == chart_estado]
 
         f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p = _filtros_cascada(df_p_base, f"p_{nombre_p}")
         df_p_fil = _aplicar_filtros_tabla(df_p_base, f_id_p, f_nom_p, f_proc_p, f_sub_p, f_est_p)
         st.caption(f"Mostrando **{len(df_p_fil)}** de **{len(df_p)}** indicadores")
 
-        cols_desc_p   = [c for c in COLS_DESC if c in df_p_fil.columns and c not in (COL_E, COL_R)]
-        cols_estado_p = [c for c in (COL_E, COL_R) if c in df_p_fil.columns]
-        cols_finales  = cols_desc_p + cols_p + cols_estado_p
+        # Columna "Estado del indicador" en posición 4: Id, Indicador, Proceso, Estado, ...
+        _DISPLAY_ORDER = ["Id", "Indicador", "Proceso", COL_E, COL_R,
+                          "Subproceso", "Vicerrectoria", "Tipo", "Sentido", "Periodicidad"]
+        cols_base    = [c for c in _DISPLAY_ORDER if c in df_p_fil.columns]
+        cols_finales = cols_base + [c for c in cols_p if c in df_p_fil.columns]
         seen = set()
-        cols_finales = [c for c in cols_finales
-                        if c in df_p_fil.columns and not (c in seen or seen.add(c))]
+        cols_finales = [c for c in cols_finales if not (c in seen or seen.add(c))]
 
         df_tabla_p = df_p_fil[cols_finales].copy()
 
@@ -810,7 +840,7 @@ for tab_idx, perio in enumerate(perios, 2):
                     st.info("No hay columnas de período disponibles desde 2024.")
                 st.markdown("---")
                 st.markdown("**Ficha técnica**")
-                for fc in ["Id", "Indicador", "Vicerrectoria", "Area", "Proceso",
+                for fc in ["Id", "Indicador", "Vicerrectoria", "Proceso",
                            "Subproceso", "Tipo", "Sentido", "Periodicidad"]:
                     if fc in fila.index:
                         st.markdown(f"- **{fc}:** {fila.get(fc, '—')}")

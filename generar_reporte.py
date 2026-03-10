@@ -37,7 +37,7 @@ from openpyxl.utils import get_column_letter
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 RUTA_ORIGEN = os.path.join(BASE_DIR, "data", "raw", "lmi_reporte.xlsx")
-RUTA_SALIDA = os.path.join(BASE_DIR, "data", "raw", "Seguimiento_Reporte.xlsx")
+RUTA_SALIDA = os.path.join(BASE_DIR, "data", "output", "Seguimiento_Reporte.xlsx")
 
 # Archivo de respaldo Kawak (puede no existir; se omite sin error si falta).
 RUTA_KAWAK  = os.path.join(BASE_DIR, "data", "raw", "indicadores_kawak.xlsx")

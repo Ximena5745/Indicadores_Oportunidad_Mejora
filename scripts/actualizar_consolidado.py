@@ -40,9 +40,10 @@ from collections import defaultdict
 
 warnings.filterwarnings('ignore')
 
-BASE_PATH   = Path("Data/raw")
+_ROOT       = Path(__file__).parent.parent
+BASE_PATH   = _ROOT / "data" / "raw"
 INPUT_FILE  = BASE_PATH / "Resultados Consolidados.xlsx"
-OUTPUT_DIR  = Path("Data/outputs")
+OUTPUT_DIR  = _ROOT / "data" / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "Resultados Consolidados.xlsx"
 
