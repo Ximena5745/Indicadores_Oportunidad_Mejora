@@ -315,6 +315,41 @@ def cargar_api(years=(2022, 2023, 2024, 2025)):
     return df
 
 
+def cargar_lmi_reporte():
+    """
+    Lee lmi_reporte.xlsx y retorna el set de IDs (str) cuyo
+    Tipo == 'Metrica' (exacto, case-insensitive) O cuyo nombre de
+    Indicador contiene la palabra 'metrica'.
+    """
+    path = BASE_PATH / "lmi_reporte.xlsx"
+    if not path.exists():
+        print(f"  [AVISO] No se encontró {path.name}; ids_metrica = vacío")
+        return set()
+    try:
+        df = pd.read_excel(path)
+        df.columns = [str(c).strip() for c in df.columns]
+        # Normalizar nombre de columna Tipo (puede tener tildes u otros chars)
+        col_tipo = next((c for c in df.columns if c.lower().startswith('tipo')
+                         and 'variable' not in c.lower() and 'calculo' not in c.lower()), None)
+        col_ind  = next((c for c in df.columns if c.lower().startswith('indicador')), None)
+        col_id   = next((c for c in df.columns if c.lower() == 'id'), 'Id')
+
+        mask = pd.Series(False, index=df.index)
+        if col_tipo:
+            mask |= df[col_tipo].astype(str).str.strip().str.lower() == 'metrica'
+        if col_ind:
+            mask |= df[col_ind].astype(str).str.lower().str.contains('metrica', na=False)
+
+        ids = set()
+        for val in df.loc[mask, col_id].dropna():
+            s = str(val).strip()
+            ids.add(s[:-2] if s.endswith('.0') else s)
+        return ids
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo lmi_reporte.xlsx: {e}; ids_metrica = vacío")
+        return set()
+
+
 def cargar_kawak_old(years=(2021,)):
     frames = []
     for y in years:
@@ -852,9 +887,15 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
       - Las fórmulas L y M incluyen OR(K{r}="") → devuelven ""
         automáticamente cuando K está vacío (no muestra 0%).
 
-    Manejo Métrica:
-      - Si el Id está en ids_metrica → col K = None, col N = 'Metrica',
-        col O = 'No Aplica'. No se calcula cumplimiento.
+    Manejo Métrica / No Aplica:
+      - El estado se escribe en col S (19) = Tipo_Registro:
+          'Metrica'   si el Id está en ids_metrica
+          'No Aplica' si fila['es_na'] == True
+          ''          en cualquier otro caso
+      - Las columnas de signo (N=Meta Signo, O=Ejec Signo) SIEMPRE
+        conservan el formato original (%, $, ENT, etc.).
+      - Para es_na: Ejecucion (K) = None → cumplimiento devuelve "".
+      - Para Metrica: Ejecucion se escribe con el valor real.
 
     Columnas:
       A(1)  Id          B(2)  Indicador   C(3)  Proceso
@@ -864,7 +905,7 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
       L(12) =cumpl.acot  M(13) =cumpl.libre
       N(14) Meta Signo   O(15) Ejec Signo
       P(16) Dec_Meta     Q(17) Dec_Ejec
-      R(18) =llave
+      R(18) =llave       S(19) Tipo_Registro
     """
     if start_row is None:
         start_row = get_last_data_row(ws) + 1
@@ -886,19 +927,17 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
         es_na   = fila.get('es_na', False)
         es_metrica = ids_metrica is not None and id_str in ids_metrica
 
-        # Métrica: sin ejecución ni cumplimiento; solo se registra el valor
+        # N/A: Ejecucion = None → cumplimiento devuelve ""
+        if es_na:
+            ejec = None
+
+        # Tipo_Registro: identifica el tipo sin tocar los signos
         if es_metrica:
-            ejec       = None
-            meta_signo = 'Metrica'
-            ejec_signo = SIGNO_NA
-        # N/A: Ejecucion = None (celda vacía) y signo = 'No Aplica'
+            tipo_registro = 'Metrica'
         elif es_na:
-            ejec       = None
-            meta_signo = sg['meta_signo']
-            ejec_signo = SIGNO_NA
+            tipo_registro = SIGNO_NA
         else:
-            meta_signo = sg['meta_signo']
-            ejec_signo = sg['ejec_signo']
+            tipo_registro = ''
 
         # A–F: datos base
         ws.cell(r, 1).value = fila.get('Id')
@@ -914,25 +953,27 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
         ws.cell(r, 8).value = formula_H(r)
         ws.cell(r, 9).value = formula_I(r)
 
-        # J, K: Meta y Ejecución
+        # J, K: Meta y Ejecución (K=None cuando es_na → cumplimiento vacío)
         ws.cell(r, 10).value = meta
-        ws.cell(r, 11).value = ejec   # None cuando es N/A o Métrica → celda vacía
+        ws.cell(r, 11).value = ejec
 
         # L, M: cumplimiento
-        # Cuando K=None (vacío), OR(K{r}="") es True → devuelve ""
         ws.cell(r, 12).value         = formula_L(r)
         ws.cell(r, 12).number_format = '0.00%'
         ws.cell(r, 13).value         = formula_M(r)
         ws.cell(r, 13).number_format = '0.00%'
 
-        # N–Q: signos y decimales
-        ws.cell(r, 14).value = meta_signo
-        ws.cell(r, 15).value = ejec_signo    # 'No Aplica', 'Metrica' o signo normal
+        # N–Q: signos y decimales — siempre conservan el formato original (%, $, ENT…)
+        ws.cell(r, 14).value = sg['meta_signo']
+        ws.cell(r, 15).value = sg['ejec_signo']
         ws.cell(r, 16).value = sg['dec_meta']
         ws.cell(r, 17).value = sg['dec_ejec']
 
         # R: llave compuesta
         ws.cell(r, 18).value = formula_R(r)
+
+        # S: Tipo_Registro — 'Metrica', 'No Aplica' o '' para normales
+        ws.cell(r, 19).value = tipo_registro
 
         r += 1
 
@@ -1128,22 +1169,23 @@ def main():
                                 metadatos_kawak=meta_kawak, metadatos_cmi=meta_cmi)
     print(f"  Catálogo: {len(df_cat):,} indicadores")
 
-    # Identificar IDs de tipo "Métrica" (no tienen meta de cumplimiento):
-    # aplica si Tipo_API contiene "metrica" O si el nombre del indicador contiene "metrica"
-    ids_metrica = {
-        str(row['Id']).strip()
-        for _, row in df_cat.iterrows()
-        if 'metrica' in str(row.get('Tipo_API', '')).lower()
-        or 'metrica' in str(row.get('Indicador', '')).lower()
-    }
+    # Identificar IDs de tipo "Métrica" desde lmi_reporte.xlsx
+    # (columna Tipo == 'Metrica' o nombre Indicador contiene 'metrica')
+    ids_metrica = cargar_lmi_reporte()
     if ids_metrica:
         print(f"  Indicadores tipo Métrica: {len(ids_metrica)} IDs → "
-              f"se escribirán con Meta_Signo='Metrica' y Ejec_Signo='No Aplica'")
+              f"col S (Tipo_Registro)='Metrica'; signos sin cambio")
 
     # ── 6. Abrir workbook ─────────────────────────────────────────
     print("\n[6] Copiando base a outputs...")
     shutil.copy(INPUT_FILE, OUTPUT_FILE)
     wb = openpyxl.load_workbook(OUTPUT_FILE)
+
+    # Asegurar header Tipo_Registro (col S=19) en las tres hojas
+    for nombre_hoja in ('Consolidado Historico', 'Consolidado Semestral', 'Consolidado Cierres'):
+        ws_h = wb[nombre_hoja]
+        if ws_h.cell(1, 19).value != 'Tipo_Registro':
+            ws_h.cell(1, 19).value = 'Tipo_Registro'
 
     # Limpiar cierres existentes ANTES de escribir
     print("\n[6b] Limpiando Consolidado Cierres (solo 31/12 por Id+Año)...")
