@@ -43,30 +43,34 @@ _MES_NUM = {m: i+1 for i, m in enumerate(MESES_OPCIONES)}
 # ── Niveles extendidos ─────────────────────────────────────────────────────────
 _NO_APLICA   = "No aplica"
 _PEND        = "Pendiente de reporte"
+_METRICA     = "Métrica"
 
 _NIVEL_COLOR = {
     **NIVEL_COLOR,
     _NO_APLICA: "#78909C",
     _PEND:      "#BDBDBD",
+    _METRICA:   "#5C6BC0",
 }
 _NIVEL_BG = {
     **NIVEL_BG,
     _NO_APLICA: "#ECEFF1",
     _PEND:      "#F5F5F5",
+    _METRICA:   "#E8EAF6",
 }
 _NIVEL_ICON = {
     **NIVEL_ICON,
     _NO_APLICA: "⚫",
     _PEND:      "⚪",
+    _METRICA:   "📐",
 }
 _NIVEL_ORDEN = [
     "Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento",
-    _NO_APLICA, _PEND,
+    _NO_APLICA, _PEND, _METRICA,
 ]
 # Orden de severidad para detectar deterioro/mejora
 _ORDEN_NUM = {
     "Peligro": 0, "Alerta": 1, "Cumplimiento": 2, "Sobrecumplimiento": 3,
-    _NO_APLICA: -1, _PEND: -1,
+    _NO_APLICA: -1, _PEND: -1, _METRICA: -1,
 }
 
 
@@ -102,6 +106,11 @@ def _to_num(v):
 
 def _nivel(row) -> str:
     """Determina el nivel de cumplimiento del indicador."""
+    # Indicadores tipo Métrica: no tienen meta de cumplimiento
+    tipo = str(row.get("Tipo_Registro", "") or "").strip().lower()
+    if tipo == "metrica":
+        return _METRICA
+
     # Solo bloquear si la columna existe y tiene un valor explícito de no aplica
     if "Resultado" in row:
         resultado = str(row.get("Resultado", "")).strip().upper()
@@ -111,9 +120,7 @@ def _nivel(row) -> str:
     c = _to_num(row.get("cumplimiento", ""))
     if c is None:
         return _PEND
-    
-    # Para positivo: cumplimiento = ejec/meta  → mayor es mejor
-    # Para negativo: cumplimiento = meta/ejec  → ratio ya invertido, misma interpretación
+
     return nivel_desde_pct(c * 100)
 
 
@@ -139,6 +146,32 @@ def _fmt_num(v) -> str:
         s = str(v).strip()
         return s if s and s.lower() not in ("nan", "none", "") else "—"
     return f"{n:,.2f}".rstrip("0").rstrip(".")
+
+
+def _fmt_valor(v, signo, decimales) -> str:
+    """Formatea un valor numérico concatenando signo y decimales.
+    signo: '%' | '$' | 'ENT' | otro texto
+    decimales: int o float indicando dígitos decimales
+    """
+    n = _to_num(v)
+    if n is None:
+        return "—"
+    try:
+        d = max(0, int(float(decimales))) if not _is_null(decimales) else 2
+    except (ValueError, TypeError):
+        d = 2
+    s = str(signo).strip() if not _is_null(signo) else "%"
+    if s == "%":
+        return f"{n:,.{d}f}%"
+    elif s == "$":
+        # Formato colombiano: . miles, , decimales (ej. $1.234.567,89)
+        formatted = f"{n:,.{d}f}"  # "1,234,567.89"
+        formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"${formatted}"
+    elif s.upper() in ("ENT", "N", ""):
+        return f"{int(round(n)):,}"
+    else:
+        return f"{n:,.{d}f} {s}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -188,14 +221,25 @@ def _cargar_consolidados() -> pd.DataFrame:
         "Fecha": "fecha", "Mes": "Mes", "Periodo": "Periodo",
         "Meta": "Meta", "Ejecucion": "Ejecucion", "Cumplimiento": "cumplimiento",
         "Cumplimiento Real": "cumplimiento_real",
+        "Tipo_Registro": "Tipo_Registro",
+        "Decimales_Meta": "Dec_Meta", "Decimales_Ejecucion": "Dec_Ejec",
     }
-    
+    # Signo de Meta y Ejecución — pueden tener variantes con/sin acento
     for col in df.columns:
         col_lower = col.lower()
         if "año" in col_lower or "aio" in col_lower:
             col_renames[col] = "Anio"
-    
+        elif "meta" in col_lower and "signo" in col_lower:
+            col_renames[col] = "Meta_Signo"
+        elif ("ejec" in col_lower or "ejecuci" in col_lower) and "signo" in col_lower:
+            col_renames[col] = "Ejec_Signo"
+
     df = df.rename(columns={k: v for k, v in col_renames.items() if k in df.columns})
+
+    # Garantizar que las columnas de signo/tipo existan
+    for col in ("Tipo_Registro", "Meta_Signo", "Ejec_Signo", "Dec_Meta", "Dec_Ejec"):
+        if col not in df.columns:
+            df[col] = None
     
     if "Anio" in df.columns:
         df["Anio"] = pd.to_numeric(df["Anio"], errors="coerce")
@@ -311,9 +355,25 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
     
     df["Nivel de cumplimiento"] = df.apply(_nivel, axis=1)
     _cum_display = "cumplimiento_real" if "cumplimiento_real" in df.columns else "cumplimiento"
-    df["Cumplimiento"] = df[_cum_display].apply(_fmt_num)
+
+    # Cumplimiento: Métrica no tiene → mostrar "—"
+    def _fmt_cum(row):
+        if str(row.get("Nivel de cumplimiento", "")) == _METRICA:
+            return "—"
+        return _fmt_num(row.get(_cum_display))
+    df["Cumplimiento"] = df.apply(_fmt_cum, axis=1)
+
     if "cumplimiento_real" in df.columns:
-        df["Cumplimiento Real"] = df["cumplimiento_real"].apply(_fmt_num)
+        df["Cumplimiento Real"] = df.apply(
+            lambda r: "—" if str(r.get("Nivel de cumplimiento","")) == _METRICA
+                      else _fmt_num(r.get("cumplimiento_real")), axis=1)
+
+    # Meta y Ejecución formateadas con signo y decimales
+    df["Meta_fmt"] = df.apply(
+        lambda r: _fmt_valor(r.get("Meta"), r.get("Meta_Signo"), r.get("Dec_Meta")), axis=1)
+    df["Ejecucion_fmt"] = df.apply(
+        lambda r: _fmt_valor(r.get("Ejecucion"), r.get("Ejec_Signo"), r.get("Dec_Ejec")), axis=1)
+
     df["Fecha reporte"] = df["fecha"].dt.strftime("%d/%m/%Y").fillna("—") \
                           if "fecha" in df.columns else "—"
     
@@ -759,26 +819,26 @@ with tab_con:
     # ── Tabla ─────────────────────────────────────────────────────────────
     _COLS_CON = [
         "Id", "Indicador", "Nivel de cumplimiento", "Cumplimiento",
-        "Meta", "Ejecucion", "Fecha reporte",
+        "Meta_fmt", "Ejecucion_fmt", "Fecha reporte",
         "Vicerrectoria", "Proceso", "Periodicidad", "Sentido", "PDI", "linea",
     ]
     cols_show = [c for c in _COLS_CON if c in df_filt.columns]
     df_mostrar = df_filt[cols_show].copy()
 
     col_cfg = {
-        "Id":                  st.column_config.TextColumn("ID",           width="small"),
-        "Indicador":           st.column_config.TextColumn("Indicador",    width="large"),
-        "Nivel de cumplimiento": st.column_config.TextColumn("Nivel",      width="medium"),
-        "Cumplimiento":        st.column_config.TextColumn("Cumplimiento", width="small"),
-        "Meta":                st.column_config.NumberColumn("Meta",       width="small", format="%.2f"),
-        "Ejecucion":           st.column_config.NumberColumn("Ejecución",  width="small", format="%.2f"),
-        "Fecha reporte":       st.column_config.TextColumn("Fecha",        width="small"),
-        "Vicerrectoria":       st.column_config.TextColumn("Vicerrectoría", width="medium"),
-        "Proceso":             st.column_config.TextColumn("Proceso",      width="medium"),
-        "Periodicidad":        st.column_config.TextColumn("Periodicidad", width="small"),
-        "Sentido":             st.column_config.TextColumn("Sentido",      width="small"),
-        "PDI":                 st.column_config.TextColumn("PDI",          width="small"),
-        "linea":               st.column_config.TextColumn("Línea",        width="medium"),
+        "Id":                    st.column_config.TextColumn("ID",           width="small"),
+        "Indicador":             st.column_config.TextColumn("Indicador",    width="large"),
+        "Nivel de cumplimiento": st.column_config.TextColumn("Nivel",        width="medium"),
+        "Cumplimiento":          st.column_config.TextColumn("Cumplimiento", width="small"),
+        "Meta_fmt":              st.column_config.TextColumn("Meta",         width="small"),
+        "Ejecucion_fmt":         st.column_config.TextColumn("Ejecución",    width="small"),
+        "Fecha reporte":         st.column_config.TextColumn("Fecha",        width="small"),
+        "Vicerrectoria":         st.column_config.TextColumn("Vicerrectoría", width="medium"),
+        "Proceso":               st.column_config.TextColumn("Proceso",      width="medium"),
+        "Periodicidad":          st.column_config.TextColumn("Periodicidad", width="small"),
+        "Sentido":               st.column_config.TextColumn("Sentido",      width="small"),
+        "PDI":                   st.column_config.TextColumn("PDI",          width="small"),
+        "linea":                 st.column_config.TextColumn("Línea",        width="medium"),
     }
 
     ev_tabla = st.dataframe(
