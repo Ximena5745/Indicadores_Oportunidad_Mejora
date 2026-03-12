@@ -161,6 +161,7 @@ def _fmt_valor(v, signo, decimales) -> str:
     except (ValueError, TypeError):
         d = 2
     s = str(signo).strip() if not _is_null(signo) else "%"
+    su = s.upper()
     if s == "%":
         return f"{n:,.{d}f}%"
     elif s == "$":
@@ -168,8 +169,13 @@ def _fmt_valor(v, signo, decimales) -> str:
         formatted = f"{n:,.{d}f}"  # "1,234,567.89"
         formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
         return f"${formatted}"
-    elif s.upper() in ("ENT", "N", ""):
+    elif su in ("ENT", "N", ""):
         return f"{int(round(n)):,}"
+    elif su == "DEC":
+        return f"{n:,.{d}f}"
+    elif su in ("NO APLICA", "SIN REPORTE", "NA"):
+        # Etiqueta de estado, no unidad — mostrar solo el número
+        return f"{n:,.{d}f}" if d > 0 else f"{int(round(n)):,}"
     else:
         return f"{n:,.{d}f} {s}"
 
@@ -364,14 +370,17 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
     df["Nivel de cumplimiento"] = df.apply(_nivel, axis=1)
     _cum_display = "cumplimiento_real" if "cumplimiento_real" in df.columns else "cumplimiento"
 
-    # Cumplimiento: Métrica no tiene → mostrar "—"; resto como porcentaje
+    # Cumplimiento: Métrica no tiene → mostrar "—"; resto como porcentaje + icono nivel
     def _fmt_cum(row):
-        if str(row.get("Nivel de cumplimiento", "")) == _METRICA:
+        niv = str(row.get("Nivel de cumplimiento", ""))
+        if niv == _METRICA:
             return "—"
         v = _to_num(row.get(_cum_display))
         if v is None:
             return "—"
-        return f"{v * 100:,.2f}%"
+        icon = NIVEL_ICON.get(niv, "")
+        pct  = f"{v * 100:,.2f}%"
+        return f"{icon} {pct}" if icon else pct
 
     df["Cumplimiento"] = df.apply(_fmt_cum, axis=1)
 
@@ -833,8 +842,9 @@ with tab_con:
 
     # ── Tabla ─────────────────────────────────────────────────────────────
     _COLS_CON = [
-        "Id", "Indicador", "Nivel de cumplimiento", "Cumplimiento",
-        "Meta_fmt", "Ejecucion_fmt", "Fecha reporte",
+        "Id", "Indicador", "Nivel de cumplimiento",
+        "Meta_fmt", "Ejecucion_fmt", "Cumplimiento",
+        "Fecha reporte",
         "Vicerrectoria", "Proceso", "Periodicidad", "Sentido", "linea",
     ]
     cols_show = [c for c in _COLS_CON if c in df_filt.columns]
@@ -844,9 +854,9 @@ with tab_con:
         "Id":                    st.column_config.TextColumn("ID",           width="small"),
         "Indicador":             st.column_config.TextColumn("Indicador",    width="large"),
         "Nivel de cumplimiento": st.column_config.TextColumn("Nivel",        width="medium"),
-        "Cumplimiento":          st.column_config.TextColumn("Cumplimiento", width="small"),
         "Meta_fmt":              st.column_config.TextColumn("Meta",         width="small"),
         "Ejecucion_fmt":         st.column_config.TextColumn("Ejecución",    width="small"),
+        "Cumplimiento":          st.column_config.TextColumn("Cumplimiento", width="small"),
         "Fecha reporte":         st.column_config.TextColumn("Fecha",        width="small"),
         "Vicerrectoria":         st.column_config.TextColumn("Vicerrectoría", width="medium"),
         "Proceso":               st.column_config.TextColumn("Proceso",      width="medium"),
