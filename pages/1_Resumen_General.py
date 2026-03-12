@@ -408,34 +408,21 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
         proc_col = next((c for c in mapa_cols if c.lower() == "proceso"),    None)
         vic_col  = next((c for c in mapa_cols if "icerrector" in c.lower()), None)
 
-        if sub_col:
-            # El "Proceso" del dataset corresponde al Subproceso en la jerarquía del mapa.
-            # Renombrar para separarlo del Proceso real que vendrá del join.
-            df = df.rename(columns={"Proceso": "Subproceso"})
-            cols_m   = [c for c in [sub_col, proc_col, vic_col] if c]
-            rename_m = {sub_col: "_sub_key"}
-            if proc_col: rename_m[proc_col] = "Proceso"
-            if vic_col:  rename_m[vic_col]  = "Vicerrectoria"
+        if proc_col:
+            # Unir data["Proceso"] → mapa["Proceso"] para obtener Vicerrectoría y Subproceso.
+            # Join insensible a mayúsculas y espacios mediante clave normalizada temporal.
+            cols_m   = [c for c in [proc_col, sub_col, vic_col] if c]
+            rename_m = {proc_col: "_proc_key"}
+            if sub_col: rename_m[sub_col] = "Subproceso"
+            if vic_col: rename_m[vic_col] = "Vicerrectoria"
             mapa_join = (mapa[cols_m]
                          .rename(columns=rename_m)
-                         .drop_duplicates(subset=["_sub_key"])
+                         .drop_duplicates(subset=["_proc_key"])
                          .reset_index(drop=True))
-            # Normalizar clave para join insensible a mayúsculas y espacios
-            mapa_join["_sub_key"] = mapa_join["_sub_key"].str.strip().str.upper()
-            df["_sub_key"] = df["Subproceso"].str.strip().str.upper()
-            df = df.merge(mapa_join, on="_sub_key", how="left")
-            df = df.drop(columns=["_sub_key"], errors="ignore")
-            if "Proceso" not in df.columns:
-                df["Proceso"] = df["Subproceso"]
-        elif proc_col and vic_col:
-            # Fallback: join al nivel de Proceso
-            cols_proc = [proc_col, vic_col]
-            mapa_proc = (mapa[cols_proc]
-                         .drop_duplicates(subset=[proc_col])
-                         .reset_index(drop=True))
-            df = df.merge(mapa_proc, left_on="Proceso", right_on=proc_col, how="left")
-            if vic_col in df.columns:
-                df = df.rename(columns={vic_col: "Vicerrectoria"})
+            mapa_join["_proc_key"] = mapa_join["_proc_key"].str.strip().str.upper()
+            df["_proc_key"] = df["Proceso"].str.strip().str.upper()
+            df = df.merge(mapa_join, on="_proc_key", how="left")
+            df = df.drop(columns=["_proc_key"], errors="ignore")
     
     return df
 
