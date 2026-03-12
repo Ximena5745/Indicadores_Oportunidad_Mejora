@@ -179,8 +179,8 @@ def _fmt_valor(v, signo, decimales) -> str:
         formatted = f"{n:,.{d}f}"  # "1,234,567.89"
         formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
         return f"${formatted}"
-    elif su in ("ENT", "N", ""):
-        return f"{int(round(n)):,}"
+    elif su in ("ENT", "N", "", "METRICA", "MÉTRICA"):
+        return f"{int(round(n)):,}" if d == 0 else f"{n:,.{d}f}"
     elif su == "DEC":
         return f"{n:,.{d}f}"
     elif su in ("NO APLICA", "SIN REPORTE", "NA"):
@@ -498,10 +498,16 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
         df["Cumplimiento Real"] = df.apply(_fmt_cum_real, axis=1)
 
     # Meta y Ejecución formateadas con signo y decimales
+    # Métricas: signo siempre "ENT" (nunca concatenar el texto "Metrica" ni "%")
+    def _signo_fmt(r, col_signo):
+        if str(r.get("Tipo_Registro", "")).strip().lower() == "metrica":
+            return "ENT"
+        return r.get(col_signo)
+
     df["Meta_fmt"] = df.apply(
-        lambda r: _fmt_valor(r.get("Meta"), r.get("Meta_Signo"), r.get("Dec_Meta")), axis=1)
+        lambda r: _fmt_valor(r.get("Meta"), _signo_fmt(r, "Meta_Signo"), r.get("Dec_Meta")), axis=1)
     df["Ejecucion_fmt"] = df.apply(
-        lambda r: _fmt_valor(r.get("Ejecucion"), r.get("Ejec_Signo"), r.get("Dec_Ejec")), axis=1)
+        lambda r: _fmt_valor(r.get("Ejecucion"), _signo_fmt(r, "Ejec_Signo"), r.get("Dec_Ejec")), axis=1)
 
     df["Fecha reporte"] = df["fecha"].dt.strftime("%d/%m/%Y").fillna("—") \
                           if "fecha" in df.columns else "—"

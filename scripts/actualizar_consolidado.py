@@ -862,6 +862,40 @@ def get_last_data_row(ws):
 # LIMPIAR CIERRES EXISTENTES
 # ─────────────────────────────────────────────────────────────────────
 
+def purgar_filas_invalidas(ws, nombre="hoja"):
+    """
+    Elimina filas donde la fecha es futura (año > AÑO_CIERRE_ACTUAL)
+    o donde el campo Año/Mes contiene texto inválido como 'Avance'.
+    Col F(6)=Fecha, Col M(13)=Año.
+    """
+    filas_a_borrar = []
+    for row in ws.iter_rows(min_row=2, values_only=False):
+        if row[0].value is None:
+            continue
+        # Revisar fecha (col F = índice 5)
+        fecha_raw = row[5].value
+        try:
+            fecha = pd.to_datetime(fecha_raw)
+            if fecha.year > AÑO_CIERRE_ACTUAL:
+                filas_a_borrar.append(row[0].row)
+                continue
+        except Exception:
+            pass
+        # Revisar campo Año (col M = índice 12): si es texto no numérico → inválido
+        anio_val = row[12].value if len(row) > 12 else None
+        if anio_val is not None:
+            try:
+                float(anio_val)
+            except (TypeError, ValueError):
+                filas_a_borrar.append(row[0].row)
+
+    for r_idx in sorted(set(filas_a_borrar), reverse=True):
+        ws.delete_rows(r_idx)
+    if filas_a_borrar:
+        print(f"  [{nombre}] {len(filas_a_borrar)} filas inválidas/futuras eliminadas.")
+    return len(filas_a_borrar)
+
+
 def limpiar_cierres_existentes(ws):
     """
     Elimina cortes no-diciembre para años <= AÑO_CIERRE_ACTUAL.
@@ -1083,8 +1117,9 @@ def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
             continue
         if es_na:
             conteo_na += 1
-        subproceso = row.get('Proceso', '')
-        proceso    = homologar_proceso(subproceso, mapa_procesos)
+        # Conservar el subproceso tal como viene (col Proceso de las fuentes),
+        # para mantener consistencia con los registros históricos existentes.
+        proceso = row.get('Proceso', '')
         registros.append({
             'Id': row['Id'], 'Indicador': limpiar_html(str(row.get('Indicador', ''))),
             'Proceso': proceso, 'Periodicidad': row.get('Periodicidad', ''),
@@ -1126,8 +1161,7 @@ def construir_registros_cierres(df_fuente, hist_escalas, mapa_procesos=None):
                 continue
             if es_na:
                 conteo_na += 1
-            subproceso = row.get('Proceso', '')
-            proceso    = homologar_proceso(subproceso, mapa_procesos)
+            proceso = row.get('Proceso', '')
             registros.append({
                 'Id': id_val, 'Indicador': limpiar_html(str(row.get('Indicador', ''))),
                 'Proceso': proceso, 'Periodicidad': row.get('Periodicidad', ''),
@@ -1254,8 +1288,13 @@ def main():
         if ws_h.cell(1, 22).value != 'Tipo_Registro':
             ws_h.cell(1, 22).value = 'Tipo_Registro'
 
+    # Purgar filas con fechas futuras o campos inválidos ("Avance") de todas las hojas
+    print("\n[6b] Purgando filas inválidas/futuras...")
+    for _nombre_hoja in ('Consolidado Historico', 'Consolidado Semestral', 'Consolidado Cierres'):
+        purgar_filas_invalidas(wb[_nombre_hoja], _nombre_hoja)
+
     # Limpiar cierres existentes ANTES de escribir
-    print("\n[6b] Limpiando Consolidado Cierres (solo 31/12 por Id+Año)...")
+    print("\n[6c] Limpiando Consolidado Cierres (solo 31/12 por Id+Año)...")
     ws_cierres = wb['Consolidado Cierres']
     limpiar_cierres_existentes(ws_cierres)
 
