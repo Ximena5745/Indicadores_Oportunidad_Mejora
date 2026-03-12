@@ -421,10 +421,15 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
         lookup = (mapa[lookup_cols]
                   .drop_duplicates(subset=["Subproceso"], keep="first")
                   .copy())
-        lookup["_key"] = lookup["Subproceso"].str.upper()
+        import unicodedata as _ud
+        def _norm_key(v):
+            """Sin acentos + mayúsculas para match robusto en Subproceso."""
+            return _ud.normalize("NFD", str(v).strip()).encode("ascii", "ignore").decode().upper()
+
+        lookup["_key"] = lookup["Subproceso"].apply(_norm_key)
         lookup = lookup.drop(columns=["Subproceso"])
 
-        df["_key"] = df["Subproceso"].astype(str).str.strip().str.upper()
+        df["_key"] = df["Subproceso"].apply(_norm_key)
         df = df.merge(lookup, on="_key", how="left")
         df = df.drop(columns=["_key"], errors="ignore")
         if "Proceso" not in df.columns:
