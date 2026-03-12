@@ -189,15 +189,18 @@ _INVALIDOS_MAPA = {"", "NAN", "NO APLICA", "N/A", "NONE", "SIN DATO"}
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _cargar_mapa() -> pd.DataFrame:
-    """Lee Subproceso-Proceso-Area.xlsx.
-    Retorna todas las filas válidas (Subproceso y Proceso reales, no 'No Aplica').
-    SIN deduplicar: el lookup en _preparar_consolidado maneja prioridades.
+    """Lee Subproceso-Proceso-Area.xlsx y retorna un lookup completo.
+
+    Construye DOS tipos de entradas (Subproceso tiene prioridad):
+    1. Subproceso válido (Proceso real) → entrada directa
+    2. Subproceso = "No Aplica" / Proceso como único nivel →
+       se agrega fila con Subproceso = Proceso (para datos que solo
+       almacenan el nivel Proceso en su campo 'Proceso')
     """
     if not _RUTA_MAPA.exists():
         return pd.DataFrame()
     df = pd.read_excel(str(_RUTA_MAPA), engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
-    # Igual lógica que cargar_mapa_procesos() en actualizar_consolidado.py
     col_sub    = next((c for c in df.columns if "subproceso" in c.lower() and ".1" not in c.lower()), None)
     col_proc   = next((c for c in df.columns if c.lower() == "proceso"), None)
     col_vicerr = next((c for c in df.columns if "icerrector" in c.lower()), None)
@@ -208,12 +211,24 @@ def _cargar_mapa() -> pd.DataFrame:
     df = df.rename(columns=rename)
     cols_k = [c for c in ["Subproceso", "Proceso", "Vicerrectoria"] if c in df.columns]
     df = df[cols_k].copy()
-    # Normalizar a string y eliminar filas con Subproceso o Proceso inválidos
     for c in ["Subproceso", "Proceso"]:
         df[c] = df[c].astype(str).str.strip()
-    df = df[~df["Subproceso"].str.upper().isin(_INVALIDOS_MAPA)]
-    df = df[~df["Proceso"].str.upper().isin(_INVALIDOS_MAPA)]
-    return df.reset_index(drop=True)
+
+    # ── Filas con Proceso real (Subproceso específico) ─────────────────────
+    validas = df[~df["Proceso"].str.upper().isin(_INVALIDOS_MAPA)].copy()
+    validas = validas[~validas["Subproceso"].str.upper().isin(_INVALIDOS_MAPA)]
+
+    # ── Filas de fallback: clave = Proceso (para datos que usan nivel Proceso) ──
+    # Toma cada Proceso único con Vicerrectoría del primer Subproceso válido
+    proc_fallback = (validas.drop_duplicates(subset=["Proceso"], keep="first")
+                             .copy())
+    proc_fallback["Subproceso"] = proc_fallback["Proceso"]
+
+    # Unir: Subproceso específico tiene prioridad sobre Proceso
+    resultado = (pd.concat([validas, proc_fallback])
+                   .drop_duplicates(subset=["Subproceso"], keep="first")
+                   .reset_index(drop=True))
+    return resultado
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando Resultados Consolidados.xlsx...")
