@@ -81,16 +81,19 @@ for _k, _v in [
 
 # ── Sidebar — Filtros ──────────────────────────────────────────────────────────
 st.sidebar.markdown("## Filtros")
-anios_disp = sorted(df_raw["Anio"].dropna().unique().tolist()) if "Anio" in df_raw.columns else []
-anios_sel  = st.sidebar.multiselect("Año", options=anios_disp, default=[])
-period_disp = sorted(df_raw["Periodicidad"].dropna().unique().tolist()) if "Periodicidad" in df_raw.columns else []
-period_sel  = st.sidebar.multiselect("Periodicidad", options=period_disp, default=[])
+
+anios_disp  = sorted(df_raw["Anio"].dropna().unique().tolist()) if "Anio" in df_raw.columns else []
+default_año = [2025] if 2025 in anios_disp else (anios_disp[-1:] if anios_disp else [])
+anios_sel   = st.sidebar.multiselect("Año", options=anios_disp, default=default_año)
+
+meses_disp = sorted(df_raw["Mes"].dropna().unique().tolist()) if "Mes" in df_raw.columns else []
+meses_sel  = st.sidebar.multiselect("Mes", options=meses_disp, default=[])
 
 df = df_raw.copy()
 if anios_sel:
     df = df[df["Anio"].isin(anios_sel)]
-if period_sel:
-    df = df[df["Periodicidad"].isin(period_sel)]
+if meses_sel:
+    df = df[df["Mes"].isin(meses_sel)]
 
 df_ultimo    = obtener_ultimo_registro(df)
 df_con_datos = df_ultimo[df_ultimo["Cumplimiento_norm"].notna()]
