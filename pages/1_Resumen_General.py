@@ -189,13 +189,11 @@ _INVALIDOS_MAPA = {"", "NAN", "NO APLICA", "N/A", "NONE", "SIN DATO"}
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _cargar_mapa() -> pd.DataFrame:
-    """Lee Subproceso-Proceso-Area.xlsx y retorna un lookup completo.
-
-    Construye DOS tipos de entradas (Subproceso tiene prioridad):
-    1. Subproceso válido (Proceso real) → entrada directa
-    2. Subproceso = "No Aplica" / Proceso como único nivel →
-       se agrega fila con Subproceso = Proceso (para datos que solo
-       almacenan el nivel Proceso en su campo 'Proceso')
+    """Lee Subproceso-Proceso-Area.xlsx.
+    La llave de cruce es SIEMPRE el Subproceso:
+      data["Proceso"] contiene valores de Subproceso (ej: "Servicio", "Contabilidad")
+      que se cruzan con mapa["Subproceso"] para obtener Proceso y Vicerrectoría.
+    Solo se retornan filas con Subproceso y Proceso reales (sin 'No Aplica').
     """
     if not _RUTA_MAPA.exists():
         return pd.DataFrame()
@@ -213,22 +211,10 @@ def _cargar_mapa() -> pd.DataFrame:
     df = df[cols_k].copy()
     for c in ["Subproceso", "Proceso"]:
         df[c] = df[c].astype(str).str.strip()
-
-    # ── Filas con Proceso real (Subproceso específico) ─────────────────────
-    validas = df[~df["Proceso"].str.upper().isin(_INVALIDOS_MAPA)].copy()
-    validas = validas[~validas["Subproceso"].str.upper().isin(_INVALIDOS_MAPA)]
-
-    # ── Filas de fallback: clave = Proceso (para datos que usan nivel Proceso) ──
-    # Toma cada Proceso único con Vicerrectoría del primer Subproceso válido
-    proc_fallback = (validas.drop_duplicates(subset=["Proceso"], keep="first")
-                             .copy())
-    proc_fallback["Subproceso"] = proc_fallback["Proceso"]
-
-    # Unir: Subproceso específico tiene prioridad sobre Proceso
-    resultado = (pd.concat([validas, proc_fallback])
-                   .drop_duplicates(subset=["Subproceso"], keep="first")
-                   .reset_index(drop=True))
-    return resultado
+    # Solo filas con Subproceso y Proceso válidos
+    df = df[~df["Subproceso"].str.upper().isin(_INVALIDOS_MAPA)]
+    df = df[~df["Proceso"].str.upper().isin(_INVALIDOS_MAPA)]
+    return df.reset_index(drop=True)
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando Resultados Consolidados.xlsx...")
