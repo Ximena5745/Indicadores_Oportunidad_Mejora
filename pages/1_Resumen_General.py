@@ -413,14 +413,18 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
             # Renombrar para separarlo del Proceso real que vendrá del join.
             df = df.rename(columns={"Proceso": "Subproceso"})
             cols_m   = [c for c in [sub_col, proc_col, vic_col] if c]
-            rename_m = {sub_col: "Subproceso"}
+            rename_m = {sub_col: "_sub_key"}
             if proc_col: rename_m[proc_col] = "Proceso"
             if vic_col:  rename_m[vic_col]  = "Vicerrectoria"
             mapa_join = (mapa[cols_m]
                          .rename(columns=rename_m)
-                         .drop_duplicates(subset=["Subproceso"])
+                         .drop_duplicates(subset=["_sub_key"])
                          .reset_index(drop=True))
-            df = df.merge(mapa_join, on="Subproceso", how="left")
+            # Normalizar clave para join insensible a mayúsculas y espacios
+            mapa_join["_sub_key"] = mapa_join["_sub_key"].str.strip().str.upper()
+            df["_sub_key"] = df["Subproceso"].str.strip().str.upper()
+            df = df.merge(mapa_join, on="_sub_key", how="left")
+            df = df.drop(columns=["_sub_key"], errors="ignore")
             if "Proceso" not in df.columns:
                 df["Proceso"] = df["Subproceso"]
         elif proc_col and vic_col:
