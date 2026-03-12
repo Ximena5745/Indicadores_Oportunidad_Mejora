@@ -408,23 +408,39 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
         proc_col = next((c for c in mapa_cols if c.lower() == "proceso"),    None)
         vic_col  = next((c for c in mapa_cols if "icerrector" in c.lower()), None)
 
-        if sub_col:
-            # La columna "Proceso" del dataset es el Subproceso en la jerarquía del mapa.
-            # La llave de join siempre es Subproceso; de ahí se obtienen Proceso y Vicerrectoría.
+        if sub_col and proc_col:
+            # El dataset llama "Proceso" a lo que es Subproceso en el mapa, pero algunos
+            # valores coinciden a nivel Subproceso y otros a nivel Proceso.
+            # Estrategia: lookup unificado — Subproceso tiene prioridad sobre Proceso.
             df = df.rename(columns={"Proceso": "Subproceso"})
-            cols_m   = [c for c in [sub_col, proc_col, vic_col] if c]
-            rename_m = {sub_col: "_sub_key"}
-            if proc_col: rename_m[proc_col] = "Proceso"
-            if vic_col:  rename_m[vic_col]  = "Vicerrectoria"
-            mapa_join = (mapa[cols_m]
-                         .rename(columns=rename_m)
-                         .drop_duplicates(subset=["_sub_key"])
-                         .reset_index(drop=True))
-            # Normalizar clave: strip + upper en ambos lados
-            mapa_join["_sub_key"] = mapa_join["_sub_key"].str.strip().str.upper()
-            df["_sub_key"] = df["Subproceso"].str.strip().str.upper()
-            df = df.merge(mapa_join, on="_sub_key", how="left")
-            df = df.drop(columns=["_sub_key"], errors="ignore")
+
+            vc = vic_col if vic_col else None
+            cols_use = [c for c in [sub_col, proc_col, vc] if c]
+            m = mapa[cols_use].copy()
+            m[sub_col]  = m[sub_col].astype(str).str.strip()
+            m[proc_col] = m[proc_col].astype(str).str.strip()
+
+            # Entradas con clave = Subproceso (específico)
+            sub_entries = m[[sub_col, proc_col] + ([vc] if vc else [])].copy()
+            sub_entries["_key"] = sub_entries[sub_col].str.upper()
+            sub_entries = sub_entries.rename(columns={proc_col: "Proceso",
+                                                      **({vc: "Vicerrectoria"} if vc else {})})
+
+            # Entradas con clave = Proceso (fallback para valores que no son Subproceso)
+            proc_entries = m[[proc_col] + ([vc] if vc else [])].drop_duplicates(proc_col).copy()
+            proc_entries["_key"] = proc_entries[proc_col].str.upper()
+            proc_entries = proc_entries.rename(columns={proc_col: "Proceso",
+                                                        **({vc: "Vicerrectoria"} if vc else {})})
+
+            # Unir: Subproceso primero → tiene prioridad al deduplicar por _key
+            lookup_cols = ["_key", "Proceso"] + (["Vicerrectoria"] if vc else [])
+            lookup = (pd.concat([sub_entries[lookup_cols], proc_entries[lookup_cols]])
+                        .drop_duplicates(subset=["_key"], keep="first")
+                        .reset_index(drop=True))
+
+            df["_key"] = df["Subproceso"].astype(str).str.strip().str.upper()
+            df = df.merge(lookup, on="_key", how="left")
+            df = df.drop(columns=["_key"], errors="ignore")
             if "Proceso" not in df.columns:
                 df["Proceso"] = df["Subproceso"]
     
