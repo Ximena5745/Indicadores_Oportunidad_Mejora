@@ -1,5 +1,8 @@
 """
 utils/data_loader.py — Carga de datos desde xlsx con caché st.cache_data.
+
+Fuente principal: data/output/Resultados Consolidados.xlsx (hoja Consolidado Semestral).
+El Dataset_Unificado.xlsx NO es fuente oficial y NO debe usarse como origen de datos.
 """
 import unicodedata
 import streamlit as st
@@ -8,7 +11,8 @@ from pathlib import Path
 
 from utils.calculos import normalizar_cumplimiento, categorizar_cumplimiento, estado_tiempo_acciones
 
-DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
+DATA_RAW    = Path(__file__).parent.parent / "data" / "raw"
+DATA_OUTPUT = Path(__file__).parent.parent / "data" / "output"
 
 _RENAME = {
     "Año":           "Anio",
@@ -47,21 +51,57 @@ def _id_a_str(x) -> str:
 
 @st.cache_data(ttl=300, show_spinner="Cargando datos principales...")
 def cargar_dataset() -> pd.DataFrame:
-    path = DATA_RAW / "Dataset_Unificado.xlsx"
+    """
+    Carga el dataset principal desde Resultados Consolidados.xlsx (fuente oficial).
+    Enriquece con Clasificacion (Catálogo) y Subproceso/Linea (CMI).
+    El Sentido se toma SIEMPRE del Consolidado (calculado desde Kawak/API).
+    """
+    path = DATA_OUTPUT / "Resultados Consolidados.xlsx"
     if not path.exists():
         st.error(f"Archivo no encontrado: {path}")
         return pd.DataFrame()
 
-    df = pd.read_excel(path, sheet_name="Unificado", engine="openpyxl")
+    df = pd.read_excel(path, sheet_name="Consolidado Semestral", engine="openpyxl")
     df = _renombrar(df, _RENAME)
 
-    # Normalizar cumplimiento
+    # Id como string limpio (hacer antes de los joins)
+    if "Id" in df.columns:
+        df["Id"] = df["Id"].apply(_id_a_str)
+
+    # ── Enriquecer con Clasificacion desde Catalogo Indicadores ──────────────
+    if "Clasificacion" not in df.columns:
+        try:
+            df_cat = pd.read_excel(path, sheet_name="Catalogo Indicadores", engine="openpyxl")
+            df_cat["Id"] = df_cat["Id"].apply(_id_a_str)
+            cols_cat = ["Id"] + [c for c in ["Clasificacion"] if c in df_cat.columns]
+            if len(cols_cat) > 1:
+                df = df.merge(df_cat[cols_cat].drop_duplicates("Id"), on="Id", how="left")
+        except Exception:
+            pass
+
+    # ── Enriquecer con Subproceso y Linea desde Indicadores por CMI ──────────
+    # (NO se toma Sentido del CMI — puede estar desactualizado)
+    try:
+        df_cmi = pd.read_excel(
+            DATA_RAW / "Indicadores por CMI.xlsx",
+            sheet_name="Worksheet", engine="openpyxl",
+        )
+        df_cmi = _renombrar(df_cmi, _RENAME)
+        df_cmi["Id"] = df_cmi["Id"].apply(_id_a_str)
+        cols_cmi = ["Id"] + [c for c in ["Subproceso", "Linea", "Objetivo"]
+                             if c in df_cmi.columns]
+        if len(cols_cmi) > 1:
+            df = df.merge(df_cmi[cols_cmi].drop_duplicates("Id"), on="Id", how="left")
+    except Exception:
+        pass
+
+    # ── Normalizar cumplimiento ───────────────────────────────────────────────
     if "Cumplimiento" in df.columns:
         df["Cumplimiento_norm"] = df["Cumplimiento"].apply(normalizar_cumplimiento)
     else:
         df["Cumplimiento_norm"] = float("nan")
 
-    # Categorizar
+    # ── Categorizar ───────────────────────────────────────────────────────────
     df["Categoria"] = df.apply(
         lambda r: categorizar_cumplimiento(
             r["Cumplimiento_norm"],
@@ -70,17 +110,13 @@ def cargar_dataset() -> pd.DataFrame:
         axis=1,
     )
 
-    # Fechas
+    # ── Fechas ────────────────────────────────────────────────────────────────
     if "Fecha" in df.columns:
         df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
 
-    # Año como Int64
+    # ── Año como Int64 ────────────────────────────────────────────────────────
     if "Anio" in df.columns:
         df["Anio"] = pd.to_numeric(df["Anio"], errors="coerce").astype("Int64")
-
-    # Id como string limpio
-    if "Id" in df.columns:
-        df["Id"] = df["Id"].apply(_id_a_str)
 
     return df
 

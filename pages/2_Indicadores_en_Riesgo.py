@@ -54,7 +54,7 @@ def _kawak_ids() -> set:
 # ── Carga ─────────────────────────────────────────────────────────────────────
 df_raw_all = cargar_dataset()
 if df_raw_all.empty:
-    st.error("No se pudo cargar Dataset_Unificado.xlsx.")
+    st.error("No se pudo cargar Resultados Consolidados.xlsx.")
     st.stop()
 
 kawak_set = _kawak_ids()
