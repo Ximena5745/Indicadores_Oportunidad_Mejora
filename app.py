@@ -111,12 +111,15 @@ with st.sidebar:
 # ── Navegación multipágina ────────────────────────────────────────────────────
 pages = {
     "Dashboard": [
-        st.Page("pages/5_Reporte_Seguimiento.py",    title="Reporte Seguimiento",      icon="📊"),
-        st.Page("pages/1_Resumen_General.py",        title="Reporte de Cumplimiento",  icon="🏠"),
-        st.Page("pages/2_Indicadores_en_Riesgo.py",  title="Indicadores en Riesgo",    icon="⚠️"),
-        st.Page("pages/3_Acciones_de_Mejora.py",     title="Oportunidades de Mejora",  icon="📋"),
-        st.Page("pages/4_Registro_OM.py",             title="Registro de OM",           icon="📝"),
-    ]
+        st.Page("pages/5_Reporte_Seguimiento.py",         title="Reporte Seguimiento",         icon="📊"),
+        st.Page("pages/1_Resumen_General.py",              title="Reporte de Cumplimiento",     icon="🏠"),
+        st.Page("pages/2_Indicadores_en_Riesgo.py",        title="Indicadores en Riesgo",       icon="⚠️"),
+        st.Page("pages/3_Acciones_de_Mejora.py",           title="Oportunidades de Mejora",     icon="📋"),
+        st.Page("pages/4_Registro_OM.py",                  title="Registro de OM",              icon="📝"),
+    ],
+    "Informes especiales": [
+        st.Page("pages/6_Direccionamiento_Estrategico.py", title="Direccionamiento Estratégico", icon="🏛️"),
+    ],
 }
 
 pg = st.navigation(pages)

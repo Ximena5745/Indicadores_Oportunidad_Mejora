@@ -310,13 +310,107 @@ def extraer_meta_ejec_series(series_list):
     return (sum_meta if has_meta else None), (sum_res if has_res else None)
 
 
-def determinar_meta_ejec(row_api, hist_meta_escala):
+def extraer_por_simbolo(vars_list, simbolo):
+    """Extrae el valor de una variable específica por su símbolo."""
+    if not vars_list or not simbolo:
+        return None
+    simbolo = str(simbolo).strip().upper()
+    for v in vars_list:
+        if str(v.get('simbolo', '')).strip().upper() == simbolo:
+            val = v.get('valor')
+            if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                return float(val)
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# CONFIG PATRONES
+# ─────────────────────────────────────────────────────────────────────
+
+def cargar_config_patrones():
+    """
+    Lee la hoja 'Config_Patrones' del OUTPUT_FILE si existe.
+    Retorna dict: {id_str: {patron, simbolo_ejec, simbolo_meta}}
+    Columnas esperadas: Id | Patron_Ejecucion | Simbolo_Ejec | Simbolo_Meta
+    """
+    if not OUTPUT_FILE.exists():
+        return {}
+    try:
+        xl = pd.ExcelFile(OUTPUT_FILE)
+        if 'Config_Patrones' not in xl.sheet_names:
+            return {}
+        df = pd.read_excel(OUTPUT_FILE, sheet_name='Config_Patrones')
+        config = {}
+        for _, row in df.iterrows():
+            ids = _id_str(row['Id'])
+            config[ids] = {
+                'patron':       str(row.get('Patron_Ejecucion', 'LAST')).strip().upper(),
+                'simbolo_ejec': str(row.get('Simbolo_Ejec', '') or '').strip(),
+                'simbolo_meta': str(row.get('Simbolo_Meta', '') or '').strip(),
+            }
+        return config
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo Config_Patrones: {e}")
+        return {}
+
+
+def crear_config_patrones_inicial():
+    """
+    Genera el DataFrame inicial de Config_Patrones a partir del diagnóstico.
+    Para indicadores VARIABLES con un símbolo: lo asigna como Simbolo_Ejec.
+    Para los demás casos: deja los símbolos vacíos (requieren revisión manual).
+    """
+    diag_path = OUTPUT_DIR / 'diagnostico_fuente_ejecucion.xlsx'
+    if not diag_path.exists():
+        return pd.DataFrame()
+    try:
+        df = pd.read_excel(diag_path, sheet_name='Diagnostico')
+    except Exception:
+        return pd.DataFrame()
+
+    rows = []
+    for _, r in df.iterrows():
+        ids    = _id_str(r['ID'])
+        patron = str(r.get('Patron_Ejecucion', 'LAST')).strip().upper()
+        simbs  = str(r.get('Simbolos_Variables', '') or '').strip()
+        lista  = [s.strip() for s in simbs.split(',') if s.strip()] if simbs else []
+
+        simbolo_ejec = ''
+        simbolo_meta = ''
+
+        if patron == 'VARIABLES':
+            if len(lista) == 1:
+                simbolo_ejec = lista[0]
+            elif len(lista) == 2:
+                # Primera = ejecución, segunda = meta (heurística; editar si es incorrecto)
+                simbolo_ejec = lista[0]
+                simbolo_meta = lista[1]
+            # 3+ símbolos: dejar vacío → el usuario configura
+
+        rows.append({
+            'Id':               r['ID'],
+            'Indicador':        r.get('Indicador', ''),
+            'Patron_Ejecucion': patron,
+            'Simbolo_Ejec':     simbolo_ejec,
+            'Simbolo_Meta':     simbolo_meta,
+            'Simbolos_Disponibles': simbs,
+            'Nota': ('Revisar simbolos' if patron == 'VARIABLES' and len(lista) >= 3
+                     else ''),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def determinar_meta_ejec(row_api, hist_meta_escala, patron_cfg=None):
     """
     Determina (meta, ejec, fuente, es_na) para un registro.
 
+    patron_cfg (opcional): {'patron': LAST|VARIABLES|SUM_SER|AVG|SUM,
+                             'simbolo_ejec': str, 'simbolo_meta': str}
+
     Retorna:
-      fuente = 'api_directo' | 'variables' | 'series_sum' | 'series_sum_fallback'
-               | 'na_record' | 'skip'
+      fuente = 'api_directo' | 'variables' | 'variables_simbolo' |
+               'series_sum' | 'series_sum_fallback' | 'na_record' | 'skip'
       es_na  = True si el registro no tiene ejecución (debe mostrar N/A en signo)
     """
     # ── Detectar N/A antes de cualquier otra lógica ────────────────
@@ -331,6 +425,59 @@ def determinar_meta_ejec(row_api, hist_meta_escala):
     vars_list   = parse_json_safe(row_api.get('variables'))
     series_list = parse_json_safe(row_api.get('series'))
 
+    # ── Usar patrón configurado explícitamente ─────────────────────
+    if patron_cfg:
+        patron = patron_cfg.get('patron', 'LAST')
+
+        if patron == 'VARIABLES':
+            sim_e = patron_cfg.get('simbolo_ejec', '')
+            sim_m = patron_cfg.get('simbolo_meta', '')
+            if sim_e and vars_list:
+                ejec_v = extraer_por_simbolo(vars_list, sim_e)
+                if ejec_v is not None:
+                    meta_v = (extraer_por_simbolo(vars_list, sim_m)
+                              if sim_m else
+                              nan2none(pd.to_numeric(meta_api, errors='coerce')
+                                       if not _es_vacio(meta_api) else None))
+                    return meta_v, ejec_v, 'variables_simbolo', False
+            # Fallback: keyword matching
+            if vars_list:
+                meta_v, ejec_v = extraer_meta_ejec_variables(vars_list)
+                if ejec_v is not None:
+                    return meta_v, ejec_v, 'variables', False
+            if series_list:
+                sum_m, sum_r = extraer_meta_ejec_series(series_list)
+                if sum_r is not None:
+                    return sum_m, sum_r, 'series_sum', False
+            return None, None, 'skip', False
+
+        if patron == 'SUM_SER':
+            if series_list:
+                sum_m, sum_r = extraer_meta_ejec_series(series_list)
+                if sum_r is not None:
+                    return sum_m, sum_r, 'series_sum', False
+            return None, None, 'skip', False
+
+        if patron == 'LAST':
+            resultado_num = pd.to_numeric(resultado, errors='coerce')
+            if resultado_num is not None and not (isinstance(resultado_num, float)
+                                                   and np.isnan(resultado_num)):
+                meta_val = nan2none(pd.to_numeric(meta_api, errors='coerce')
+                                    if not _es_vacio(meta_api) else None)
+                return meta_val, resultado_num, 'api_directo', False
+            return None, None, 'sin_resultado', False
+
+        # AVG/SUM: ya se aplican en la agregación semestral;
+        # aquí se usa resultado directo (para el histórico mensual)
+        resultado_num = pd.to_numeric(resultado, errors='coerce')
+        if resultado_num is not None and not (isinstance(resultado_num, float)
+                                               and np.isnan(resultado_num)):
+            meta_val = nan2none(pd.to_numeric(meta_api, errors='coerce')
+                                if not _es_vacio(meta_api) else None)
+            return meta_val, resultado_num, 'api_directo', False
+        return None, None, 'sin_resultado', False
+
+    # ── Lógica heurística original (sin config_patrones) ──────────
     es_grande         = (hist_meta_escala is not None and hist_meta_escala > 1000)
     api_es_porcentaje = (not _es_vacio(meta_api) and
                          abs(float(meta_api)) <= 200)
@@ -1109,7 +1256,7 @@ def escribir_hoja_nueva(wb, nombre, df):
 # CONSTRUIR REGISTROS PARA CADA HOJA
 # ─────────────────────────────────────────────────────────────────────
 
-def _extraer_registro(row, hist_escalas):
+def _extraer_registro(row, hist_escalas, config_patrones=None):
     """
     Extrae (meta, ejec, fuente, es_na) para una fila de fuente.
     Kawak2025 nunca tiene N/A (los datos ya están limpios).
@@ -1123,21 +1270,24 @@ def _extraer_registro(row, hist_escalas):
         ejec = nan2none(row.get('resultado'))
         return meta, ejec, 'Kawak2025', False
 
+    patron_cfg = config_patrones.get(_id_str(id_val)) if config_patrones else None
     meta, ejec, fuente, es_na = determinar_meta_ejec(
         row.to_dict() if hasattr(row, 'to_dict') else row,
-        hist_meta_escala
+        hist_meta_escala,
+        patron_cfg=patron_cfg,
     )
     return meta, ejec, fuente, es_na
 
 
 def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
-                                  mapa_procesos=None):
+                                  config_patrones=None, mapa_procesos=None):
     registros = []
     skipped   = 0
     conteo_na = 0
     df = df_fuente[~df_fuente['LLAVE'].isin(llaves_existentes)].dropna(subset=['LLAVE'])
     for _, row in df.iterrows():
-        meta, ejec, fuente, es_na = _extraer_registro(row, hist_escalas)
+        meta, ejec, fuente, es_na = _extraer_registro(
+            row, hist_escalas, config_patrones=config_patrones)
         if fuente == 'skip' or fuente == 'sin_resultado':
             skipped += 1
             continue
@@ -1157,15 +1307,73 @@ def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
 
 
 def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
-                                  mapa_procesos=None):
-    df = df_fuente[df_fuente['fecha'].dt.month.isin([6, 12])].copy()
-    df = df[df['fecha'] == df['fecha'].apply(
+                                  config_patrones=None, mapa_procesos=None):
+    """
+    Genera registros para Consolidado Semestral.
+    Para indicadores con patrón AVG o SUM, agrega resultados mensuales
+    del semestre en lugar de tomar el dato puntual de junio/diciembre.
+    """
+    # IDs con agregación temporal (AVG/SUM)
+    ids_avg = set()
+    ids_sum = set()
+    if config_patrones:
+        for ids, cfg in config_patrones.items():
+            if cfg['patron'] == 'AVG':
+                ids_avg.add(ids)
+            elif cfg['patron'] == 'SUM':
+                ids_sum.add(ids)
+
+    df_base = df_fuente.copy()
+    df_base['_ids'] = df_base['Id'].apply(_id_str)
+    df_base['_sem'] = df_base['fecha'].apply(
+        lambda d: f"{d.year}-{'1' if d.month <= 6 else '2'}"
+    )
+
+    partes = []
+
+    # ── Indicadores sin agregación: filtrar jun/dic ─────────────────
+    ids_agg = ids_avg | ids_sum
+    df_std = df_base[~df_base['_ids'].isin(ids_agg)].copy()
+    df_std = df_std[df_std['fecha'].dt.month.isin([6, 12])]
+    df_std = df_std[df_std['fecha'] == df_std['fecha'].apply(
         lambda d: pd.Timestamp(d.year, d.month, ultimo_dia_mes(d.year, d.month)))]
-    return construir_registros_historico(df, llaves_existentes, hist_escalas,
-                                         mapa_procesos=mapa_procesos)
+    partes.append(df_std)
+
+    # ── Indicadores AVG/SUM: agregar por Id + semestre ─────────────
+    if ids_agg:
+        df_agg_src = df_base[df_base['_ids'].isin(ids_agg)].copy()
+        agg_rows = []
+        for (id_val, sem_label), grupo in df_agg_src.groupby(['Id', '_sem']):
+            ids = _id_str(id_val)
+            patron = 'AVG' if ids in ids_avg else 'SUM'
+            resultados = pd.to_numeric(grupo['resultado'], errors='coerce').dropna()
+            if len(resultados) == 0:
+                continue
+            ejec_agg = resultados.mean() if patron == 'AVG' else resultados.sum()
+            # Fecha = último día del mes de cierre del semestre
+            year, sem = int(sem_label.split('-')[0]), int(sem_label.split('-')[1])
+            end_month = 6 if sem == 1 else 12
+            end_fecha = pd.Timestamp(year, end_month, ultimo_dia_mes(year, end_month))
+            # Tomar la última fila del grupo como base para los metadatos
+            last = grupo.sort_values('fecha').iloc[-1].copy()
+            last['resultado'] = ejec_agg
+            last['fecha']     = end_fecha
+            last['LLAVE']     = make_llave(id_val, end_fecha)
+            agg_rows.append(last)
+        if agg_rows:
+            partes.append(pd.DataFrame(agg_rows))
+
+    df_sem = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()
+    df_sem = df_sem.drop(columns=['_ids', '_sem'], errors='ignore')
+
+    return construir_registros_historico(
+        df_sem, llaves_existentes, hist_escalas,
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos
+    )
 
 
-def construir_registros_cierres(df_fuente, hist_escalas, mapa_procesos=None):
+def construir_registros_cierres(df_fuente, hist_escalas,
+                                config_patrones=None, mapa_procesos=None):
     df = df_fuente.copy()
     df['año'] = df['fecha'].dt.year
     df['mes'] = df['fecha'].dt.month
@@ -1181,7 +1389,8 @@ def construir_registros_cierres(df_fuente, hist_escalas, mapa_procesos=None):
             candidatos = dic if len(dic) > 0 else grupo.sort_values('fecha').tail(1)
 
         for _, row in candidatos.iterrows():
-            meta, ejec, fuente, es_na = _extraer_registro(row, hist_escalas)
+            meta, ejec, fuente, es_na = _extraer_registro(
+                row, hist_escalas, config_patrones=config_patrones)
             if fuente == 'skip' or fuente == 'sin_resultado':
                 skipped += 1
                 continue
@@ -1205,7 +1414,7 @@ def construir_registros_cierres(df_fuente, hist_escalas, mapa_procesos=None):
 
 def main():
     print("=" * 65)
-    print("ACTUALIZANDO RESULTADOS CONSOLIDADOS - v5")
+    print("ACTUALIZANDO RESULTADOS CONSOLIDADOS - v6")
     print("=" * 65)
 
     # ── 1. Cargar fuentes ──────────────────────────────────────────
@@ -1303,6 +1512,18 @@ def main():
         print(f"  Indicadores tipo Metrica: {len(ids_metrica)} IDs -> "
               f"col Tipo_Registro='Metrica'; signos sin cambio")
 
+    # ── 5b. Config_Patrones ───────────────────────────────────────
+    print("\n[5b] Cargando Config_Patrones...")
+    config_patrones = cargar_config_patrones()
+    if config_patrones:
+        n_var = sum(1 for c in config_patrones.values() if c['patron'] == 'VARIABLES')
+        n_agg = sum(1 for c in config_patrones.values() if c['patron'] in ('AVG', 'SUM'))
+        print(f"  {len(config_patrones)} indicadores configurados "
+              f"({n_var} VARIABLES, {n_agg} AVG/SUM)")
+    else:
+        print("  Sin Config_Patrones — se usará heurística. "
+              "(Se creará la hoja en el output para configuración futura.)")
+
     # ── 6. Abrir workbook ─────────────────────────────────────────
     print("\n[6] Copiando base a outputs...")
     shutil.copy(INPUT_FILE, OUTPUT_FILE)
@@ -1325,12 +1546,14 @@ def main():
     # ── 7. Histórico ──────────────────────────────────────────────
     print("\n[7] Nuevos registros Histórico...")
     regs_hist, skip_hist, na_hist = construir_registros_historico(
-        df_fuente_api, llave_hist, hist_escalas, mapa_procesos=mapa_procesos)
+        df_fuente_api, llave_hist, hist_escalas,
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
     print(f"  Nuevos: {len(regs_hist):,} | N/A: {na_hist:,} | Omitidos: {skip_hist:,}")
     if len(df_kawak25) > 0:
         llaves_usadas = llave_hist | {r['LLAVE'] for r in regs_hist}
         regs_k25, sk25, na_k25 = construir_registros_historico(
-            df_kawak25, llaves_usadas, hist_escalas, mapa_procesos=mapa_procesos)
+            df_kawak25, llaves_usadas, hist_escalas,
+            config_patrones=config_patrones, mapa_procesos=mapa_procesos)
         regs_hist += regs_k25
         print(f"  + Kawak 2025: {len(regs_k25):,} adicionales (N/A: {na_k25}, omitidos: {sk25})")
     regs_hist.sort(key=lambda x: (str(x['Id']), x['fecha']))
@@ -1344,7 +1567,8 @@ def main():
     # ── 8. Semestral ──────────────────────────────────────────────
     print("\n[8] Nuevos registros Semestral...")
     regs_sem, skip_sem, na_sem = construir_registros_semestral(
-        df_fuente_api, llave_sem, hist_escalas, mapa_procesos=mapa_procesos)
+        df_fuente_api, llave_sem, hist_escalas,
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
     print(f"  Nuevos: {len(regs_sem):,} | N/A: {na_sem:,} | Omitidos: {skip_sem:,}")
     regs_sem.sort(key=lambda x: (str(x['Id']), x['fecha']))
     ws_sem = wb['Consolidado Semestral']
@@ -1357,10 +1581,12 @@ def main():
     # ── 9. Cierres ────────────────────────────────────────────────
     print("\n[9] Nuevos registros Cierres...")
     regs_cierres, skip_c, na_c = construir_registros_cierres(
-        df_fuente_api, hist_escalas, mapa_procesos=mapa_procesos)
+        df_fuente_api, hist_escalas,
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
     if len(df_kawak25) > 0:
         regs_k25_c, sk25_c, na_k25_c = construir_registros_cierres(
-            df_kawak25, hist_escalas, mapa_procesos=mapa_procesos)
+            df_kawak25, hist_escalas,
+            config_patrones=config_patrones, mapa_procesos=mapa_procesos)
         llaves_c = {r['LLAVE'] for r in regs_cierres}
         regs_k25_c = [r for r in regs_k25_c if r['LLAVE'] not in llaves_c]
         regs_cierres += regs_k25_c
@@ -1404,6 +1630,18 @@ def main():
     df_base['fecha'] = df_base['fecha'].dt.date
     escribir_hoja_nueva(wb, 'Base Normalizada', df_base)
     print(f"  Base Normalizada:     {len(df_base):,} filas")
+
+    # Config_Patrones: crear hoja inicial si no existe aún en el output
+    if 'Config_Patrones' not in wb.sheetnames:
+        df_cfg_inicial = crear_config_patrones_inicial()
+        if not df_cfg_inicial.empty:
+            escribir_hoja_nueva(wb, 'Config_Patrones', df_cfg_inicial)
+            print(f"  Config_Patrones:      {len(df_cfg_inicial):,} filas "
+                  f"(NUEVA — revisar simbolos VARIABLES antes del proximo reporte)")
+        else:
+            print("  Config_Patrones:      no se pudo crear (falta diagnostico_fuente_ejecucion.xlsx)")
+    else:
+        print("  Config_Patrones:      ya existe en el archivo — no se sobreescribe")
 
     # ── 11. Deduplicar los tres consolidados ──────────────────────
     print("\n[11] Eliminando duplicados por LLAVE en los consolidados...")
