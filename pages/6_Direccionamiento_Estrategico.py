@@ -38,15 +38,14 @@ from core.config import (
 from services.data_loader import cargar_dataset
 
 # ── Constantes del proceso ─────────────────────────────────────────────────────
-_PROCESO_KEYWORD = "Direccionamiento"
-
-_SUBPROCESOS = [
+# En el dataset estos tres procesos conforman el bloque Direccionamiento Estratégico
+_PROCESOS_DIR = {
     "Planeación Estratégica",
     "Desempeño Institucional",
     "Gestión de Proyectos",
-]
+}
 
-# IDs excluidos del subproceso Planeación Estratégica
+# IDs excluidos del proceso Planeación Estratégica
 _IDS_EXCLUIR_PLAN = {
     "373", "390", "414", "415", "416", "417", "418", "420", "469", "470", "471"
 }
@@ -323,7 +322,7 @@ def _aplicar_filtros(df: pd.DataFrame, txt_id, txt_nom, sel_anios,
 
 def _cols_tabla_vis(df: pd.DataFrame) -> list:
     preferidas = [
-        "Id", "Indicador", "Anio", "Periodo",
+        "Id", "Indicador", "Subproceso", "Anio", "Periodo",
         "Meta", "Ejecucion", "Cumplimiento_norm",
         "Categoria", "Sentido", "Periodicidad",
     ]
@@ -402,7 +401,7 @@ def _render_tab_subproceso(
 
     # Tabla cierre de año
     with st.expander("📋 Ver tabla de cierre de año por indicador", expanded=False):
-        cols_c = [c for c in ["Id", "Indicador", "Anio", "Periodo",
+        cols_c = [c for c in ["Id", "Indicador", "Subproceso", "Anio", "Periodo",
                                "Meta", "Ejecucion", "Cumplimiento_norm",
                                "Categoria", "Sentido"] if c in df_cierre.columns]
         df_cierre_disp = _tabla_display(df_cierre[cols_c].sort_values(
@@ -495,37 +494,30 @@ if df_raw.empty:
     st.error("No se encontró el dataset principal. Ejecuta primero `actualizar_consolidado.py`.")
     st.stop()
 
-# Filtrar por proceso Direccionamiento Estratégico
+# Los tres procesos del bloque Direccionamiento Estratégico están como Proceso directo
 if "Proceso" in df_raw.columns:
-    mask_proc = df_raw["Proceso"].astype(str).str.contains(_PROCESO_KEYWORD, case=False, na=False)
-    df_dir = df_raw[mask_proc].copy()
+    df_dir = df_raw[df_raw["Proceso"].isin(_PROCESOS_DIR)].copy()
 else:
     df_dir = pd.DataFrame()
 
 if df_dir.empty:
-    st.error("No se encontraron indicadores para el proceso **Direccionamiento Estratégico**.")
+    st.error("No se encontraron indicadores para los procesos del bloque Direccionamiento Estratégico.")
     if "Proceso" in df_raw.columns:
         procs = sorted(df_raw["Proceso"].dropna().unique())
-        st.info("Procesos disponibles en el dataset: " + " · ".join(procs))
+        st.info("Procesos disponibles: " + " · ".join(procs))
     st.stop()
 
-# Aplicar exclusiones en Planeación Estratégica
-if "Subproceso" in df_dir.columns:
-    mask_plan = df_dir["Subproceso"].astype(str).str.contains("Planeaci", case=False, na=False)
-    mask_excl = mask_plan & df_dir["Id"].isin(_IDS_EXCLUIR_PLAN)
-    df_dir = df_dir[~mask_excl].copy()
+# Aplicar exclusiones en Planeación Estratégica (filtro por Proceso, no Subproceso)
+mask_excl = (df_dir["Proceso"] == "Planeación Estratégica") & df_dir["Id"].isin(_IDS_EXCLUIR_PLAN)
+df_dir = df_dir[~mask_excl].copy()
 
-# DataFrames por subproceso
-def _df_subproceso(keyword: str) -> pd.DataFrame:
-    if "Subproceso" not in df_dir.columns:
-        return pd.DataFrame()
-    return df_dir[
-        df_dir["Subproceso"].astype(str).str.contains(keyword, case=False, na=False)
-    ].copy()
+# DataFrames por proceso
+def _df_proceso(nombre_proceso: str) -> pd.DataFrame:
+    return df_dir[df_dir["Proceso"] == nombre_proceso].copy()
 
-df_plan   = _df_subproceso("Planeaci")
-df_desemp = _df_subproceso("Desempe")
-df_gest   = _df_subproceso("Gesti")
+df_plan   = _df_proceso("Planeación Estratégica")
+df_desemp = _df_proceso("Desempeño Institucional")
+df_gest   = _df_proceso("Gestión de Proyectos")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UI — CABECERA
