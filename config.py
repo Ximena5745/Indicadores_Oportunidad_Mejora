@@ -1,78 +1,14 @@
 """
-config.py — Constantes globales del dashboard.
+config.py — Re-export de core/config.py para compatibilidad con imports legacy.
+
+Usar preferentemente: `from core.config import ...`
 """
-from pathlib import Path
-
-# ── Rutas ────────────────────────────────────────────────────────────────────
-BASE_DIR  = Path(__file__).parent
-DATA_RAW  = BASE_DIR / "data" / "raw"
-DATA_DB   = BASE_DIR / "data" / "db"
-DB_PATH   = DATA_DB / "registros_om.db"
-
-# ── Paleta de colores institucional ──────────────────────────────────────────
-COLORES = {
-    "peligro":                "#D32F2F",
-    "peligro_claro":          "#FFCDD2",
-    "alerta":                 "#FBAF17",
-    "alerta_claro":           "#FEF3D0",
-    "cumplimiento":           "#43A047",
-    "cumplimiento_claro":     "#E8F5E9",
-    "sobrecumplimiento":      "#1A3A5C",
-    "sobrecumplimiento_claro":"#D0E4FF",
-    "sin_dato":               "#BDBDBD",
-    "primario":               "#1A3A5C",
-    "secundario":             "#1565C0",
-    "fondo":                  "#F4F6F9",
-    "texto":                  "#212121",
-}
-
-COLOR_CATEGORIA = {
-    "Peligro":           COLORES["peligro"],
-    "Alerta":            COLORES["alerta"],
-    "Cumplimiento":      COLORES["cumplimiento"],
-    "Sobrecumplimiento": COLORES["sobrecumplimiento"],
-    "Sin dato":          COLORES["sin_dato"],
-}
-
-COLOR_CATEGORIA_CLARO = {
-    "Peligro":           COLORES["peligro_claro"],
-    "Alerta":            COLORES["alerta_claro"],
-    "Cumplimiento":      COLORES["cumplimiento_claro"],
-    "Sobrecumplimiento": COLORES["sobrecumplimiento_claro"],
-    "Sin dato":          "#EEEEEE",
-}
-
-# ── Umbrales de cumplimiento ──────────────────────────────────────────────────
-UMBRAL_PELIGRO          = 0.80
-UMBRAL_ALERTA           = 1.00
-UMBRAL_SOBRECUMPLIMIENTO = 1.05
-
-# ── Orden de categorías ──────────────────────────────────────────────────────
-ORDEN_CATEGORIAS = ["Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento", "Sin dato"]
-
-# ── Íconos semáforo ───────────────────────────────────────────────────────────
-ICONOS_CATEGORIA = {
-    "Peligro":          "🔴",
-    "Alerta":           "🟡",
-    "Cumplimiento":     "🟢",
-    "Sobrecumplimiento": "🔵",
-}
-
-# ── Columnas de visualización por página ─────────────────────────────────────
-COLS_TABLA_RESUMEN = [
-    "Id", "Indicador", "Proceso", "Subproceso",
-    "Cumplimiento%", "Categoria", "Clasificacion", "Periodicidad",
-]
-
-COLS_TABLA_RIESGO = [
-    "Id", "Indicador", "Proceso", "Subproceso",
-    "Periodicidad", "Periodo", "Cumplimiento%", "Categoria",
-]
-
-COLS_TABLA_OM = [
-    "id_indicador", "nombre_indicador", "proceso", "periodo",
-    "anio", "tiene_om", "numero_om", "comentario", "fecha_registro",
-]
-
-# ── Cache TTL (segundos) ──────────────────────────────────────────────────────
-CACHE_TTL = 300
+from core.config import *  # noqa: F401, F403
+from core.config import (
+    BASE_DIR, DATA_RAW, DATA_OUTPUT, DATA_DB, DB_PATH,
+    COLORES, COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO,
+    UMBRAL_PELIGRO, UMBRAL_ALERTA, UMBRAL_SOBRECUMPLIMIENTO,
+    ORDEN_CATEGORIAS, ICONOS_CATEGORIA,
+    COLS_TABLA_RESUMEN, COLS_TABLA_RIESGO, COLS_TABLA_OM,
+    CACHE_TTL,
+)

@@ -1,0 +1,9 @@
+# Dependencias de desarrollo y testing (NO se instalan en producción)
+# Instalar con: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=8.0
+pytest-cov>=5.0      # Reporte de cobertura: pytest --cov=core tests/
+
+# Calidad de código
+ruff>=0.4            # Linter + formatter (reemplaza flake8 + black)

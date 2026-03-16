@@ -21,9 +21,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.charts import exportar_excel, panel_detalle_indicador
-from utils.data_loader import cargar_dataset
-from utils.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ICON, nivel_desde_pct
+from components.charts import exportar_excel, panel_detalle_indicador
+from services.data_loader import cargar_dataset
+from core.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ICON, nivel_desde_pct
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 from pathlib import Path

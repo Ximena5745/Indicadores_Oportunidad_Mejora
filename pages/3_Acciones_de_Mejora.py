@@ -15,9 +15,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.data_loader import cargar_om, cargar_plan_accion
-from utils.charts import exportar_excel
-from config import COLORES
+from services.data_loader import cargar_om, cargar_plan_accion
+from components.charts import exportar_excel
+from core.config import COLORES
 
 # ── Paleta ─────────────────────────────────────────────────────────────────────
 _C = {

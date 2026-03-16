@@ -15,17 +15,17 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.data_loader import cargar_dataset, construir_opciones_indicadores
-from utils.calculos import obtener_ultimo_registro, calcular_meses_en_peligro
-from utils.charts import (
+from services.data_loader import cargar_dataset, construir_opciones_indicadores
+from core.calculos import obtener_ultimo_registro, calcular_meses_en_peligro
+from components.charts import (
     grafico_historico_indicador,
     tabla_historica_indicador,
     exportar_excel,
     panel_detalle_indicador,
     COLOR_CAT,
 )
-from utils.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ORDEN
-from utils.db_manager import registros_om_como_dict
+from core.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ORDEN
+from core.db_manager import registros_om_como_dict
 
 # ── Ruta kawak ────────────────────────────────────────────────────────────────
 _DATA_RAW   = Path(__file__).parent.parent / "data" / "raw"

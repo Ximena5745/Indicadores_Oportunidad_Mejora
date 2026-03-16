@@ -14,11 +14,11 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from utils.calculos import obtener_ultimo_registro
-from utils.data_loader import cargar_dataset, construir_opciones_indicadores, cargar_om
-from utils.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
-from utils.charts import exportar_excel
-from config import COLORES, COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
+from core.calculos import obtener_ultimo_registro
+from services.data_loader import cargar_dataset, construir_opciones_indicadores, cargar_om
+from core.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
+from components.charts import exportar_excel
+from core.config import COLORES, COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
 
 # ── Carga de datos ─────────────────────────────────────────────────────────────
 df_raw   = cargar_dataset()

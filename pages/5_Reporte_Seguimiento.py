@@ -15,7 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.charts import exportar_excel
+from components.charts import exportar_excel
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 _DATA_RAW  = Path(__file__).parent.parent / "data" / "raw"
