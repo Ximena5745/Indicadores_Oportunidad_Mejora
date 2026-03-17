@@ -111,8 +111,17 @@ def _aplicar_filtros_tabla(df: pd.DataFrame, txt_id: str, txt_nombre: str,
 
 
 def _filtros_cascada(df: pd.DataFrame, prefix: str):
-    """Filtros: ID, Nombre, Proceso (dropdown), Subproceso (dinámico), Estado."""
-    with st.expander("🔍 Filtros", expanded=True):
+    """Filtros: ID, Nombre, Proceso (dropdown), Subproceso (dinámico), Estado.
+    Subproceso es dependiente de Proceso: al cambiar Proceso se resetea automáticamente.
+    """
+    # Cascada: si Proceso cambió desde el último render, resetear Subproceso
+    _prev_key = f"{prefix}_prev_proc"
+    _curr_proc = st.session_state.get(f"{prefix}_proc", "")
+    if _curr_proc != st.session_state.get(_prev_key, "___unset___"):
+        st.session_state[f"{prefix}_sub"] = ""
+        st.session_state[_prev_key] = _curr_proc
+
+    with st.expander("🔍 Filtros adicionales", expanded=True):
         r1c1, r1c2 = st.columns(2)
         with r1c1:
             txt_id = st.text_input("ID", key=f"{prefix}_id", placeholder="Buscar ID...")
@@ -323,7 +332,7 @@ COL_REP    = "Reportado"
 # ══════════════════════════════════════════════════════════════════════════════
 # TÍTULO
 # ══════════════════════════════════════════════════════════════════════════════
-st.markdown("# 📊 Reporte de Seguimiento de Indicadores")
+st.markdown("# 📊 Seguimiento de Reporte de Indicadores")
 st.caption("Solo indicadores con **Revisar = 1** · Períodos desde **2024-01-01** · Corte: **Diciembre 2025**")
 st.markdown("---")
 
