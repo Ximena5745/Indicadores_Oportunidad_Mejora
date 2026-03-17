@@ -111,7 +111,12 @@ def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     cols_disp = [c for c in cols if c in df_ind.columns]
     df_t = df_ind[cols_disp].copy().sort_values("Anio") if "Anio" in df_ind.columns else df_ind[cols_disp].copy()
     if "Cumplimiento_norm" in df_t.columns:
-        df_t["Cumplimiento_norm"] = (df_t["Cumplimiento_norm"] * 100).round(1).astype(str) + "%"
+        def _fmt_cumpl(v):
+            try:
+                return f"{round(float(v) * 100, 1)}%" if pd.notna(v) else "No aplica"
+            except (TypeError, ValueError):
+                return "No aplica"
+        df_t["Cumplimiento_norm"] = df_t["Cumplimiento_norm"].apply(_fmt_cumpl)
         df_t.rename(columns={"Cumplimiento_norm": "Cumplimiento%"}, inplace=True)
     return df_t
 
@@ -286,14 +291,13 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
 
     st.divider()
 
-    with st.container(height=700):
-        df_tabla = tabla_historica_indicador(df_ind_sorted)
-        st.markdown("**Histórico**")
-        st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+    df_tabla = tabla_historica_indicador(df_ind_sorted)
+    st.markdown("**Histórico**")
+    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
 
-        st.markdown("**Evolución: Meta, Ejecución y Cumplimiento**")
-        fig = grafico_detalle_indicador(df_ind_sorted)
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**Evolución: Meta, Ejecución y Cumplimiento**")
+    fig = grafico_detalle_indicador(df_ind_sorted)
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
     cum_series = df_ind_sorted["Cumplimiento_norm"].dropna() * 100
