@@ -9,6 +9,7 @@ from openpyxl.styles import PatternFill, Font
 
 from core.config import COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
 from services.data_loader import cargar_analisis_usuarios
+from services.ai_analysis import analizar_texto_indicador
 
 # Alias para compatibilidad interna — fuente única en core/config.py
 COLOR_CAT = COLOR_CATEGORIA
@@ -357,3 +358,19 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
                         + (f" · {fecha_str}" if fecha_str else ""),
                     )
                     st.info(texto)
+
+                    # ── Insights IA ───────────────────────────────────────────
+                    with st.expander("✨ Insights y oportunidades de mejora (IA)", expanded=True):
+                        with st.spinner("Analizando..."):
+                            ia_result = analizar_texto_indicador(
+                                id_ind=str(id_ind),
+                                nombre=nombre,
+                                proceso=proceso,
+                                categoria=categoria,
+                                cumplimiento=cum_pct_str,
+                                texto_analisis=texto,
+                            )
+                        if ia_result:
+                            st.markdown(ia_result)
+                        else:
+                            st.caption("⚙️ Configura ANTHROPIC_API_KEY en los secretos de Streamlit Cloud para activar este análisis.")
