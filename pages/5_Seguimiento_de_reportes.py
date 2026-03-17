@@ -25,7 +25,7 @@ _CORTE     = datetime(2024, 1, 1)
 
 # ── Paleta corporativa ────────────────────────────────────────────────────────
 CORP = {
-    "reportado":  "#A6CE38",
+    "reportado":  "#1FB2DE",
     "pendiente":  "#EC0677",
     "primario":   "#0F385A",
     "secundario": "#1FB2DE",
