@@ -29,7 +29,7 @@ from core.db_manager import registros_om_como_dict
 
 # ── Ruta kawak ────────────────────────────────────────────────────────────────
 _DATA_RAW   = Path(__file__).parent.parent / "data" / "raw"
-_RUTA_KAWAK = _DATA_RAW / "indicadores_kawak.xlsx"
+_RUTA_KAWAK = _DATA_RAW / "Fuentes Consolidadas" / "Consolidado_API_Kawak.xlsx"
 
 
 @st.cache_data(ttl=600, show_spinner=False)

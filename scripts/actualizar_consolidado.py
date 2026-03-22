@@ -42,10 +42,12 @@ warnings.filterwarnings('ignore')
 
 _ROOT       = Path(__file__).parent.parent
 BASE_PATH   = _ROOT / "data" / "raw"
-INPUT_FILE  = BASE_PATH / "Resultados Consolidados.xlsx"
+INPUT_FILE  = BASE_PATH / "Resultados_Consolidados_Fuente.xlsx"
 OUTPUT_DIR  = _ROOT / "data" / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "Resultados Consolidados.xlsx"
+KAWAK_CAT_FILE    = BASE_PATH / "Fuentes Consolidadas" / "Indicadores Kawak.xlsx"
+CONSOLIDADO_API_KW = BASE_PATH / "Fuentes Consolidadas" / "Consolidado_API_Kawak.xlsx"
 
 AÑO_CIERRE_ACTUAL = 2025
 
@@ -99,27 +101,45 @@ def _build_col_map(ws):
 
 def _materializar_formula_año(ws):
     """
-    Reemplaza celdas con fórmula '=YEAR(...)' en la columna Año por el valor
-    numérico derivado de la columna Fecha.
+    Reemplaza celdas con fórmula en las columnas Año, Mes, Semestre y LLAVE
+    por valores calculados desde Fecha e Id.
     openpyxl en modo escritura lee fórmulas como strings; pandas no puede
-    convertirlas a número, lo que rompe filtros por año.
+    usarlas, lo que rompe filtros y joins por esas columnas.
     """
     cm = _build_col_map(ws)
-    idx_fecha = cm.get('Fecha')
-    idx_anio  = cm.get('Anio')
-    if not idx_fecha or not idx_anio:
+    idx_fecha    = cm.get('Fecha')
+    idx_anio     = cm.get('Anio')
+    idx_mes      = cm.get('Mes')
+    idx_semestre = cm.get('Semestre')
+    idx_llave    = cm.get('LLAVE')
+    idx_id       = cm.get('Id')
+    if not idx_fecha:
         return
     for row in ws.iter_rows(min_row=2, values_only=False):
         if row[0].value is None:
             continue
-        celda_anio = row[idx_anio - 1]
-        if isinstance(celda_anio.value, str) and celda_anio.value.startswith('='):
-            celda_fecha = row[idx_fecha - 1]
-            try:
-                fecha = pd.to_datetime(celda_fecha.value)
-                celda_anio.value = fecha.year
-            except Exception:
-                pass
+        celda_fecha = row[idx_fecha - 1]
+        try:
+            fecha = pd.to_datetime(celda_fecha.value)
+        except Exception:
+            continue
+        if idx_anio:
+            c = row[idx_anio - 1]
+            if isinstance(c.value, str) and c.value.startswith('='):
+                c.value = fecha.year
+        if idx_mes:
+            c = row[idx_mes - 1]
+            if isinstance(c.value, str) and c.value.startswith('='):
+                c.value = MESES_ES.get(fecha.month, '')
+        if idx_semestre:
+            c = row[idx_semestre - 1]
+            if isinstance(c.value, str) and c.value.startswith('='):
+                c.value = f"{fecha.year}-{1 if fecha.month <= 6 else 2}"
+        if idx_llave and idx_id:
+            c = row[idx_llave - 1]
+            if isinstance(c.value, str) and c.value.startswith('='):
+                id_val = row[idx_id - 1].value
+                c.value = make_llave(id_val, fecha)
 
 
 def _ensure_tipo_registro_header(ws):
@@ -160,6 +180,25 @@ def fechas_por_periodicidad(periodicidad, year=2025):
     }
     meses = mapa.get(periodicidad, [12])
     return [pd.Timestamp(year, m, ultimo_dia_mes(year, m)) for m in meses]
+
+
+_MESES_VALIDOS = {
+    'Mensual':    list(range(1, 13)),
+    'Trimestral': [3, 6, 9, 12],
+    'Semestral':  [6, 12],
+    'Anual':      [12],
+    'Bimestral':  [2, 4, 6, 8, 10, 12],
+}
+
+
+def _fecha_es_periodo_valido(fecha, periodicidad):
+    """True si la fecha cae en un mes de medición válido Y es el último día del mes."""
+    meses = _MESES_VALIDOS.get(periodicidad)
+    if not meses:
+        return True  # periodicidad desconocida → no filtrar
+    if fecha.month not in meses:
+        return False
+    return fecha.day == ultimo_dia_mes(fecha.year, fecha.month)
 
 
 def limpiar_clasificacion(val):
@@ -229,6 +268,26 @@ def _es_vacio(val):
     if str(val).strip() in ('', 'nan', 'None', '[]'):
         return True
     return False
+
+
+# Valores válidos de Formato_Valores en el Catálogo (exactos, tal como vienen del xlsx)
+_FORMATOS_VALIDOS = {'%', 'ENT', 'DEC', '$', 'Días', 'm3', 'kWh', 'Kg', 'tCO2e',
+                     'No Aplica', 'Sin Reporte'}
+
+
+def _fmt_val_raw(val):
+    """
+    Normaliza una celda de la columna Formato_Valores del Catálogo.
+    - Valores string reconocidos → se devuelven tal cual (strip)
+    - Valor numérico 0            → vacío (se llenará con fallback '%')
+    - NaN / None / vacío          → vacío
+    """
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return ''
+    s = str(val).strip()
+    if s in ('', 'nan', 'None', '0'):
+        return ''
+    return s
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -594,6 +653,104 @@ def cargar_lmi_reporte():
         return set()
 
 
+def cargar_kawak_validos():
+    """
+    Lee Indicadores Kawak.xlsx (generado por consolidar_api.py) y retorna un set
+    de tuplas (id_str, año) que representan los indicadores válidos por año.
+    Si el archivo no existe retorna None (sin filtro).
+    """
+    if not KAWAK_CAT_FILE.exists():
+        print(f"  [AVISO] No se encontro {KAWAK_CAT_FILE.name}; "
+              f"filtro Kawak desactivado.")
+        return None
+    try:
+        df = pd.read_excel(KAWAK_CAT_FILE)
+        df.columns = [str(c).strip() for c in df.columns]
+        col_id  = next((c for c in df.columns if c.lower() == 'id'),  None)
+        col_año = next((c for c in df.columns if c.lower() in ('año', 'anio', 'year')), None)
+        if not col_id or not col_año:
+            print(f"  [AVISO] Columnas Id/Año no encontradas en {KAWAK_CAT_FILE.name}.")
+            return None
+        validos = set()
+        for _, row in df.iterrows():
+            id_s = _id_str(row[col_id])
+            try:
+                año = int(float(row[col_año]))
+            except (TypeError, ValueError):
+                continue
+            if id_s:
+                validos.add((id_s, año))
+        return validos
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo {KAWAK_CAT_FILE.name}: {e}")
+        return None
+
+
+def cargar_extraccion_map():
+    """
+    Lee la columna 'Extraccion' del Catalogo Indicadores de INPUT_FILE.
+    Retorna dict {id_str: extraccion_str | None}.
+    Valores: 'Desglose Variables', 'Consolidado_API_Kawak' o None (vacío).
+    """
+    if not INPUT_FILE.exists():
+        return {}
+    try:
+        df = pd.read_excel(INPUT_FILE, sheet_name='Catalogo Indicadores')
+        df.columns = [str(c).strip() for c in df.columns]
+        if 'Extraccion' not in df.columns:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            id_s = _id_str(row.get('Id', ''))
+            val  = row.get('Extraccion')
+            if id_s:
+                result[id_s] = None if pd.isna(val) else str(val).strip()
+        return result
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo Extraccion del catalogo: {e}")
+        return {}
+
+
+def cargar_consolidado_api_kawak_lookup():
+    """
+    Carga Consolidado_API_Kawak.xlsx y construye un dict
+    {(id_str, fecha_normalizada): (meta, resultado)} para acceso directo.
+    """
+    if not CONSOLIDADO_API_KW.exists():
+        print(f"  [AVISO] No se encontro {CONSOLIDADO_API_KW.name}; "
+              f"lookup API_Kawak desactivado.")
+        return {}
+    try:
+        df = pd.read_excel(CONSOLIDADO_API_KW)
+        df.columns = [str(c).strip() for c in df.columns]
+        col_id   = next((c for c in df.columns if c.upper() == 'ID'), None)
+        col_fec  = next((c for c in df.columns if c.lower() == 'fecha'), None)
+        col_meta = next((c for c in df.columns if c.lower() == 'meta'), None)
+        col_res  = next((c for c in df.columns if c.lower() == 'resultado'), None)
+        if not all([col_id, col_fec, col_meta, col_res]):
+            print(f"  [AVISO] Columnas faltantes en {CONSOLIDADO_API_KW.name}: "
+                  f"id={col_id} fecha={col_fec} meta={col_meta} resultado={col_res}")
+            return {}
+        df[col_fec] = pd.to_datetime(df[col_fec], errors='coerce')
+        lookup = {}
+        for _, row in df.iterrows():
+            id_s  = _id_str(row[col_id])
+            fecha = row[col_fec]
+            if pd.isna(fecha) or not id_s:
+                continue
+            key  = (id_s, fecha.normalize())
+            meta = nan2none(row[col_meta])
+            res  = nan2none(row[col_res])
+            # Si hay duplicados de llave, preferir el que tenga ejecucion
+            if key not in lookup or (lookup[key][1] is None and res is not None):
+                lookup[key] = (meta, res)
+        print(f"  Lookup Consolidado_API_Kawak: {len(lookup):,} registros")
+        return lookup
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo {CONSOLIDADO_API_KW.name}: {e}")
+        return {}
+
+
 def cargar_kawak_old(years=(2021,)):
     frames = []
     for y in years:
@@ -797,17 +954,25 @@ def construir_catalogo(df_api, df_hist=None,
     if metadatos_kawak is None: metadatos_kawak = {}
     if metadatos_cmi   is None: metadatos_cmi   = {}
 
+    # Leer TipoCalculo, Asociacion y Formato_Valores desde la hoja Catalogo
+    # del archivo fuente (fuente de verdad curada manualmente).
+    # Fallback: output previo para no perder edits si la fuente no tuviera la hoja.
     user_data = {}
-    if OUTPUT_FILE.exists():
+    for _src in (INPUT_FILE, OUTPUT_FILE):
+        if not _src.exists():
+            continue
         try:
-            xl = pd.ExcelFile(OUTPUT_FILE)
-            if 'Catalogo Indicadores' in xl.sheet_names:
-                df_ex = pd.read_excel(OUTPUT_FILE, sheet_name='Catalogo Indicadores')
-                for _, row in df_ex.iterrows():
-                    ids = _id_str(row['Id'])
+            xl = pd.ExcelFile(_src)
+            if 'Catalogo Indicadores' not in xl.sheet_names:
+                continue
+            df_ex = pd.read_excel(_src, sheet_name='Catalogo Indicadores')
+            for _, row in df_ex.iterrows():
+                ids = _id_str(row['Id'])
+                if ids not in user_data:          # fuente tiene prioridad sobre output
                     user_data[ids] = {
-                        'TipoCalculo': row.get('TipoCalculo', ''),
-                        'Asociacion':  row.get('Asociacion', ''),
+                        'TipoCalculo':    str(row.get('TipoCalculo',    '') or '').strip(),
+                        'Asociacion':     str(row.get('Asociacion',     '') or '').strip(),
+                        'Formato_Valores':_fmt_val_raw(row.get('Formato_Valores')),
                     }
         except Exception:
             pass
@@ -866,15 +1031,16 @@ def construir_catalogo(df_api, df_hist=None,
         proceso       = _clean(kw.get('proceso'))       or _clean(cmi.get('proceso'))       or base['Proceso']
         periodicidad  = _clean(kw.get('periodicidad'))  or _clean(cmi.get('periodicidad'))  or base['Periodicidad']
         sentido       = _clean(kw.get('sentido'))       or _clean(cmi.get('sentido'))       or base['Sentido']
-        ud           = user_data.get(ids, {})
-        tipo_calculo = _clean(ud.get('TipoCalculo')) or _clean(kw.get('tipo_calculo', ''))
-        asociacion   = _clean(ud.get('Asociacion', ''))
+        ud             = user_data.get(ids, {})
+        tipo_calculo   = _clean(ud.get('TipoCalculo'))     or _clean(kw.get('tipo_calculo', ''))
+        asociacion     = _clean(ud.get('Asociacion',    ''))
+        formato_valores= _clean(ud.get('Formato_Valores','')) or '%'
         rows.append({
             'Id': base['Id'], 'Indicador': nombre, 'Clasificacion': clasificacion,
             'Proceso': proceso, 'Periodicidad': periodicidad, 'Sentido': sentido,
             'Tipo_API': base['Tipo_API'], 'Estado': base['Estado'], 'Fuente': base['Fuente'],
             'TipoCalculo': tipo_calculo, 'Asociacion': asociacion,
-            'Formato_Valores': 'Porcentaje',
+            'Formato_Valores': formato_valores,
         })
 
     df_cat = pd.DataFrame(rows)
@@ -905,6 +1071,28 @@ def expandir_series(df_api):
             for v in s.get('variables', []):
                 row_base[f"var_{v.get('simbolo', 'X')}"] = v.get('valor')
             rows.append(row_base)
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def expandir_variables(df_api):
+    rows = []
+    for _, r in df_api.iterrows():
+        parsed = parse_json_safe(r.get('variables'))
+        if not parsed:
+            continue
+        for v in parsed:
+            rows.append({
+                'Id':          r['Id'],
+                'Indicador':   limpiar_html(str(r.get('Indicador', ''))),
+                'Proceso':     r.get('Proceso', ''),
+                'Periodicidad':r.get('Periodicidad', ''),
+                'Sentido':     r.get('Sentido', ''),
+                'fecha':       r['fecha'],
+                'LLAVE':       r['LLAVE'],
+                'var_simbolo': v.get('simbolo', ''),
+                'var_nombre':  limpiar_html(str(v.get('nombre', ''))),
+                'var_valor':   v.get('valor'),
+            })
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
@@ -1082,23 +1270,29 @@ def get_last_data_row(ws):
 # LIMPIAR CIERRES EXISTENTES
 # ─────────────────────────────────────────────────────────────────────
 
-def purgar_filas_invalidas(ws, nombre="hoja"):
+def purgar_filas_invalidas(ws, nombre="hoja", kawak_validos=None):
     """
-    Elimina filas donde la fecha es futura (año > AÑO_CIERRE_ACTUAL)
-    o donde el campo Año contiene texto inválido como 'Avance'.
-    Usa el mapa de columnas real de la hoja.
+    Elimina filas donde:
+      - La fecha es futura (año > AÑO_CIERRE_ACTUAL)
+      - El campo Año contiene texto inválido como 'Avance'
+      - El par (Id, año) no existe en el catálogo Indicadores Kawak
+        (solo si kawak_validos no es None)
     """
     cm = _build_col_map(ws)
-    idx_fecha = cm.get('Fecha', 6) - 1   # 0-based; Fecha=col6 por defecto
-    idx_anio  = cm.get('Anio',  7) - 1   # 0-based; Año=col7 por defecto
+    idx_id    = cm.get('Id',    1) - 1
+    idx_fecha = cm.get('Fecha', 6) - 1
+    idx_anio  = cm.get('Anio',  7) - 1
 
     filas_a_borrar = []
+    n_kawak = 0
     for row in ws.iter_rows(min_row=2, values_only=False):
         if row[0].value is None:
             continue
         fecha_raw = row[idx_fecha].value if len(row) > idx_fecha else None
+        año_fila  = None
         try:
             fecha = pd.to_datetime(fecha_raw)
+            año_fila = fecha.year
             if fecha.year > AÑO_CIERRE_ACTUAL:
                 filas_a_borrar.append(row[0].row)
                 continue
@@ -1106,20 +1300,29 @@ def purgar_filas_invalidas(ws, nombre="hoja"):
             pass
         anio_val = row[idx_anio].value if len(row) > idx_anio else None
         if anio_val is not None:
-            # Celdas con fórmula Excel (ej. =YEAR(F2)) son válidas — no borrar
             if isinstance(anio_val, str) and anio_val.startswith('='):
                 pass
             else:
                 try:
-                    float(anio_val)
+                    año_fila = int(float(anio_val))
                 except (TypeError, ValueError):
                     filas_a_borrar.append(row[0].row)
+                    continue
+        # Filtro Kawak: eliminar si (Id, año) no aparece en el catálogo
+        if kawak_validos is not None and año_fila is not None:
+            id_val = row[idx_id].value if len(row) > idx_id else None
+            id_s   = _id_str(id_val) if id_val is not None else None
+            if id_s and (id_s, año_fila) not in kawak_validos:
+                filas_a_borrar.append(row[0].row)
+                n_kawak += 1
 
     for r_idx in sorted(set(filas_a_borrar), reverse=True):
         ws.delete_rows(r_idx)
-    if filas_a_borrar:
-        print(f"  [{nombre}] {len(filas_a_borrar)} filas inválidas/futuras eliminadas.")
-    return len(filas_a_borrar)
+    total = len(set(filas_a_borrar))
+    if total:
+        print(f"  [{nombre}] {total} filas eliminadas "
+              f"({n_kawak} por no estar en Indicadores Kawak).")
+    return total
 
 
 def limpiar_cierres_existentes(ws):
@@ -1285,12 +1488,19 @@ def escribir_hoja_nueva(wb, nombre, df):
 # CONSTRUIR REGISTROS PARA CADA HOJA
 # ─────────────────────────────────────────────────────────────────────
 
-def _extraer_registro(row, hist_escalas, config_patrones=None):
+def _extraer_registro(row, hist_escalas, config_patrones=None,
+                      extraccion_map=None, api_kawak_lookup=None):
     """
     Extrae (meta, ejec, fuente, es_na) para una fila de fuente.
-    Kawak2025 nunca tiene N/A (los datos ya están limpios).
+
+    Lógica según columna 'Extraccion' del Catalogo Indicadores:
+      - 'Desglose Variables' → usa determinar_meta_ejec con patron VARIABLES
+      - 'Consolidado_API_Kawak' o vacío → usa meta/resultado directo
+        del lookup de Consolidado_API_Kawak.xlsx
+    Kawak2025 siempre usa su propio flujo.
     """
     id_val = row.get('Id', row.get('ID'))
+    id_s   = _id_str(id_val)
     id_num = pd.to_numeric(id_val, errors='coerce')
     hist_meta_escala = hist_escalas.get(id_num) or hist_escalas.get(str(id_val))
 
@@ -1299,7 +1509,37 @@ def _extraer_registro(row, hist_escalas, config_patrones=None):
         ejec = nan2none(row.get('resultado'))
         return meta, ejec, 'Kawak2025', False
 
-    patron_cfg = config_patrones.get(_id_str(id_val)) if config_patrones else None
+    extraccion = (extraccion_map or {}).get(id_s)
+
+    # ── Caso: Consolidado_API_Kawak (o vacío) ─────────────────────
+    if extraccion != 'Desglose Variables':
+        if api_kawak_lookup:
+            fecha_raw = row.get('fecha')
+            try:
+                fecha_key = pd.to_datetime(fecha_raw).normalize()
+            except Exception:
+                fecha_key = None
+            if fecha_key is not None:
+                vals = api_kawak_lookup.get((id_s, fecha_key))
+                if vals is not None:
+                    meta, res = vals
+                    if is_na_record(row.to_dict() if hasattr(row, 'to_dict') else row):
+                        return meta, None, 'na_record', True
+                    return meta, res, 'api_kawak_directo', res is None
+        # Fallback: heurística normal si no hay lookup o no se encontró la llave
+        patron_cfg = config_patrones.get(id_s) if config_patrones else None
+        meta, ejec, fuente, es_na = determinar_meta_ejec(
+            row.to_dict() if hasattr(row, 'to_dict') else row,
+            hist_meta_escala,
+            patron_cfg=patron_cfg,
+        )
+        return meta, ejec, fuente, es_na
+
+    # ── Caso: Desglose Variables ───────────────────────────────────
+    patron_cfg = config_patrones.get(id_s) if config_patrones else None
+    # Forzar patron VARIABLES si no está configurado explícitamente
+    if patron_cfg is None:
+        patron_cfg = {'patron': 'VARIABLES', 'simbolo_ejec': '', 'simbolo_meta': ''}
     meta, ejec, fuente, es_na = determinar_meta_ejec(
         row.to_dict() if hasattr(row, 'to_dict') else row,
         hist_meta_escala,
@@ -1309,18 +1549,37 @@ def _extraer_registro(row, hist_escalas, config_patrones=None):
 
 
 def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
-                                  config_patrones=None, mapa_procesos=None):
+                                  config_patrones=None, mapa_procesos=None,
+                                  kawak_validos=None, extraccion_map=None,
+                                  api_kawak_lookup=None):
     registros = []
     skipped   = 0
     conteo_na = 0
     df = df_fuente[~df_fuente['LLAVE'].isin(llaves_existentes)].dropna(subset=['LLAVE'])
     for _, row in df.iterrows():
+        # Filtro Kawak: solo procesar si (Id, año) existe en el catálogo
+        if kawak_validos is not None:
+            id_s  = _id_str(row.get('Id', row.get('ID', '')))
+            fecha = row.get('fecha')
+            try:
+                año = pd.to_datetime(fecha).year
+            except Exception:
+                año = None
+            if año is not None and (id_s, año) not in kawak_validos:
+                skipped += 1
+                continue
         meta, ejec, fuente, es_na = _extraer_registro(
-            row, hist_escalas, config_patrones=config_patrones)
+            row, hist_escalas, config_patrones=config_patrones,
+            extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup)
         if fuente == 'skip' or fuente == 'sin_resultado':
             skipped += 1
             continue
         if es_na:
+            periodicidad = str(row.get('Periodicidad', ''))
+            fecha_row = row['fecha']
+            if periodicidad and not _fecha_es_periodo_valido(fecha_row, periodicidad):
+                skipped += 1
+                continue
             conteo_na += 1
         # Conservar el subproceso tal como viene (col Proceso de las fuentes),
         # para mantener consistencia con los registros históricos existentes.
@@ -1336,7 +1595,9 @@ def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
 
 
 def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
-                                  config_patrones=None, mapa_procesos=None):
+                                  config_patrones=None, mapa_procesos=None,
+                                  kawak_validos=None, extraccion_map=None,
+                                  api_kawak_lookup=None):
     """
     Genera registros para Consolidado Semestral.
     Para indicadores con patrón AVG o SUM, agrega resultados mensuales
@@ -1397,12 +1658,16 @@ def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
 
     return construir_registros_historico(
         df_sem, llaves_existentes, hist_escalas,
-        config_patrones=config_patrones, mapa_procesos=mapa_procesos
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+        kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+        api_kawak_lookup=api_kawak_lookup,
     )
 
 
 def construir_registros_cierres(df_fuente, hist_escalas,
-                                config_patrones=None, mapa_procesos=None):
+                                config_patrones=None, mapa_procesos=None,
+                                kawak_validos=None, extraccion_map=None,
+                                api_kawak_lookup=None):
     df = df_fuente.copy()
     df['año'] = df['fecha'].dt.year
     df['mes'] = df['fecha'].dt.month
@@ -1411,6 +1676,13 @@ def construir_registros_cierres(df_fuente, hist_escalas,
     conteo_na = 0
 
     for (id_val, año), grupo in df.groupby(['Id', 'año']):
+        # Filtro Kawak: saltar el año completo si (Id, año) no está en el catálogo
+        if kawak_validos is not None:
+            id_s = _id_str(id_val)
+            if (id_s, int(año)) not in kawak_validos:
+                skipped += len(grupo)
+                continue
+
         if año > AÑO_CIERRE_ACTUAL:
             candidatos = grupo
         else:
@@ -1419,7 +1691,8 @@ def construir_registros_cierres(df_fuente, hist_escalas,
 
         for _, row in candidatos.iterrows():
             meta, ejec, fuente, es_na = _extraer_registro(
-                row, hist_escalas, config_patrones=config_patrones)
+                row, hist_escalas, config_patrones=config_patrones,
+                extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup)
             if fuente == 'skip' or fuente == 'sin_resultado':
                 skipped += 1
                 continue
@@ -1496,8 +1769,12 @@ def main():
     print(f"  Histórico: {len(df_hist):,} | Semestral: {len(df_sem):,} | "
           f"Cierres: {len(df_cierres):,}")
 
-    # ── 3. Metadatos maestros ─────────────────────────────────────
-    print("\n[3] Cargando metadatos maestros...")
+    # ── 3. Catálogo Kawak válidos + Metadatos maestros ────────────
+    print("\n[3] Cargando catálogo Kawak e indicadores válidos por año...")
+    kawak_validos = cargar_kawak_validos()
+    if kawak_validos:
+        print(f"  Pares (Id, Año) válidos: {len(kawak_validos):,}")
+    print("\n[3b] Cargando metadatos maestros...")
     meta_kawak    = cargar_metadatos_kawak()
     meta_cmi      = cargar_metadatos_cmi()
     mapa_procesos = cargar_mapa_procesos()
@@ -1523,10 +1800,20 @@ def main():
             lambda r: _apply_meta(r, 'periodicidad', lambda r: str(r['Periodicidad'])), axis=1)
 
     # ── 4. Series / Análisis ──────────────────────────────────────
-    print("\n[4] Expandiendo series y análisis...")
-    df_series   = expandir_series(df_api)
-    df_analisis = expandir_analisis(df_api)
-    print(f"  Series: {len(df_series):,} | Análisis: {len(df_analisis):,}")
+    print("\n[4] Expandiendo variables, series y análisis...")
+    df_variables = expandir_variables(df_api)
+    df_series    = expandir_series(df_api)
+    df_analisis  = expandir_analisis(df_api)
+    print(f"  Variables: {len(df_variables):,} | Series: {len(df_series):,} | Analisis: {len(df_analisis):,}")
+
+    # ── 4b. Lookups de extracción ─────────────────────────────────
+    print("\n[4b] Cargando mapa de Extraccion y lookup Consolidado_API_Kawak...")
+    extraccion_map   = cargar_extraccion_map()
+    api_kawak_lookup = cargar_consolidado_api_kawak_lookup()
+    n_dv = sum(1 for v in extraccion_map.values() if v == 'Desglose Variables')
+    n_ak = sum(1 for v in extraccion_map.values() if v == 'Consolidado_API_Kawak')
+    print(f"  Extraccion: {n_dv} Desglose Variables | {n_ak} Consolidado_API_Kawak | "
+          f"{len(extraccion_map)-n_dv-n_ak} sin valor (usa API_Kawak)")
 
     # ── 5. Catálogo ───────────────────────────────────────────────
     print("\n[5] Construyendo catálogo...")
@@ -1567,10 +1854,11 @@ def main():
     for nombre_hoja in ('Consolidado Historico', 'Consolidado Semestral', 'Consolidado Cierres'):
         _ensure_tipo_registro_header(wb[nombre_hoja])
 
-    # Purgar filas con fechas futuras o campos inválidos ("Avance") de todas las hojas
-    print("\n[6b] Purgando filas inválidas/futuras...")
+    # Purgar filas inválidas/futuras y las que no están en el catálogo Kawak
+    print("\n[6b] Purgando filas invalidas/futuras y sin catalogo Kawak...")
     for _nombre_hoja in ('Consolidado Historico', 'Consolidado Semestral', 'Consolidado Cierres'):
-        purgar_filas_invalidas(wb[_nombre_hoja], _nombre_hoja)
+        purgar_filas_invalidas(wb[_nombre_hoja], _nombre_hoja,
+                               kawak_validos=kawak_validos)
 
     # Limpiar cierres existentes ANTES de escribir
     print("\n[6c] Limpiando Consolidado Cierres (solo 31/12 por Id+Año)...")
@@ -1578,23 +1866,27 @@ def main():
     limpiar_cierres_existentes(ws_cierres)
 
     # ── 7. Histórico ──────────────────────────────────────────────
-    print("\n[7] Nuevos registros Histórico...")
+    print("\n[7] Nuevos registros Historico...")
     regs_hist, skip_hist, na_hist = construir_registros_historico(
         df_fuente_api, llave_hist, hist_escalas,
-        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+        kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+        api_kawak_lookup=api_kawak_lookup)
     print(f"  Nuevos: {len(regs_hist):,} | N/A: {na_hist:,} | Omitidos: {skip_hist:,}")
     if len(df_kawak25) > 0:
         llaves_usadas = llave_hist | {r['LLAVE'] for r in regs_hist}
         regs_k25, sk25, na_k25 = construir_registros_historico(
             df_kawak25, llaves_usadas, hist_escalas,
-            config_patrones=config_patrones, mapa_procesos=mapa_procesos)
+            config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+            kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+            api_kawak_lookup=api_kawak_lookup)
         regs_hist += regs_k25
         print(f"  + Kawak 2025: {len(regs_k25):,} adicionales (N/A: {na_k25}, omitidos: {sk25})")
     regs_hist.sort(key=lambda x: (str(x['Id']), x['fecha']))
     ws_hist = wb['Consolidado Historico']
     if regs_hist:
         ultima = escribir_filas(ws_hist, regs_hist, signos, ids_metrica=ids_metrica)
-        print(f"  Última fila: {ultima}")
+        print(f"  Ultima fila: {ultima}")
     else:
         print("  Sin filas nuevas.")
 
@@ -1602,13 +1894,15 @@ def main():
     print("\n[8] Nuevos registros Semestral...")
     regs_sem, skip_sem, na_sem = construir_registros_semestral(
         df_fuente_api, llave_sem, hist_escalas,
-        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+        kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+        api_kawak_lookup=api_kawak_lookup)
     print(f"  Nuevos: {len(regs_sem):,} | N/A: {na_sem:,} | Omitidos: {skip_sem:,}")
     regs_sem.sort(key=lambda x: (str(x['Id']), x['fecha']))
     ws_sem = wb['Consolidado Semestral']
     if regs_sem:
         ultima = escribir_filas(ws_sem, regs_sem, signos, ids_metrica=ids_metrica)
-        print(f"  Última fila: {ultima}")
+        print(f"  Ultima fila: {ultima}")
     else:
         print("  Sin filas nuevas.")
 
@@ -1616,11 +1910,15 @@ def main():
     print("\n[9] Nuevos registros Cierres...")
     regs_cierres, skip_c, na_c = construir_registros_cierres(
         df_fuente_api, hist_escalas,
-        config_patrones=config_patrones, mapa_procesos=mapa_procesos)
+        config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+        kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+        api_kawak_lookup=api_kawak_lookup)
     if len(df_kawak25) > 0:
         regs_k25_c, sk25_c, na_k25_c = construir_registros_cierres(
             df_kawak25, hist_escalas,
-            config_patrones=config_patrones, mapa_procesos=mapa_procesos)
+            config_patrones=config_patrones, mapa_procesos=mapa_procesos,
+            kawak_validos=kawak_validos, extraccion_map=extraccion_map,
+            api_kawak_lookup=api_kawak_lookup)
         llaves_c = {r['LLAVE'] for r in regs_cierres}
         regs_k25_c = [r for r in regs_k25_c if r['LLAVE'] not in llaves_c]
         regs_cierres += regs_k25_c
@@ -1651,6 +1949,9 @@ def main():
 
     # ── 10. Hojas nuevas ──────────────────────────────────────────
     print("\n[10] Escribiendo hojas nuevas...")
+    if len(df_variables) > 0:
+        escribir_hoja_nueva(wb, 'Desglose Variables', df_variables)
+        print(f"  Desglose Variables:   {len(df_variables):,} filas")
     if len(df_series)   > 0:
         escribir_hoja_nueva(wb, 'Desglose Series',   df_series)
         print(f"  Desglose Series:      {len(df_series):,} filas")
@@ -1696,7 +1997,7 @@ def main():
     print(f"  Cierres:    +{len(regs_cierres_nuevos):,} filas  ({na_c:,} N/A)")
     print(f"  Total 'No Aplica' marcados: {total_na:,} "
           f"(Ejecucion=vacío, Signo='No Aplica', Cumplimiento='')")
-    print(f"  Hojas nuevas: Desglose Series, Desglose Analisis,")
+    print(f"  Hojas nuevas: Desglose Variables, Desglose Series, Desglose Analisis,")
     print(f"                Catalogo Indicadores, Base Normalizada")
     print("=" * 65)
 

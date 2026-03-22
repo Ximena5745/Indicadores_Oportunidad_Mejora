@@ -40,7 +40,7 @@ RUTA_ORIGEN = os.path.join(BASE_DIR, "data", "raw", "lmi_reporte.xlsx")
 RUTA_SALIDA = os.path.join(BASE_DIR, "data", "output", "Seguimiento_Reporte.xlsx")
 
 # Archivo de respaldo Kawak (puede no existir; se omite sin error si falta).
-RUTA_KAWAK  = os.path.join(BASE_DIR, "data", "raw", "indicadores_kawak.xlsx")
+RUTA_KAWAK  = os.path.join(BASE_DIR, "data", "raw", "Fuentes Consolidadas", "Consolidado_API_Kawak.xlsx")
 
 # Nombres de columnas en indicadores_kawak.xlsx
 KAWAK_COL_ID     = "Id"
