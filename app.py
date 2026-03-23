@@ -100,13 +100,53 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Botón de actualización en sidebar ────────────────────────────────────────
+# ── Botón de actualización + modo oscuro en sidebar ──────────────────────────
 with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Actualizar datos", use_container_width=True):
         st.cache_data.clear()
         st.success("Datos actualizados.")
+    dark_mode = st.toggle("🌙 Modo oscuro (tarjetas)", value=False, key="global_dark_mode")
     st.markdown("---")
+
+# CSS dinámico según modo oscuro
+if dark_mode:
+    st.markdown(
+        """
+        <style>
+        /* Tarjetas de métricas — modo oscuro */
+        [data-testid="metric-container"] {
+            background: #1E2A3A !important;
+            border-left: 4px solid #4FC3F7 !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.35) !important;
+        }
+        [data-testid="metric-container"] [data-testid="stMetricLabel"] {
+            color: #90CAF9 !important;
+        }
+        [data-testid="metric-container"] [data-testid="stMetricValue"] {
+            color: #E3F2FD !important;
+        }
+        [data-testid="metric-container"] [data-testid="stMetricDelta"] {
+            color: #80DEEA !important;
+        }
+        /* Fondo de la app — modo oscuro */
+        .stApp {
+            background-color: #0F1923 !important;
+        }
+        /* Texto general */
+        .stApp p, .stApp span, .stApp div:not([class*="stSidebar"]) {
+            color: #CFD8DC;
+        }
+        h1 { color: #90CAF9 !important; }
+        h2, h3 { color: #64B5F6 !important; }
+        /* Contenedores Plotly */
+        .js-plotly-plot .plotly .bg {
+            fill: #1E2A3A !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ── Navegación multipágina ────────────────────────────────────────────────────
 pages = {

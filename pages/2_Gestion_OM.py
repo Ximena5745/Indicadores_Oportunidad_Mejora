@@ -11,13 +11,14 @@ import calendar
 import datetime
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from services.data_loader import cargar_dataset, construir_opciones_indicadores, cargar_om, cargar_plan_accion
 from core.calculos import obtener_ultimo_registro, calcular_meses_en_peligro
-from components.charts import grafico_historico_indicador, tabla_historica_indicador, exportar_excel, panel_detalle_indicador
+from components.charts import (grafico_historico_indicador, tabla_historica_indicador,
+                               exportar_excel, panel_detalle_indicador,
+                               grafico_3d_riesgo, grafico_3d_om)
 from core.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ORDEN
 from core.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
 from core.config import COLORES, COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
@@ -511,6 +512,13 @@ with tab1:
         else:
             st.info("Sin datos.")
 
+    # ── Gráfico 3D — Proceso × Cumplimiento × Períodos en riesgo ──────────────
+    if not df_cat.empty:
+        with st.expander("🌐 Vista 3D — Proceso, Cumplimiento y Persistencia en riesgo", expanded=False):
+            st.caption("Visualización interactiva: arrastra para rotar, scroll para zoom, pasa el cursor sobre los puntos para ver detalles.")
+            fig_3d = grafico_3d_riesgo(df_cat)
+            st.plotly_chart(fig_3d, use_container_width=True)
+
     st.markdown("---")
 
     # ── Filtro activo sobre tabla ──────────────────────────────────────────────
@@ -760,23 +768,11 @@ with tab2:
                     st.plotly_chart(fig, use_container_width=True)
 
             with row2[1]:
-                if _COL_AV and _COL_DIAS and _COL_PROC:
-                    cols_sc = [_COL_PROC, _COL_AV, _COL_DIAS]
-                    if "Id" in df_f.columns: cols_sc.append("Id")
-                    if _COL_DESC and _COL_DESC in df_f.columns: cols_sc.append(_COL_DESC)
-                    df_sc = df_f[cols_sc].dropna(subset=[_COL_AV, _COL_DIAS]).copy()
-                    if not df_sc.empty:
-                        fig = px.scatter(
-                            df_sc, x=_COL_DIAS, y=_COL_AV, color=_COL_PROC,
-                            hover_data={"Id": True} if "Id" in df_sc.columns else [_COL_PROC],
-                            title="Avance vs Días Vencida",
-                            labels={_COL_DIAS: "Días vencida", _COL_AV: "Avance (%)"},
-                            height=340,
-                        )
-                        fig.add_vline(x=0, line_dash="dash", line_color="gray",
-                                      annotation_text="Vence hoy", annotation_position="top right")
-                        fig.update_layout(margin=dict(l=10, r=10, t=50, b=30))
-                        st.plotly_chart(fig, use_container_width=True)
+                if _COL_AV and _COL_DIAS and _COL_PROC and _COL_ESTADO:
+                    st.markdown("**Proceso × Avance × Días vencida (3D)**")
+                    st.caption("Arrastra para rotar. Coloreado por estado de la OM.")
+                    fig_3d_om = grafico_3d_om(df_f, _COL_PROC, _COL_AV, _COL_DIAS, _COL_ESTADO)
+                    st.plotly_chart(fig_3d_om, use_container_width=True)
 
     # ─── Sub-tab Información ─────────────────────────────────────────────────
     with st2_info:

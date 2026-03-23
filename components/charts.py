@@ -57,7 +57,11 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
 
     # Línea de datos
     x_vals = df_ind["Fecha"] if "Fecha" in df_ind.columns else df_ind["Periodo"]
-    custom = df_ind[["Periodo", "Categoria"]].values if "Periodo" in df_ind.columns else None
+    mes_labels = (
+        df_ind["Fecha"].dt.strftime("%b %Y") if "Fecha" in df_ind.columns
+        else df_ind.get("Periodo", pd.Series([""] * len(df_ind)))
+    )
+    custom = list(zip(mes_labels, df_ind["Categoria"])) if "Categoria" in df_ind.columns else None
 
     fig.add_trace(go.Scatter(
         x=x_vals,
@@ -73,7 +77,7 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
         textposition="top center",
         textfont=dict(size=9),
         hovertemplate=(
-            "<b>Periodo:</b> %{customdata[0]}<br>"
+            "<b>Mes:</b> %{customdata[0]}<br>"
             "<b>Cumplimiento:</b> %{y:.1f}%<br>"
             "<b>Estado:</b> %{customdata[1]}<extra></extra>"
         ) if custom is not None else "%{y:.1f}%<extra></extra>",
@@ -109,9 +113,24 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
 
 def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     """Prepara DataFrame histórico con columnas formateadas para mostrar."""
-    cols = ["Periodo", "Anio", "Meta", "Ejecucion", "Cumplimiento_norm", "Categoria"]
-    cols_disp = [c for c in cols if c in df_ind.columns]
-    df_t = df_ind[cols_disp].copy().sort_values("Anio") if "Anio" in df_ind.columns else df_ind[cols_disp].copy()
+    df_work = df_ind.copy()
+
+    # Generar columna Mes desde Fecha (reemplaza Periodo)
+    if "Fecha" in df_work.columns:
+        df_work["Mes"] = pd.to_datetime(df_work["Fecha"], errors="coerce").dt.strftime("%b %Y")
+    elif "Periodo" in df_work.columns:
+        df_work["Mes"] = df_work["Periodo"].astype(str)
+
+    # Renombrar Anio -> Año
+    if "Anio" in df_work.columns:
+        df_work.rename(columns={"Anio": "Año"}, inplace=True)
+
+    cols = ["Mes", "Año", "Meta", "Ejecucion", "Cumplimiento_norm", "Categoria"]
+    cols_disp = [c for c in cols if c in df_work.columns]
+    df_t = df_work[cols_disp].copy()
+    if "Año" in df_t.columns:
+        df_t = df_t.sort_values("Año")
+
     for col in ("Meta", "Ejecucion"):
         if col in df_t.columns:
             df_t[col] = pd.to_numeric(df_t[col], errors="coerce").map(
@@ -161,7 +180,11 @@ def grafico_detalle_indicador(df_ind: pd.DataFrame) -> go.Figure:
     """
     df = df_ind.sort_values("Fecha").copy()
 
-    periodos = df["Periodo"].astype(str).tolist()
+    # Usar mes específico desde Fecha en lugar del código de Periodo
+    if "Fecha" in df.columns:
+        periodos = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%b %Y").tolist()
+    else:
+        periodos = df["Periodo"].astype(str).tolist()
     cum_pct = (df["Cumplimiento_norm"] * 100).round(1)
     colores_pts = df["Categoria"].map(COLOR_CAT).fillna("#9E9E9E").tolist()
 
@@ -374,3 +397,126 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
                             st.markdown(ia_result)
                         else:
                             st.caption("⚙️ Configura ANTHROPIC_API_KEY en los secretos de Streamlit Cloud para activar este análisis.")
+
+
+def grafico_3d_riesgo(df_cat: pd.DataFrame) -> go.Figure:
+    """
+    Scatter 3D: Proceso (eje X) × Cumplimiento% (eje Y) × Periodos en riesgo (eje Z).
+    Coloreado por Categoria. Ideal para Tab 1 de Gestión OM.
+    df_cat debe tener: Id, Indicador, Proceso, Cumplimiento_norm, Categoria
+    y opcionalmente 'Periodos en riesgo'.
+    """
+    df = df_cat.copy()
+    if df.empty:
+        return go.Figure()
+
+    # Mapeo proceso -> índice numérico para eje X
+    procesos = sorted(df["Proceso"].dropna().unique().tolist())
+    proc_map = {p: i for i, p in enumerate(procesos)}
+    df["proc_idx"] = df["Proceso"].map(proc_map).fillna(0)
+    df["cum_pct"]  = (df["Cumplimiento_norm"] * 100).round(1)
+    df["per_riesgo"] = df.get("Períodos en riesgo", pd.Series([0] * len(df))).fillna(0).astype(int)
+
+    colores_cat = df["Categoria"].map(COLOR_CAT).fillna("#9E9E9E").tolist()
+
+    fig = go.Figure(go.Scatter3d(
+        x=df["proc_idx"].tolist(),
+        y=df["cum_pct"].tolist(),
+        z=df["per_riesgo"].tolist(),
+        mode="markers",
+        marker=dict(
+            size=6,
+            color=colores_cat,
+            opacity=0.85,
+            line=dict(width=0.5, color="white"),
+        ),
+        customdata=list(zip(df["Id"].tolist(), df["Proceso"].tolist(),
+                            df["Indicador"].str[:50].tolist())),
+        hovertemplate=(
+            "<b>%{customdata[2]}</b><br>"
+            "Proceso: %{customdata[1]}<br>"
+            "Cumplimiento: %{y:.1f}%<br>"
+            "Periodos en riesgo: %{z}<extra></extra>"
+        ),
+    ))
+
+    fig.update_layout(
+        height=480,
+        scene=dict(
+            xaxis=dict(
+                title="Proceso",
+                tickvals=list(range(len(procesos))),
+                ticktext=[p[:15] for p in procesos],
+                tickfont=dict(size=9),
+            ),
+            yaxis=dict(title="Cumplimiento (%)", ticksuffix="%"),
+            zaxis=dict(title="Periodos en riesgo"),
+            bgcolor="white",
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        paper_bgcolor="white",
+    )
+    return fig
+
+
+def grafico_3d_om(df_om: pd.DataFrame, col_proc: str, col_av: str, col_dias: str,
+                  col_estado: str) -> go.Figure:
+    """
+    Scatter 3D para seguimiento OM:
+    X = Proceso (numérico), Y = Avance (%), Z = Dias vencida.
+    Coloreado por Estado.
+    """
+    _COLORES_ESTADO = {
+        "Cerrada":   "#43A047",
+        "Ejecución": "#1976D2",
+        "Abierta":   "#F9A825",
+        "Retrasada": "#C62828",
+    }
+    cols_need = [col_proc, col_av, col_dias, col_estado]
+    if not all(c and c in df_om.columns for c in cols_need):
+        return go.Figure()
+
+    df = df_om[cols_need].dropna(subset=[col_av, col_dias]).copy()
+    if df.empty:
+        return go.Figure()
+
+    procesos  = sorted(df[col_proc].dropna().unique().tolist())
+    proc_map  = {p: i for i, p in enumerate(procesos)}
+    df["proc_idx"] = df[col_proc].map(proc_map).fillna(0)
+    df["color"]    = df[col_estado].map(_COLORES_ESTADO).fillna("#9E9E9E")
+
+    id_col = "Id" if "Id" in df_om.columns else None
+
+    fig = go.Figure(go.Scatter3d(
+        x=df["proc_idx"].tolist(),
+        y=pd.to_numeric(df[col_av], errors="coerce").fillna(0).tolist(),
+        z=pd.to_numeric(df[col_dias], errors="coerce").fillna(0).tolist(),
+        mode="markers",
+        marker=dict(size=6, color=df["color"].tolist(), opacity=0.85,
+                    line=dict(width=0.5, color="white")),
+        customdata=list(zip(df[col_proc].tolist(), df[col_estado].tolist())),
+        hovertemplate=(
+            "<b>Proceso:</b> %{customdata[0]}<br>"
+            "<b>Estado:</b> %{customdata[1]}<br>"
+            "Avance: %{y:.1f}%<br>"
+            "Días vencida: %{z}<extra></extra>"
+        ),
+    ))
+
+    fig.update_layout(
+        height=460,
+        scene=dict(
+            xaxis=dict(
+                title="Proceso",
+                tickvals=list(range(len(procesos))),
+                ticktext=[p[:12] for p in procesos],
+                tickfont=dict(size=9),
+            ),
+            yaxis=dict(title="Avance (%)", ticksuffix="%"),
+            zaxis=dict(title="Dias vencida"),
+            bgcolor="white",
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        paper_bgcolor="white",
+    )
+    return fig
