@@ -241,7 +241,7 @@ def cargar_plan_accion() -> pd.DataFrame:
             df = df.dropna(how="all").reset_index(drop=True)
             frames.append(df)
         except Exception as e:
-            st.warning(f"No se pudo leer **{p.name}**: {e}")
+            print(f"[data_loader] No se pudo leer {p.name}: {e}")
 
     if not frames:
         return pd.DataFrame()

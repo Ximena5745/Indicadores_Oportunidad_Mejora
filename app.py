@@ -33,13 +33,26 @@ st.markdown(
         font-weight: 500;
     }
 
-    /* Tarjetas de métricas */
+    /* Tarjetas de métricas — fondo oscuro, texto claro (contraste visual) */
     [data-testid="metric-container"] {
-        background: white;
+        background: #1A3A5C !important;
         border-radius: 10px;
         padding: 16px 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        border-left: 4px solid #1A3A5C;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        border-left: 4px solid #4FC3F7;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricLabel"] p,
+    [data-testid="metric-container"] label {
+        color: #B3D9FF !important;
+        font-weight: 500;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        color: #E3F2FD !important;
+        font-size: 1.6rem !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricDelta"] {
+        color: #80DEEA !important;
     }
 
     /* Fondo de la app */
@@ -96,43 +109,6 @@ st.markdown(
         background-color: #0D47A1;
     }
 
-    /* ── Modo oscuro automático (respeta configuración del sistema) ── */
-    @media (prefers-color-scheme: dark) {
-        /* Fondo general */
-        .stApp {
-            background-color: #0F1923 !important;
-        }
-        /* Tarjetas de métricas */
-        [data-testid="metric-container"] {
-            background: #1E2A3A !important;
-            border-left: 4px solid #4FC3F7 !important;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.4) !important;
-        }
-        [data-testid="stMetricLabel"] p {
-            color: #90CAF9 !important;
-        }
-        [data-testid="stMetricValue"] {
-            color: #E3F2FD !important;
-        }
-        [data-testid="stMetricDelta"] {
-            color: #80DEEA !important;
-        }
-        /* Encabezados */
-        h1 { color: #90CAF9 !important; }
-        h2, h3 { color: #64B5F6 !important; }
-        /* Texto de párrafos principales */
-        .stMarkdown p { color: #B0BEC5 !important; }
-        /* Contenedores de datos */
-        [data-testid="stDataFrame"] {
-            background: #1E2A3A !important;
-        }
-        /* Divisores */
-        hr { border-top-color: #2D3E50 !important; }
-        /* Tabs */
-        [data-testid="stTabs"] [role="tab"] {
-            color: #90CAF9 !important;
-        }
-    }
     </style>
     """,
     unsafe_allow_html=True,
