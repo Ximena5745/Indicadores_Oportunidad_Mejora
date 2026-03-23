@@ -22,7 +22,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.charts import exportar_excel, panel_detalle_indicador
-from services.data_loader import cargar_dataset
+from services.data_loader import cargar_dataset, _cargar_mapa_proceso_padre, _ascii_lower
 from core.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ICON, nivel_desde_pct
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
@@ -346,7 +346,14 @@ def _cargar_consolidados() -> pd.DataFrame:
     # Si cumplimiento aún vacío, rellenar desde cumplimiento_real
     mask_fill = df["cumplimiento"].isna() & df["cumplimiento_real"].notna()
     df.loc[mask_fill, "cumplimiento"] = df.loc[mask_fill, "cumplimiento_real"]
-    
+
+    # ── Agregar ProcesoPadre (subproceso → proceso padre) ─────────────────
+    if "Proceso" in df.columns:
+        _mapa = _cargar_mapa_proceso_padre()
+        df["ProcesoPadre"] = df["Proceso"].apply(
+            lambda x: _mapa.get(_ascii_lower(str(x)), str(x).strip())
+        )
+
     return df
 
 
