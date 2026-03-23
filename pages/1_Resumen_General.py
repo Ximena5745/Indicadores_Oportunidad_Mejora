@@ -558,7 +558,7 @@ def _fig_donut(df):
     return fig
 
 
-def _fig_barras_nivel(df, col_cat):
+def _fig_barras_nivel(df, col_cat, max_items=None):
     if col_cat not in df.columns or df.empty:
         return go.Figure()
     tmp = df.copy()
@@ -569,13 +569,22 @@ def _fig_barras_nivel(df, col_cat):
              .size().unstack(fill_value=0).reset_index())
 
     niveles = [n for n in _NIVEL_ORDEN if n in stats.columns]
+    # Ordenar: primero por Peligro+Alerta (criticidad), luego por total
+    for _n in ("Peligro", "Alerta"):
+        if _n not in stats.columns:
+            stats[_n] = 0
+    stats["_critico"] = stats["Peligro"] + stats["Alerta"]
     stats["_t"] = stats[niveles].sum(axis=1)
-    stats = stats.sort_values("_t", ascending=False).drop(columns="_t")
+    stats = stats.sort_values(["_critico", "_t"], ascending=False).drop(columns=["_critico", "_t"])
+
+    if max_items and len(stats) > max_items:
+        stats = stats.head(max_items)
+
     cats  = list(stats[col_cat].astype(str))
 
     max_len  = max((len(c) for c in cats), default=10)
     margin_l = min(max(max_len * 6, 120), 360)
-    h        = max(300, len(stats) * 44 + 70)
+    h        = max(300, len(stats) * 36 + 70)
 
     fig = go.Figure()
     for nivel in niveles:
@@ -817,8 +826,13 @@ with tab_res:
     st.markdown("---")
     st.markdown("#### Por Proceso")
     if "Proceso" in df_raw.columns:
-        st.plotly_chart(_fig_barras_nivel(df_raw, "Proceso"),
+        n_proc = df_raw["Proceso"].nunique()
+        st.plotly_chart(_fig_barras_nivel(df_raw, "Proceso", max_items=25),
                         use_container_width=True, key="res_proceso")
+        if n_proc > 25:
+            with st.expander(f"Ver los {n_proc} procesos completos"):
+                st.plotly_chart(_fig_barras_nivel(df_raw, "Proceso"),
+                                use_container_width=True, key="res_proceso_all")
 
     st.markdown("---")
     st.markdown("#### Por Clasificación")
@@ -885,11 +899,14 @@ with tab_con:
     with col_pr:
         st.markdown("#### Por Proceso")
         if "Proceso" in df_para_proc.columns:
-            fig_pr = _fig_barras_nivel(df_para_proc, "Proceso")
+            _n_proc_con = df_para_proc["Proceso"].nunique()
+            fig_pr = _fig_barras_nivel(df_para_proc, "Proceso", max_items=25)
             ev_pr = st.plotly_chart(
                 fig_pr, use_container_width=True, key="con_chart_proc",
                 on_select="rerun", selection_mode="points",
             )
+            if _n_proc_con > 25:
+                st.caption(f"Mostrando 25 de {_n_proc_con} procesos (más críticos). Selecciona una Vicerrectoría para filtrar.")
             pts_pr = (ev_pr.selection or {}).get("points", [])
             if pts_pr:
                 clicked_pr = str(pts_pr[0].get("y", "")).strip()
