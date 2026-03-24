@@ -1379,8 +1379,9 @@ with tab_calor:
         else:
             _anios_disp_c = []
 
-        # Filtros: Año + Periodicidad + Proceso + Subproceso
-        _hc1, _hc2, _hc3, _hc4 = st.columns(4)
+        # Filtros globales: Año + Proceso + Subproceso
+        # La periodicidad se usa como agrupación (pestañas), no como filtro
+        _hc1, _hc2, _hc3 = st.columns(3)
         with _hc1:
             _sel_anios = st.multiselect(
                 "Año",
@@ -1389,14 +1390,10 @@ with tab_calor:
                 key="cal_anios",
             )
         with _hc2:
-            _perios_c = ["Todas"] + sorted(_dfc_all["Periodicidad"].dropna().unique().tolist()) \
-                        if "Periodicidad" in _dfc_all.columns else ["Todas"]
-            _perio_c = st.selectbox("Periodicidad", _perios_c, key="cal_perio")
-        with _hc3:
             _procs_c = ["Todos"] + sorted(_dfc_all["Proceso"].dropna().unique().tolist()) \
                        if "Proceso" in _dfc_all.columns else ["Todos"]
             _proc_c = st.selectbox("Proceso", _procs_c, key="cal_proc")
-        with _hc4:
+        with _hc3:
             if _proc_c != "Todos" and "Proceso" in _dfc_all.columns and "Subproceso" in _dfc_all.columns:
                 _sub_pool_c = _dfc_all.loc[_dfc_all["Proceso"] == _proc_c,
                                            "Subproceso"].dropna().unique().tolist()
@@ -1406,11 +1403,10 @@ with tab_calor:
             _subs_c = ["Todos"] + sorted(_sub_pool_c)
             _sub_c = st.selectbox("Subproceso", _subs_c, key="cal_sub")
 
+        # Aplicar filtros (excepto periodicidad — esa define las pestañas)
         _dfc = _dfc_all.copy()
         if _sel_anios and "_año" in _dfc.columns:
             _dfc = _dfc[_dfc["_año"].isin(_sel_anios)]
-        if _perio_c != "Todas" and "Periodicidad" in _dfc.columns:
-            _dfc = _dfc[_dfc["Periodicidad"] == _perio_c]
         if _proc_c != "Todos" and "Proceso" in _dfc.columns:
             _dfc = _dfc[_dfc["Proceso"] == _proc_c]
         if _sub_c != "Todos" and "Subproceso" in _dfc.columns:
@@ -1422,35 +1418,26 @@ with tab_calor:
             _MESES_ABREV_C = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
                                "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
-            # Columnas completas Ene–Dic para cada año seleccionado
-            _col_labels_full = [
-                f"{_m} {_y}"
-                for _y in sorted(_sel_anios or [])
-                for _m in _MESES_ABREV_C
+            # Meses de cierre canónicos por periodicidad
+            _CIERRE_MESES = {
+                "Anual":      [12],
+                "Semestral":  [6, 12],
+                "Trimestral": [3, 6, 9, 12],
+                "Bimestral":  [2, 4, 6, 8, 10, 12],
+                "Mensual":    list(range(1, 13)),
+            }
+
+            # Colorscale discreta (0=gris, 1=rojo, 2=amarillo, 3=verde, 4=azul)
+            _DISC_CS = [
+                [0.000, "#BDBDBD"], [0.125, "#BDBDBD"],
+                [0.125, "#D32F2F"], [0.375, "#D32F2F"],
+                [0.375, "#FBAF17"], [0.625, "#FBAF17"],
+                [0.625, "#43A047"], [0.875, "#43A047"],
+                [0.875, "#1A3A5C"], [1.000, "#1A3A5C"],
             ]
 
-            _dfc = _dfc.copy()
-            _dfc["_col_label"] = _dfc["Fecha"].apply(
-                lambda d: f"{_MESES_ABREV_C[d.month - 1]} {int(d.year)}" if pd.notna(d) else None
-            )
-
-            # Pivot Id × mes-año → último valor de Cumplimiento
-            _pivot_cum = (
-                _dfc.dropna(subset=["_col_label"])
-                .sort_values("Fecha")
-                .groupby(["Id", "_col_label"])["Cumplimiento"]
-                .last()
-                .unstack()
-            )
-            # Asegurar todos los meses Ene-Dic (NaN donde no hay dato)
-            _pivot_cum = _pivot_cum.reindex(columns=_col_labels_full)
-
-            # Convertir cumplimiento → código numérico de nivel (discreta)
-            # 0 = Sin dato/No aplica  1 = Peligro  2 = Alerta
-            # 3 = Cumplimiento        4 = Sobrecumplimiento
             def _nivel_code_c(v):
-                if pd.isna(v):
-                    return 0
+                if pd.isna(v): return 0
                 try:
                     f = float(v)
                 except (TypeError, ValueError):
@@ -1460,81 +1447,152 @@ with tab_calor:
                 if f >= _U_PELIGRO: return 2
                 return 1
 
-            _pivot_z = _pivot_cum.applymap(_nivel_code_c)
-
-            # Texto por celda: % si hay dato, "—" si no
-            _z_text = _pivot_cum.applymap(
-                lambda v: f"{v * 100:.1f}%" if pd.notna(v) else "—"
-            )
-
-            # Colorscale discreta (cortes en los puntos medios entre enteros)
-            _DISC_CS = [
-                [0.000, "#BDBDBD"],  # 0 Sin dato
-                [0.125, "#BDBDBD"],
-                [0.125, "#D32F2F"],  # 1 Peligro
-                [0.375, "#D32F2F"],
-                [0.375, "#FBAF17"],  # 2 Alerta
-                [0.625, "#FBAF17"],
-                [0.625, "#43A047"],  # 3 Cumplimiento
-                [0.875, "#43A047"],
-                [0.875, "#1A3A5C"],  # 4 Sobrecumplimiento
-                [1.000, "#1A3A5C"],
-            ]
-
-            # Etiquetas fila: "ID — Nombre"
-            _meta_c = _dfc.drop_duplicates(subset=["Id"], keep="last").set_index("Id")
-            _y_labels = []
-            for _kid in _pivot_z.index:
-                _ind = str(_meta_c.loc[_kid, "Indicador"])[:45] \
-                       if _kid in _meta_c.index and "Indicador" in _meta_c.columns else _kid
-                _y_labels.append(f"{_kid} — {_ind}")
-
-            _fig_calor = go.Figure(go.Heatmap(
-                z=_pivot_z.values.tolist(),
-                x=_pivot_z.columns.tolist(),
-                y=_y_labels,
-                text=_z_text.values.tolist(),
-                texttemplate="%{text}",
-                textfont=dict(size=9),
-                colorscale=_DISC_CS,
-                zmin=0, zmax=4,
-                showscale=False,
-                hovertemplate=(
-                    "<b>%{y}</b><br>Mes: <b>%{x}</b><br>"
-                    "Cumplimiento: <b>%{text}</b><extra></extra>"
-                ),
-            ))
-            _fig_calor.update_layout(
-                height=max(420, len(_pivot_z) * 26 + 80),
-                xaxis=dict(title="Mes de cierre", side="top", tickangle=-45),
-                yaxis=dict(title="", autorange="reversed", tickfont=dict(size=10)),
-                plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(t=80, b=20, l=10, r=20),
-            )
-            st.plotly_chart(_fig_calor, use_container_width=True)
-
-            # Leyenda de colores
+            # Leyenda global (mostrar una sola vez)
             _lc = st.columns(5)
             for _col_l, (_lbl, _bg) in zip(_lc, [
-                ("Sin dato / No aplica",     "#BDBDBD"),
-                ("Peligro < 80%",            _NIVEL_BG_C["Peligro"]),
-                ("Alerta 80–99%",            _NIVEL_BG_C["Alerta"]),
-                ("Cumplimiento ≥ 100%",      _NIVEL_BG_C["Cumplimiento"]),
-                ("Sobrecumplimiento ≥ 105%", _NIVEL_BG_C["Sobrecumplimiento"]),
+                ("Sin dato",                 "#E0E0E0"),
+                ("🔴 Peligro < 80%",         _NIVEL_BG_C["Peligro"]),
+                ("🟡 Alerta 80–99%",         _NIVEL_BG_C["Alerta"]),
+                ("🟢 Cumplimiento ≥ 100%",   _NIVEL_BG_C["Cumplimiento"]),
+                ("🔵 Sobrecumplimiento ≥105%", _NIVEL_BG_C["Sobrecumplimiento"]),
             ]):
                 _col_l.markdown(
-                    f"<div style='background:{_bg};padding:5px 8px;border-radius:6px;"
-                    f"text-align:center;font-size:12px'>{_lbl}</div>",
+                    f"<div style='background:{_bg};padding:6px 8px;border-radius:6px;"
+                    f"text-align:center;font-size:11px;font-weight:500'>{_lbl}</div>",
                     unsafe_allow_html=True,
                 )
+            st.markdown("")
 
-            st.download_button(
-                "📥 Exportar matriz",
-                data=exportar_excel(_pivot_cum.reset_index(), "Matriz Calor"),
-                file_name="matriz_calor.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="exp_matriz_c",
+            # Etiqueta mes-año para cada registro
+            _dfc = _dfc.copy()
+            _dfc["_col_label"] = _dfc["Fecha"].apply(
+                lambda d: f"{_MESES_ABREV_C[d.month - 1]} {int(d.year)}" if pd.notna(d) else None
             )
+
+            # Ordenar periodicidades por frecuencia (de mayor a menor)
+            _PERIO_ORDEN = ["Anual", "Semestral", "Trimestral", "Bimestral", "Mensual"]
+            _perios_presentes = []
+            for _p in _PERIO_ORDEN:
+                if "Periodicidad" in _dfc.columns and _p in _dfc["Periodicidad"].values:
+                    _perios_presentes.append(_p)
+            # Agregar periodicidades no estándar que estén presentes
+            if "Periodicidad" in _dfc.columns:
+                for _p in sorted(_dfc["Periodicidad"].dropna().unique()):
+                    if _p not in _perios_presentes:
+                        _perios_presentes.append(_p)
+
+            if not _perios_presentes:
+                st.info("No se encontró columna Periodicidad en los datos.")
+            else:
+                _tab_labels = [f"{_p} ({_dfc[_dfc['Periodicidad']==_p]['Id'].nunique()})" for _p in _perios_presentes]
+                _perio_tabs = st.tabs(_tab_labels)
+
+                for _pt, _perio in zip(_perio_tabs, _perios_presentes):
+                    with _pt:
+                        _dfc_p = _dfc[_dfc["Periodicidad"] == _perio].copy()
+                        if _dfc_p.empty:
+                            st.info(f"Sin datos para {_perio}.")
+                            continue
+
+                        # Columnas: solo meses de cierre de esta periodicidad × años
+                        _meses_c = _CIERRE_MESES.get(_perio, list(range(1, 13)))
+                        _cols_p = [
+                            f"{_MESES_ABREV_C[_m - 1]} {_y}"
+                            for _y in sorted(_sel_anios or [])
+                            for _m in _meses_c
+                        ]
+
+                        # Pivot y reindex a columnas canónicas
+                        _pivot_p = (
+                            _dfc_p.dropna(subset=["_col_label"])
+                            .sort_values("Fecha")
+                            .groupby(["Id", "_col_label"])["Cumplimiento"]
+                            .last()
+                            .unstack()
+                            .reindex(columns=_cols_p)
+                        )
+                        if _pivot_p.empty:
+                            st.info(f"Sin registros de cierre para {_perio}.")
+                            continue
+
+                        # KPI resumen para este grupo
+                        _last_cum = _dfc_p.sort_values("Fecha").groupby("Id")["Cumplimiento"].last()
+                        _niveles_p = _last_cum.apply(_nivel_code_c)
+                        _cnt_p = _niveles_p.value_counts()
+                        _kp = st.columns(5)
+                        _kp[0].markdown(
+                            f"<div style='background:#F0F4F8;border-radius:8px;padding:8px;"
+                            f"text-align:center'><b style='font-size:1.2rem'>{len(_pivot_p)}</b>"
+                            f"<br><span style='font-size:11px;color:#555'>Indicadores</span></div>",
+                            unsafe_allow_html=True)
+                        for _ki, (_code, _clr, _lbl_k) in enumerate([
+                            (1, "#FFCDD2", "🔴 Peligro"),
+                            (2, "#FEF3D0", "🟡 Alerta"),
+                            (3, "#E8F5E9", "🟢 Cumplimiento"),
+                            (4, "#D0E4FF", "🔵 Sobrecumpl."),
+                        ]):
+                            _kp[_ki + 1].markdown(
+                                f"<div style='background:{_clr};border-radius:8px;padding:8px;"
+                                f"text-align:center'><b style='font-size:1.2rem'>"
+                                f"{int(_cnt_p.get(_code, 0))}</b>"
+                                f"<br><span style='font-size:11px'>{_lbl_k}</span></div>",
+                                unsafe_allow_html=True)
+                        st.markdown("")
+
+                        # Heatmap de esta periodicidad
+                        _pivot_z_p = _pivot_p.applymap(_nivel_code_c)
+                        _z_text_p  = _pivot_p.applymap(
+                            lambda v: f"{v * 100:.1f}%" if pd.notna(v) else "—"
+                        )
+
+                        _meta_p = _dfc_p.drop_duplicates("Id", keep="last").set_index("Id")
+                        _ylabels_p = []
+                        for _kid in _pivot_z_p.index:
+                            _ind = str(_meta_p.loc[_kid, "Indicador"])[:50] \
+                                   if _kid in _meta_p.index and "Indicador" in _meta_p.columns else _kid
+                            _ylabels_p.append(f"{_kid} — {_ind}")
+
+                        _row_h = 28 if len(_pivot_z_p) > 30 else 34
+                        _fig_p = go.Figure(go.Heatmap(
+                            z=_pivot_z_p.values.tolist(),
+                            x=_pivot_z_p.columns.tolist(),
+                            y=_ylabels_p,
+                            text=_z_text_p.values.tolist(),
+                            texttemplate="%{text}",
+                            textfont=dict(size=10),
+                            colorscale=_DISC_CS,
+                            zmin=0, zmax=4,
+                            showscale=False,
+                            hovertemplate=(
+                                "<b>%{y}</b><br>Cierre: <b>%{x}</b><br>"
+                                "Cumplimiento: <b>%{text}</b><extra></extra>"
+                            ),
+                        ))
+                        _n_cols_p = len(_pivot_z_p.columns)
+                        _fig_p.update_layout(
+                            height=max(320, len(_pivot_z_p) * _row_h + 80),
+                            xaxis=dict(
+                                side="top", tickangle=0,
+                                tickfont=dict(size=11, color="#1A3A5C"),
+                            ),
+                            yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            margin=dict(t=60, b=10, l=10, r=10),
+                        )
+                        st.plotly_chart(_fig_p, use_container_width=True, key=f"calor_{_perio}")
+
+                # Exportar datos completos
+                st.download_button(
+                    "📥 Exportar Excel",
+                    data=exportar_excel(
+                        _dfc[["Id"] + [c for c in _dfc.columns
+                                       if c not in ("_col_label", "_año")]].drop_duplicates(),
+                        "Matriz Calor"
+                    ),
+                    file_name="matriz_calor.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="exp_matriz_c",
+                )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
