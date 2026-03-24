@@ -34,6 +34,9 @@ _RUTA_MAPA         = _DATA_RAW / "Subproceso-Proceso-Area.xlsx"
 _RUTA_CMI          = _DATA_RAW / "Indicadores por CMI.xlsx"
 _RUTA_KAWAK_DIR    = _DATA_RAW / "Kawak"
 
+# Vicerrectorías excluidas de todos los filtros de Unidad / Vicerrectoría
+VICERR_EXCLUIR: set = {"Gerencia Medellín"}
+
 # Meses en español para selección
 MESES_OPCIONES = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -691,8 +694,11 @@ def _filtros_ui(df_opciones, prefix):
                                     placeholder="Buscar nombre...")
         r2c1, r2c2, r2c3, r2c4 = st.columns(4)
         with r2c1:
-            opts_v = [""] + sorted(df_opciones["Vicerrectoria"].dropna().unique().tolist()) \
-                     if "Vicerrectoria" in df_opciones.columns else [""]
+            opts_v = [""] + sorted(
+                v for v in (df_opciones["Vicerrectoria"].dropna().unique().tolist()
+                            if "Vicerrectoria" in df_opciones.columns else [])
+                if v not in VICERR_EXCLUIR
+            )
             sel_vicerr = st.selectbox("Vicerrectoría", opts_v, key=f"{prefix}_vicerr",
                                       format_func=lambda x: "— Todas —" if x == "" else x)
         with r2c2:
@@ -802,8 +808,11 @@ _col_padre_f = "ProcesoPadre" if "ProcesoPadre" in df_raw.columns else "Proceso"
 
 _fR1, _fR2, _fR3 = st.columns(3)
 with _fR1:
-    _vic_all = sorted(df_raw["Vicerrectoria"].dropna().unique().tolist()) \
-               if "Vicerrectoria" in df_raw.columns else []
+    _vic_all = sorted(
+        v for v in (df_raw["Vicerrectoria"].dropna().unique().tolist()
+                    if "Vicerrectoria" in df_raw.columns else [])
+        if v not in VICERR_EXCLUIR
+    )
     _vic_opts = [""] + _vic_all
     _f_vic = st.selectbox("Unidad / Vicerrectoría", _vic_opts, key="rc_filt_vic",
                           format_func=lambda x: "— Todas —" if x == "" else x)
