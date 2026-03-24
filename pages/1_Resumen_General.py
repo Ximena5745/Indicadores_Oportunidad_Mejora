@@ -340,9 +340,14 @@ def _cargar_consolidados() -> pd.DataFrame:
         valid  = meta_n.notna() & ejec_n.notna() & (meta_n != 0)
         sentido_neg = df["Sentido"].str.strip().str.lower() == "negativo"
 
+        from core.config import IDS_PLAN_ANUAL
         ratio_real = (ejec_n / meta_n).clip(lower=0).where(~sentido_neg,
                       (meta_n / ejec_n).clip(lower=0))
-        ratio_cap  = ratio_real.clip(upper=1.3)
+        # Plan Anual: tope 1.0;  resto: tope 1.3
+        es_pa = df["Id"].astype(str).str.strip().isin(IDS_PLAN_ANUAL)
+        tope = pd.Series(1.3, index=df.index)
+        tope[es_pa] = 1.0
+        ratio_cap  = ratio_real.clip(upper=tope)
 
         # Para Sentido=Negativo el Excel calcula ejec/meta (sin invertir),
         # por eso siempre se recalcula con la fórmula correcta meta/ejec.
@@ -360,6 +365,21 @@ def _cargar_consolidados() -> pd.DataFrame:
         df["ProcesoPadre"] = df["Proceso"].apply(
             lambda x: _mapa.get(_ascii_lower(str(x)), str(x).strip())
         )
+
+    # ── Enriquecer Clasificacion desde Catalogo Indicadores ────────────────
+    if "Clasificacion" not in df.columns and _RUTA_CONSOLIDADOS.exists():
+        try:
+            df_cat = pd.read_excel(str(_RUTA_CONSOLIDADOS),
+                                   sheet_name="Catalogo Indicadores", engine="openpyxl")
+            df_cat.columns = [str(c).strip() for c in df_cat.columns]
+            if "Id" in df_cat.columns and "Clasificacion" in df_cat.columns:
+                df_cat["Id"] = df_cat["Id"].apply(_id_limpio)
+                df = df.merge(
+                    df_cat[["Id", "Clasificacion"]].drop_duplicates("Id"),
+                    on="Id", how="left",
+                )
+        except Exception:
+            pass
 
     return df
 
@@ -763,6 +783,86 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Filtros globales (siempre visibles) ───────────────────────────────────────
+# Fila 1: Unidad → Proceso → Subproceso (dependientes en cascada)
+_col_padre_f = "ProcesoPadre" if "ProcesoPadre" in df_raw.columns else "Proceso"
+
+_fR1, _fR2, _fR3 = st.columns(3)
+with _fR1:
+    _vic_all = sorted(df_raw["Vicerrectoria"].dropna().unique().tolist()) \
+               if "Vicerrectoria" in df_raw.columns else []
+    _vic_opts = [""] + _vic_all
+    _f_vic = st.selectbox("Unidad / Vicerrectoría", _vic_opts, key="rc_filt_vic",
+                          format_func=lambda x: "— Todas —" if x == "" else x)
+
+with _fR2:
+    # Procesos filtrados por Unidad seleccionada
+    if _f_vic and "Vicerrectoria" in df_raw.columns:
+        _proc_pool = df_raw.loc[df_raw["Vicerrectoria"] == _f_vic, _col_padre_f] \
+                     .dropna().unique().tolist() if _col_padre_f in df_raw.columns else []
+    else:
+        _proc_pool = df_raw[_col_padre_f].dropna().unique().tolist() \
+                     if _col_padre_f in df_raw.columns else []
+    _proc_opts = [""] + sorted(_proc_pool)
+    _f_proc = st.selectbox("Proceso", _proc_opts, key="rc_filt_proc",
+                           format_func=lambda x: "— Todos —" if x == "" else x)
+
+with _fR3:
+    # Subprocesos filtrados por Proceso seleccionado (y por Unidad si aplica)
+    _df_for_sub = df_raw.copy()
+    if _f_vic and "Vicerrectoria" in _df_for_sub.columns:
+        _df_for_sub = _df_for_sub[_df_for_sub["Vicerrectoria"] == _f_vic]
+    if _f_proc and _col_padre_f in _df_for_sub.columns:
+        _df_for_sub = _df_for_sub[_df_for_sub[_col_padre_f] == _f_proc]
+    _sub_pool = _df_for_sub["Subproceso"].dropna().unique().tolist() \
+                if "Subproceso" in _df_for_sub.columns else []
+    _sub_opts = [""] + sorted(_sub_pool)
+    _f_sub = st.selectbox("Subproceso", _sub_opts, key="rc_filt_sub",
+                          format_func=lambda x: "— Todos —" if x == "" else x)
+
+# Fila 2: ID, Indicador, Tipo de indicador
+_fR4, _fR5, _fR6 = st.columns(3)
+with _fR4:
+    _f_id = st.text_input("ID", key="rc_filt_id", placeholder="Buscar ID...")
+with _fR5:
+    _f_nom = st.text_input("Indicador", key="rc_filt_nom", placeholder="Buscar nombre...")
+with _fR6:
+    _tipo_opts = [""] + (sorted(df_raw["Tipo_Registro"].dropna().astype(str).str.strip()
+                                .loc[lambda s: s != ""].unique().tolist())
+                        if "Tipo_Registro" in df_raw.columns else [])
+    _f_tipo = st.selectbox("Tipo de indicador", _tipo_opts, key="rc_filt_tipo",
+                           format_func=lambda x: "— Todos —" if x == "" else x)
+
+# ── Aplicar filtros globales a df_raw ────────────────────────────────────────
+if _f_vic and "Vicerrectoria" in df_raw.columns:
+    df_raw = df_raw[df_raw["Vicerrectoria"] == _f_vic]
+if _f_proc and _col_padre_f in df_raw.columns:
+    df_raw = df_raw[df_raw[_col_padre_f] == _f_proc]
+if _f_sub and "Subproceso" in df_raw.columns:
+    df_raw = df_raw[df_raw["Subproceso"] == _f_sub]
+if _f_id.strip():
+    df_raw = df_raw[df_raw["Id"].astype(str).str.contains(_f_id.strip(), case=False, na=False)]
+if _f_nom.strip() and "Indicador" in df_raw.columns:
+    df_raw = df_raw[df_raw["Indicador"].astype(str).str.contains(_f_nom.strip(), case=False, na=False)]
+if _f_tipo and "Tipo_Registro" in df_raw.columns:
+    df_raw = df_raw[df_raw["Tipo_Registro"].astype(str).str.strip() == _f_tipo]
+
+# ── Aplicar los mismos filtros a df_prev para comparativa coherente ──────────
+if _f_vic and "Vicerrectoria" in df_prev.columns:
+    df_prev = df_prev[df_prev["Vicerrectoria"] == _f_vic]
+if _f_proc:
+    _cpf = "ProcesoPadre" if "ProcesoPadre" in df_prev.columns else "Proceso"
+    if _cpf in df_prev.columns:
+        df_prev = df_prev[df_prev[_cpf] == _f_proc]
+if _f_sub and "Subproceso" in df_prev.columns:
+    df_prev = df_prev[df_prev["Subproceso"] == _f_sub]
+if _f_id.strip():
+    df_prev = df_prev[df_prev["Id"].astype(str).str.contains(_f_id.strip(), case=False, na=False)]
+if _f_nom.strip() and "Indicador" in df_prev.columns:
+    df_prev = df_prev[df_prev["Indicador"].astype(str).str.contains(_f_nom.strip(), case=False, na=False)]
+if _f_tipo and "Tipo_Registro" in df_prev.columns:
+    df_prev = df_prev[df_prev["Tipo_Registro"].astype(str).str.strip() == _f_tipo]
+
 st.markdown("---")
 
 # ── KPIs con comparativa ──────────────────────────────────────────────────────
@@ -772,28 +872,48 @@ cnts  = df_raw["Nivel de cumplimiento"].value_counts()
 # Previos
 cnts_p = df_prev["Nivel de cumplimiento"].value_counts() if not df_prev.empty else pd.Series(dtype=int)
 
-kc = st.columns(6)
+_CARD_COLORS = {
+    "Total":              ("#1A3A5C", "#D0E4FF"),
+    "Peligro":            ("#D32F2F", "#FFCDD2"),
+    "Alerta":             ("#F57F17", "#FFF8E1"),
+    "Cumplimiento":       ("#43A047", "#E8F5E9"),
+    "Sobrecumplimiento":  ("#1565C0", "#E3F2FD"),
+    "No aplica":          ("#78909C", "#ECEFF1"),
+    "Pendiente":          ("#9E9E9E", "#F5F5F5"),
+}
 metricas = [
-    ("Total",              total,                                                  None, "off"),
-    ("🔴 Peligro",         int(cnts.get("Peligro", 0)),         int(cnts_p.get("Peligro", 0)),         "inverse"),
-    ("🟡 Alerta",          int(cnts.get("Alerta", 0)),           int(cnts_p.get("Alerta", 0)),           "off"),
-    ("🔵 Cumplimiento",    int(cnts.get("Cumplimiento", 0))
-                         + int(cnts.get("Sobrecumplimiento", 0)),
-                           int(cnts_p.get("Cumplimiento", 0))
-                         + int(cnts_p.get("Sobrecumplimiento", 0)),                                    "normal"),
-    ("⚫ No aplica",       int(cnts.get(_NO_APLICA, 0)),         int(cnts_p.get(_NO_APLICA, 0)),         "off"),
-    ("⚪ Pendiente",       int(cnts.get(_PEND, 0)),              int(cnts_p.get(_PEND, 0)),              "off"),
+    ("Total",              total,                                  None),
+    ("Peligro",            int(cnts.get("Peligro", 0)),           int(cnts_p.get("Peligro", 0))),
+    ("Alerta",             int(cnts.get("Alerta", 0)),            int(cnts_p.get("Alerta", 0))),
+    ("Cumplimiento",       int(cnts.get("Cumplimiento", 0)),      int(cnts_p.get("Cumplimiento", 0))),
+    ("Sobrecumplimiento",  int(cnts.get("Sobrecumplimiento", 0)), int(cnts_p.get("Sobrecumplimiento", 0))),
+    ("No aplica",          int(cnts.get(_NO_APLICA, 0)),          int(cnts_p.get(_NO_APLICA, 0))),
+    ("Pendiente",          int(cnts.get(_PEND, 0)),               int(cnts_p.get(_PEND, 0))),
 ]
 
-for i, (label, val, val_prev, dc) in enumerate(metricas):
+kc = st.columns(len(metricas))
+for i, (label, val, val_prev) in enumerate(metricas):
+    border_c, bg_c = _CARD_COLORS.get(label, ("#9E9E9E", "#F5F5F5"))
+    pct_str = f"{round(val/total*100,1)}%" if total and label != "Total" else ""
+    delta_html = ""
+    if val_prev is not None and label != "Total":
+        delta = val - val_prev
+        d_color = "#43A047" if delta <= 0 and label in ("Peligro",) else (
+                  "#D32F2F" if delta > 0 and label in ("Peligro",) else (
+                  "#43A047" if delta > 0 and label in ("Cumplimiento", "Sobrecumplimiento") else (
+                  "#D32F2F" if delta < 0 and label in ("Cumplimiento", "Sobrecumplimiento") else "#666")))
+        delta_html = f'<span style="font-size:0.75rem;color:{d_color}">{delta:+d} vs ant.</span>'
     with kc[i]:
-        if val_prev is not None and label != "Total":
-            delta    = val - val_prev
-            delta_str = f"{delta:+d} vs período ant."
-            st.metric(label, val, delta=delta_str, delta_color=dc)
-        else:
-            pct = f"{round(val/total*100,1)}%" if total and label != "Total" else None
-            st.metric(label, val, delta=pct, delta_color=dc)
+        st.markdown(
+            f"""<div style="border-left:4px solid {border_c};background:{bg_c};
+                border-radius:8px;padding:12px;text-align:center;">
+                <span style="font-size:0.8rem;color:{border_c};font-weight:600">{label}</span><br>
+                <span style="font-size:1.8rem;font-weight:700;color:{border_c}">{val}</span><br>
+                <span style="font-size:0.75rem;color:#666">{pct_str}</span><br>
+                {delta_html}
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
 # Caption de tendencia general
 if not df_prev.empty:
@@ -892,6 +1012,8 @@ with tab_res:
                             use_container_width=True, key="res_clasif")
         else:
             st.info("Sin datos de Clasificación disponibles.")
+    else:
+        st.info("Columna Clasificación no encontrada. Verifique el Catálogo de Indicadores.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -240,6 +240,7 @@ def cargar_dataset() -> pd.DataFrame:
 
     # Cumplimiento desde Meta / Ejecucion / Sentido
     if "Cumplimiento" in df.columns and "Meta" in df.columns and "Ejecucion" in df.columns:
+        from core.config import IDS_PLAN_ANUAL
         mask_nan = df["Cumplimiento"].isna()
         if mask_nan.any():
             def _recalc_cumpl(row):
@@ -254,7 +255,9 @@ def cargar_dataset() -> pd.DataFrame:
                 raw = (e / m) if sentido == "Positivo" else (m / e if e != 0 else float("nan"))
                 if pd.isna(raw):
                     return float("nan")
-                return min(max(raw, 0.0), 1.3)
+                # Plan Anual: tope 1.0;  resto: tope 1.3
+                tope = 1.0 if str(row.get("Id", "")).strip() in IDS_PLAN_ANUAL else 1.3
+                return min(max(raw, 0.0), tope)
             df.loc[mask_nan, "Cumplimiento"] = df[mask_nan].apply(_recalc_cumpl, axis=1)
 
     # ── Normalizar cumplimiento ───────────────────────────────────────────────
@@ -268,6 +271,7 @@ def cargar_dataset() -> pd.DataFrame:
         lambda r: categorizar_cumplimiento(
             r["Cumplimiento_norm"],
             r.get("Sentido", "Positivo"),
+            id_indicador=r.get("Id"),
         ),
         axis=1,
     )

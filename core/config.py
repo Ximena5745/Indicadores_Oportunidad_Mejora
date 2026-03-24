@@ -47,9 +47,16 @@ COLOR_CATEGORIA_CLARO = {
 }
 
 # ── Umbrales de cumplimiento ───────────────────────────────────────────────────
+# Generales:  0–79.9% Peligro | 80–99.9% Alerta | 100–104.99% Cumplimiento | ≥105% Sobrecumplimiento
 UMBRAL_PELIGRO           = 0.80
 UMBRAL_ALERTA            = 1.00
 UMBRAL_SOBRECUMPLIMIENTO = 1.05
+
+# ── Indicadores Plan Anual (PA) — umbrales especiales ─────────────────────────
+# Cumplen desde 95% y su tope de cumplimiento es 100% (no hay sobrecumplimiento).
+IDS_PLAN_ANUAL = {"373", "390", "414", "415", "416", "417", "418", "420", "469", "470", "471"}
+UMBRAL_ALERTA_PA            = 0.95   # PA cumple desde 95%
+UMBRAL_SOBRECUMPLIMIENTO_PA = 1.00   # tope 100%
 
 # ── Orden y visualización de categorías ───────────────────────────────────────
 ORDEN_CATEGORIAS = ["Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento", "Sin dato"]

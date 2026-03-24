@@ -17,8 +17,7 @@ import streamlit as st
 from services.data_loader import cargar_dataset, construir_opciones_indicadores, cargar_om, cargar_plan_accion
 from core.calculos import obtener_ultimo_registro, calcular_meses_en_peligro
 from components.charts import (grafico_historico_indicador, tabla_historica_indicador,
-                               exportar_excel, panel_detalle_indicador,
-                               grafico_3d_riesgo, grafico_3d_om)
+                               exportar_excel, panel_detalle_indicador)
 from core.niveles import NIVEL_COLOR, NIVEL_BG, NIVEL_ORDEN
 from core.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
 from core.config import COLORES, COLOR_CATEGORIA, COLOR_CATEGORIA_CLARO
@@ -73,23 +72,13 @@ for k, v in _SS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ── Sidebar — Filtros globales ─────────────────────────────────────────────────
-st.sidebar.markdown("## Filtros")
+# ── Datos para filtros (se renderizan después del título) ─────────────────────
 anios_disp  = sorted(df_raw["Anio"].dropna().unique().tolist()) if "Anio" in df_raw.columns else []
 default_año = [2025] if 2025 in anios_disp else (anios_disp[-1:] if anios_disp else [])
-anios_sel   = st.sidebar.multiselect("Año", options=anios_disp, default=default_año)
 meses_disp  = sorted(df_raw["Mes"].dropna().unique().tolist()) if "Mes" in df_raw.columns else []
-meses_sel   = st.sidebar.multiselect("Mes", options=meses_disp, default=[])
-
-df = df_raw.copy()
-if anios_sel:
-    df = df[df["Anio"].isin(anios_sel)]
-if meses_sel:
-    df = df[df["Mes"].isin(meses_sel)]
-
-df_ultimo    = obtener_ultimo_registro(df)
-df_con_datos = df_ultimo[df_ultimo["Cumplimiento_norm"].notna()]
-om_dict      = registros_om_como_dict()
+# Filtros se renderizan en la sección principal — ver abajo después del título
+anios_sel   = default_año  # valor por defecto, se actualiza con widget
+meses_sel   = []
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
@@ -319,6 +308,67 @@ def _modal_registro_om(id_indicador: str):
 # TÍTULO PRINCIPAL
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("# Gestión de Oportunidades de Mejora")
+
+# ── Filtros globales (siempre visibles, dependientes en cascada) ──────────────
+_col_proc_gom = "ProcesoPadre" if "ProcesoPadre" in df_raw.columns else "Proceso"
+
+# Fila 1: Año, Mes, Proceso (padre), Subproceso
+_fc1, _fc2, _fc3, _fc4 = st.columns(4)
+with _fc1:
+    anios_sel = st.multiselect("Año", options=anios_disp, default=default_año,
+                                key="gom_filtro_anio")
+with _fc2:
+    meses_sel = st.multiselect("Mes", options=meses_disp, default=[],
+                                key="gom_filtro_mes")
+with _fc3:
+    _procs_all = sorted(df_raw[_col_proc_gom].dropna().unique().tolist()) \
+                 if _col_proc_gom in df_raw.columns else []
+    _proc_opts_gom = [""] + _procs_all
+    _f_proc_gom = st.selectbox("Proceso", _proc_opts_gom, key="gom_filtro_proc_top",
+                               format_func=lambda x: "— Todos —" if x == "" else x)
+with _fc4:
+    # Subproceso depende del Proceso seleccionado
+    _df_sub_pool = df_raw.copy()
+    if _f_proc_gom and _col_proc_gom in _df_sub_pool.columns:
+        _df_sub_pool = _df_sub_pool[_df_sub_pool[_col_proc_gom] == _f_proc_gom]
+    _sub_all = sorted(_df_sub_pool["Proceso"].dropna().unique().tolist()) \
+               if "Proceso" in _df_sub_pool.columns else []
+    _sub_opts_gom = [""] + _sub_all
+    _f_sub_gom = st.selectbox("Subproceso", _sub_opts_gom, key="gom_filtro_sub",
+                              format_func=lambda x: "— Todos —" if x == "" else x)
+
+# Fila 2: ID, Indicador, Categoría
+_fc5, _fc6, _fc7 = st.columns(3)
+with _fc5:
+    _f_id_gom = st.text_input("ID", key="gom_filtro_id", placeholder="Buscar ID...")
+with _fc6:
+    _f_nom_gom = st.text_input("Indicador", key="gom_filtro_nom", placeholder="Buscar nombre...")
+with _fc7:
+    _cats_disp = [c for c in ["Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento"]
+                  if c in df_raw["Categoria"].unique()] if "Categoria" in df_raw.columns else []
+    _cat_sel = st.multiselect("Categoría", options=_cats_disp, default=[], key="gom_filtro_cat")
+
+# ── Aplicar filtros ──────────────────────────────────────────────────────────
+df = df_raw.copy()
+if anios_sel:
+    df = df[df["Anio"].isin(anios_sel)]
+if meses_sel:
+    df = df[df["Mes"].isin(meses_sel)]
+if _f_proc_gom and _col_proc_gom in df.columns:
+    df = df[df[_col_proc_gom] == _f_proc_gom]
+if _f_sub_gom and "Proceso" in df.columns:
+    df = df[df["Proceso"] == _f_sub_gom]
+if _f_id_gom.strip():
+    df = df[df["Id"].astype(str).str.contains(_f_id_gom.strip(), case=False, na=False)]
+if _f_nom_gom.strip() and "Indicador" in df.columns:
+    df = df[df["Indicador"].astype(str).str.contains(_f_nom_gom.strip(), case=False, na=False)]
+if _cat_sel and "Categoria" in df.columns:
+    df = df[df["Categoria"].isin(_cat_sel)]
+
+df_ultimo    = obtener_ultimo_registro(df)
+df_con_datos = df_ultimo[df_ultimo["Cumplimiento_norm"].notna()]
+om_dict      = registros_om_como_dict()
+
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -516,13 +566,6 @@ with tab1:
         else:
             st.info("Sin datos.")
 
-    # ── Gráfico 3D — Proceso × Cumplimiento × Períodos en riesgo ──────────────
-    if not df_cat.empty:
-        with st.expander("🌐 Vista 3D — Proceso, Cumplimiento y Persistencia en riesgo", expanded=False):
-            st.caption("Visualización interactiva: arrastra para rotar, scroll para zoom, pasa el cursor sobre los puntos para ver detalles.")
-            fig_3d = grafico_3d_riesgo(df_cat)
-            st.plotly_chart(fig_3d, use_container_width=True)
-
     st.markdown("---")
 
     # ── Filtro activo sobre tabla ──────────────────────────────────────────────
@@ -580,18 +623,23 @@ with tab1:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    if ev_tabla and ev_tabla.selection and ev_tabla.selection.get("rows"):
+    # ── Detectar selección en tabla ────────────────────────────────────────────
+    _tabla_tiene_sel = (ev_tabla and ev_tabla.selection and ev_tabla.selection.get("rows"))
+    if _tabla_tiene_sel:
         idx = ev_tabla.selection["rows"][0]
-        if "Id" in df_tabla.columns:
+        if "Id" in df_tabla.columns and idx < len(df_tabla):
             selected_id = df_tabla["Id"].iloc[idx]
-            # Solo rerun si cambió la selección; evita loop infinito porque
-            # la selección del widget persiste entre reruns.
             if st.session_state.gom_modal_id != selected_id:
                 st.session_state.gom_modal_id = selected_id
                 st.rerun()
 
-    # ── Abrir modal si hay indicador seleccionado ──────────────────────────────
-    if st.session_state.gom_modal_id:
+    # ── Abrir modal SOLO si hay selección activa (tabla o gráfico) ─────────────
+    _hay_sel_top10 = False
+    try:
+        _hay_sel_top10 = bool(ev_top and ev_top.selection and ev_top.selection.get("points"))
+    except NameError:
+        pass
+    if st.session_state.gom_modal_id and (_tabla_tiene_sel or _hay_sel_top10):
         _modal_registro_om(st.session_state.gom_modal_id)
 
 
@@ -776,11 +824,24 @@ with tab2:
                     st.plotly_chart(fig, use_container_width=True)
 
             with row2[1]:
-                if _COL_AV and _COL_DIAS and _COL_PROC and _COL_ESTADO:
-                    st.markdown("**Proceso × Avance × Días vencida (3D)**")
-                    st.caption("Arrastra para rotar. Coloreado por estado de la OM.")
-                    fig_3d_om = grafico_3d_om(df_f, _COL_PROC, _COL_AV, _COL_DIAS, _COL_ESTADO)
-                    st.plotly_chart(fig_3d_om, use_container_width=True)
+                if _COL_AV and _COL_DIAS and _COL_ESTADO:
+                    st.markdown("**Días vencida por Estado**")
+                    df_dias = df_f[[_COL_ESTADO, _COL_DIAS]].dropna()
+                    if not df_dias.empty:
+                        fig_box = go.Figure()
+                        for est in ["Ejecución", "Abierta", "Cerrada"]:
+                            sub = df_dias[df_dias[_COL_ESTADO] == est]
+                            if not sub.empty:
+                                fig_box.add_trace(go.Box(
+                                    y=sub[_COL_DIAS], name=est,
+                                    marker_color=_C.get(est, _C["primary"]),
+                                    boxmean=True,
+                                ))
+                        fig_box.update_layout(
+                            yaxis_title="Días vencida", showlegend=False,
+                            height=340, margin=dict(l=10, r=10, t=30, b=30),
+                        )
+                        st.plotly_chart(fig_box, use_container_width=True)
 
     # ─── Sub-tab Información ─────────────────────────────────────────────────
     with st2_info:

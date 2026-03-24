@@ -45,6 +45,9 @@ from collections import defaultdict
 warnings.filterwarnings('ignore')
 
 _ROOT       = Path(__file__).parent.parent
+import sys
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 BASE_PATH   = _ROOT / "data" / "raw"
 INPUT_FILE  = BASE_PATH / "Resultados_Consolidados_Fuente.xlsx"
 OUTPUT_DIR  = _ROOT / "data" / "output"
@@ -54,6 +57,12 @@ KAWAK_CAT_FILE    = BASE_PATH / "Fuentes Consolidadas" / "Indicadores Kawak.xlsx
 CONSOLIDADO_API_KW = BASE_PATH / "Fuentes Consolidadas" / "Consolidado_API_Kawak.xlsx"
 
 AÑO_CIERRE_ACTUAL = 2025
+
+# Importar IDs Plan Anual desde config (tope cumplimiento = 1.0)
+try:
+    from core.config import IDS_PLAN_ANUAL
+except ImportError:
+    IDS_PLAN_ANUAL = {"373", "390", "414", "415", "416", "417", "418", "420", "469", "470", "471"}
 
 KW_EJEC = ['real', 'ejecutado', 'recaudado', 'ahorrado', 'consumo', 'generado',
            'actual', 'logrado', 'obtenido', 'reportado', 'hoy']
@@ -1246,13 +1255,15 @@ def formula_I(r):
             f'IF(OR(H{r}="Julio",H{r}="Agosto",H{r}="Septiembre",'
             f'H{r}="Octubre",H{r}="Noviembre",H{r}="Diciembre"),'
             f'G{r}&"-2"))')
-def formula_L(r):
+def formula_L(r, tope=1.3):
     # IFERROR devuelve "" cuando K=vacío (división por cero o con vacío)
     # También devuelve "" cuando J=0 para evitar #DIV/0!
+    # tope: 1.3 para indicadores generales, 1.0 para Plan Anual
     return (f'=IFERROR(IF(OR(J{r}=0,K{r}=""),"",IF(E{r}="Positivo",'
-            f'MIN(MAX(K{r}/J{r},0),1.3),'
-            f'MIN(MAX(J{r}/K{r},0),1.3))),"")' )
-def formula_M(r):
+            f'MIN(MAX(K{r}/J{r},0),{tope}),'
+            f'MIN(MAX(J{r}/K{r},0),{tope}))),"")' )
+def formula_M(r, tope=None):
+    # Cumplimiento Real: sin tope (muestra el valor real completo)
     return (f'=IFERROR(IF(OR(J{r}=0,K{r}=""),"",IF(E{r}="Positivo",'
             f'MAX(K{r}/J{r},0),'
             f'MAX(J{r}/K{r},0))),"")' )
@@ -1269,8 +1280,12 @@ def _reescribir_formulas(ws):
 
     OBLIGATORIO ejecutar después de TODA eliminación/inserción de filas,
     porque openpyxl NO ajusta las referencias de fórmulas al borrar filas.
+
+    Indicadores Plan Anual (IDS_PLAN_ANUAL) usan tope=1.0 en Cumplimiento.
     """
+
     cm = _build_col_map(ws)
+    idx_id     = cm.get('Id')
     idx_anio   = cm.get('Anio')
     idx_mes    = cm.get('Mes')
     idx_sem    = cm.get('Semestre')
@@ -1284,6 +1299,10 @@ def _reescribir_formulas(ws):
             continue
         r = row[0].row
 
+        # Determinar tope según Id del indicador
+        id_val = _id_str(row[idx_id - 1].value) if idx_id else None
+        tope = 1.0 if id_val in IDS_PLAN_ANUAL else 1.3
+
         if idx_anio:
             ws.cell(r, idx_anio).value = formula_G(r)
         if idx_mes:
@@ -1292,7 +1311,7 @@ def _reescribir_formulas(ws):
             ws.cell(r, idx_sem).value = formula_I(r)
         if idx_cumpl:
             c = ws.cell(r, idx_cumpl)
-            c.value = formula_L(r)
+            c.value = formula_L(r, tope=tope)
             c.number_format = '0.00%'
         if idx_cumplr:
             c = ws.cell(r, idx_cumplr)
@@ -1605,7 +1624,9 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
 
         _set(r, 'Meta',        meta)
         _set(r, 'Ejecucion',   ejec)
-        _set(r, 'Cumplimiento', formula_L(r), '0.00%')
+        # Plan Anual: tope=1.0;  resto: tope=1.3
+        _tope = 1.0 if _id_str(fila.get('Id')) in IDS_PLAN_ANUAL else 1.3
+        _set(r, 'Cumplimiento', formula_L(r, tope=_tope), '0.00%')
         _set(r, 'CumplReal',   formula_M(r), '0.00%')
         _set(r, 'MetaS',       sg['meta_signo'])
         _set(r, 'EjecS',       ejec_signo)

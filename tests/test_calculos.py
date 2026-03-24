@@ -85,7 +85,11 @@ class TestCategorizarCumplimiento:
         assert categorizar_cumplimiento(1.03) == "Cumplimiento"
 
     def test_limite_sobrecumplimiento(self):
-        assert categorizar_cumplimiento(1.05) == "Cumplimiento"
+        # 105% exacto → Sobrecumplimiento (umbral es < 1.05, no <=)
+        assert categorizar_cumplimiento(1.05) == "Sobrecumplimiento"
+
+    def test_justo_debajo_105(self):
+        assert categorizar_cumplimiento(1.0499) == "Cumplimiento"
 
     def test_sobrecumplimiento(self):
         assert categorizar_cumplimiento(1.10) == "Sobrecumplimiento"
@@ -96,6 +100,25 @@ class TestCategorizarCumplimiento:
     def test_sentido_negativo_no_cambia_umbral(self):
         # El Sentido Negativo se aplica al calcular el cumplimiento, no aquí
         assert categorizar_cumplimiento(1.10, sentido="Negativo") == "Sobrecumplimiento"
+
+    # ── Plan Anual: cumple desde 95%, tope 100% ──────────────────────────────
+    def test_plan_anual_alerta(self):
+        # 90% → Alerta para PA (entre 80% y 95%)
+        assert categorizar_cumplimiento(0.90, id_indicador="373") == "Alerta"
+
+    def test_plan_anual_cumplimiento_desde_95(self):
+        assert categorizar_cumplimiento(0.95, id_indicador="373") == "Cumplimiento"
+
+    def test_plan_anual_cumplimiento_99(self):
+        assert categorizar_cumplimiento(0.99, id_indicador="373") == "Cumplimiento"
+
+    def test_plan_anual_sobrecumplimiento_100(self):
+        # 100% exacto → Sobrecumplimiento en PA (tope es < 1.0)
+        assert categorizar_cumplimiento(1.00, id_indicador="373") == "Sobrecumplimiento"
+
+    def test_indicador_normal_no_es_pa(self):
+        # Id no PA: 95% sigue siendo Alerta
+        assert categorizar_cumplimiento(0.95, id_indicador="999") == "Alerta"
 
 
 # ── calcular_tendencia ─────────────────────────────────────────────────────────
