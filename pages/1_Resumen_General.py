@@ -445,6 +445,75 @@ def _cargar_historico_detalle() -> pd.DataFrame:
     return cargar_dataset()
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cargar_consolidado_cierres() -> pd.DataFrame:
+    """Lee Consolidado Cierres de Resultados Consolidados.xlsx."""
+    if not _RUTA_CONSOLIDADOS.exists():
+        return pd.DataFrame()
+    try:
+        df = pd.read_excel(str(_RUTA_CONSOLIDADOS),
+                           sheet_name="Consolidado Cierres", engine="openpyxl")
+    except Exception:
+        return pd.DataFrame()
+    df.columns = [str(c).strip() for c in df.columns]
+    if "Id" in df.columns:
+        df["Id"] = df["Id"].apply(_id_limpio)
+    if "Fecha" in df.columns:
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+    for col in ("Cumplimiento", "Cumplimiento Real"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    # Columna Año puede venir con encoding roto ("A?o")
+    anio_col = next((c for c in df.columns
+                     if c.startswith("A") and c.endswith("o") and len(c) <= 4), None)
+    if anio_col and anio_col != "Año":
+        df = df.rename(columns={anio_col: "Año"})
+    return df
+
+
+# Umbrales de cumplimiento para la matriz de calor (alineados con core/config.py)
+_U_PELIGRO  = 0.80
+_U_ALERTA   = 1.00
+_U_SOBRE    = 1.05
+_NIVEL_BG_C = {
+    "Sobrecumplimiento": "#D0E4FF",
+    "Cumplimiento":      "#E8F5E9",
+    "Alerta":            "#FEF3D0",
+    "Peligro":           "#FFCDD2",
+    "Sin dato":          "#F5F5F5",
+}
+_COLORSCALE_C = [
+    [0.000,          "#FFCDD2"],
+    [_U_PELIGRO/1.35, "#EF9A9A"],
+    [_U_ALERTA/1.35,  "#FEF3D0"],
+    [(_U_ALERTA+0.001)/1.35, "#C8E6C9"],
+    [_U_SOBRE/1.35,   "#81C784"],
+    [1.000,           "#1A3A5C"],
+]
+
+
+def _nivel_c(v) -> str:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "Sin dato"
+    if f >= _U_SOBRE:   return "Sobrecumplimiento"
+    if f >= _U_ALERTA:  return "Cumplimiento"
+    if f >= _U_PELIGRO: return "Alerta"
+    return "Peligro"
+
+
+def _estilo_cierres(row):
+    estilos = []
+    for col in row.index:
+        if col in ("Nivel", "Cumplimiento %"):
+            bg = _NIVEL_BG_C.get(row.get("Nivel", "Sin dato"), "")
+            estilos.append(f"background-color:{bg}" if bg else "")
+        else:
+            estilos.append("")
+    return estilos
+
+
 def _mes_cierre_periodo(month: int, periodicidad: str) -> int:
     """Retorna el mes de CIERRE del período al que pertenece el mes dado."""
     perio = str(periodicidad or "").strip()
@@ -1002,7 +1071,9 @@ if not df_prev.empty:
 st.markdown("---")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_res, tab_con = st.tabs(["📊 Resumen", "📋 Consolidado"])
+tab_res, tab_con, tab_calor, tab_cierres = st.tabs([
+    "📊 Resumen", "📋 Consolidado", "🌡️ Matriz de Calor", "📂 Consolidado Cierres"
+])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1271,3 +1342,188 @@ with tab_con:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="exp_cumplimiento",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB MATRIZ DE CALOR
+# ─────────────────────────────────────────────────────────────────────────────
+with tab_calor:
+    _df_cierres = _cargar_consolidado_cierres()
+
+    # IDs activos del año seleccionado
+    _ids_activos_c = set(_cargar_kawak_por_anio(anio_seleccionado)["Id"].tolist()) \
+                     if not _cargar_kawak_por_anio(anio_seleccionado).empty else set()
+
+    _dfc = _df_cierres[_df_cierres["Id"].isin(_ids_activos_c)].copy() \
+           if _ids_activos_c else _df_cierres.copy()
+
+    # Filtros opcionales dentro del tab
+    _hc1, _hc2 = st.columns(2)
+    with _hc1:
+        _perios_c = ["Todas"] + sorted(_dfc["Periodicidad"].dropna().unique().tolist()) \
+                    if "Periodicidad" in _dfc.columns else ["Todas"]
+        _perio_c = st.selectbox("Periodicidad", _perios_c, key="cal_perio")
+    with _hc2:
+        _procs_c = ["Todos"] + sorted(_dfc["Proceso"].dropna().unique().tolist()) \
+                   if "Proceso" in _dfc.columns else ["Todos"]
+        _proc_c = st.selectbox("Proceso", _procs_c, key="cal_proc")
+
+    if _perio_c != "Todas" and "Periodicidad" in _dfc.columns:
+        _dfc = _dfc[_dfc["Periodicidad"] == _perio_c]
+    if _proc_c != "Todos" and "Proceso" in _dfc.columns:
+        _dfc = _dfc[_dfc["Proceso"] == _proc_c]
+
+    if _dfc.empty or "Periodo" not in _dfc.columns:
+        st.info("Sin datos de cierres para el año seleccionado.")
+    else:
+        # Pivot Id × Periodo → último valor de Cumplimiento
+        _pivot = (
+            _dfc.sort_values("Fecha")
+            .groupby(["Id", "Periodo"])["Cumplimiento"]
+            .last()
+            .unstack()
+        )
+        _pivot = _pivot.reindex(sorted(_pivot.columns), axis=1)
+
+        # Etiquetas fila: "ID — Nombre"
+        _meta_c = _dfc.drop_duplicates(subset=["Id"], keep="last").set_index("Id")
+        _y_labels = []
+        for _kid in _pivot.index:
+            _ind = str(_meta_c.loc[_kid, "Indicador"])[:45] \
+                   if _kid in _meta_c.index and "Indicador" in _meta_c.columns else _kid
+            _y_labels.append(f"{_kid} — {_ind}")
+
+        _z_text = _pivot.applymap(
+            lambda v: f"{v*100:.1f}%" if pd.notna(v) else ""
+        )
+
+        _fig_calor = go.Figure(go.Heatmap(
+            z=_pivot.values.tolist(),
+            x=_pivot.columns.tolist(),
+            y=_y_labels,
+            text=_z_text.values.tolist(),
+            texttemplate="%{text}",
+            textfont=dict(size=10),
+            colorscale=_COLORSCALE_C,
+            zmin=0, zmax=1.35,
+            showscale=True,
+            colorbar=dict(
+                title="Cumpl.",
+                tickvals=[0, 0.80, 1.00, 1.05, 1.30],
+                ticktext=["0%", "80%<br>Peligro", "100%<br>Cumpl.", "105%<br>Sobre", "130%+"],
+                len=0.7,
+            ),
+            hovertemplate=(
+                "<b>%{y}</b><br>Período: <b>%{x}</b><br>"
+                "Cumplimiento: <b>%{text}</b><extra></extra>"
+            ),
+        ))
+        _fig_calor.update_layout(
+            height=max(420, len(_pivot) * 26 + 80),
+            xaxis=dict(title="Período de cierre", side="top", tickangle=0),
+            yaxis=dict(title="", autorange="reversed", tickfont=dict(size=10)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(t=60, b=20, l=10, r=130),
+        )
+        st.plotly_chart(_fig_calor, use_container_width=True)
+
+        # Leyenda
+        _lc = st.columns(4)
+        for _col_l, (_lbl, _bg) in zip(_lc, [
+            ("Peligro < 80%",            _NIVEL_BG_C["Peligro"]),
+            ("Alerta 80–99%",            _NIVEL_BG_C["Alerta"]),
+            ("Cumplimiento ≥ 100%",      _NIVEL_BG_C["Cumplimiento"]),
+            ("Sobrecumplimiento ≥ 105%", _NIVEL_BG_C["Sobrecumplimiento"]),
+        ]):
+            _col_l.markdown(
+                f"<div style='background:{_bg};padding:5px 8px;border-radius:6px;"
+                f"text-align:center;font-size:12px'>{_lbl}</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.download_button(
+            "📥 Exportar matriz",
+            data=exportar_excel(_pivot.reset_index(), "Matriz Calor"),
+            file_name="matriz_calor.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="exp_matriz_c",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB CONSOLIDADO CIERRES
+# ─────────────────────────────────────────────────────────────────────────────
+with tab_cierres:
+    if "_dfc" not in dir() or _df_cierres.empty:
+        _df_cierres = _cargar_consolidado_cierres()
+        _ids_activos_c = set(_cargar_kawak_por_anio(anio_seleccionado)["Id"].tolist()) \
+                         if not _cargar_kawak_por_anio(anio_seleccionado).empty else set()
+        _dfc2 = _df_cierres[_df_cierres["Id"].isin(_ids_activos_c)].copy() \
+                if _ids_activos_c else _df_cierres.copy()
+    else:
+        _dfc2 = _df_cierres[_df_cierres["Id"].isin(_ids_activos_c)].copy() \
+                if _ids_activos_c else _df_cierres.copy()
+
+    if _dfc2.empty:
+        st.info("Sin datos de cierres para el año seleccionado.")
+    else:
+        # Filtros
+        _cc1, _cc2, _cc3 = st.columns(3)
+        with _cc1:
+            _periodos_cc = ["Todos"] + sorted(_dfc2["Periodo"].dropna().unique().tolist()) \
+                           if "Periodo" in _dfc2.columns else ["Todos"]
+            _periodo_cc = st.selectbox("Período", _periodos_cc,
+                                       index=len(_periodos_cc) - 1, key="cc_periodo")
+        with _cc2:
+            _txt_id_cc = st.text_input("ID", key="cc_id", placeholder="Buscar ID…")
+        with _cc3:
+            _niv_opts_cc = [""] + ["Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento", "Sin dato"]
+            _sel_niv_cc  = st.selectbox("Nivel", _niv_opts_cc, key="cc_niv",
+                                        format_func=lambda x: "— Todos —" if x == "" else x)
+
+        _dfc2 = _dfc2.copy()
+        _dfc2["Nivel"]          = _dfc2["Cumplimiento"].apply(_nivel_c)
+        _dfc2["Cumplimiento %"] = _dfc2["Cumplimiento"].apply(
+            lambda v: f"{float(v)*100:.1f}%" if pd.notna(v) else "—"
+        )
+
+        if _periodo_cc != "Todos" and "Periodo" in _dfc2.columns:
+            _dfc2 = _dfc2[_dfc2["Periodo"] == _periodo_cc]
+        if _txt_id_cc.strip():
+            _dfc2 = _dfc2[_dfc2["Id"].astype(str).str.contains(_txt_id_cc.strip(), case=False, na=False)]
+        if _sel_niv_cc:
+            _dfc2 = _dfc2[_dfc2["Nivel"] == _sel_niv_cc]
+
+        # KPIs
+        _cnts_cc = _dfc2["Nivel"].value_counts()
+        _kc = st.columns(5)
+        _kc[0].metric("Total",              len(_dfc2))
+        _kc[1].metric("🔴 Peligro",          int(_cnts_cc.get("Peligro",           0)))
+        _kc[2].metric("🟡 Alerta",            int(_cnts_cc.get("Alerta",             0)))
+        _kc[3].metric("🟢 Cumplimiento",      int(_cnts_cc.get("Cumplimiento",       0)))
+        _kc[4].metric("🔵 Sobrecumplimiento", int(_cnts_cc.get("Sobrecumplimiento",  0)))
+
+        st.caption(f"**{len(_dfc2):,}** registros · {_dfc2['Id'].nunique()} indicadores")
+
+        _COLS_CC = ["Id", "Indicador", "Proceso", "Periodicidad", "Sentido",
+                    "Fecha", "Periodo", "Meta", "Ejecucion", "Cumplimiento %", "Nivel"]
+        _cols_cc = [c for c in _COLS_CC if c in _dfc2.columns]
+        _df_cc_show = _dfc2[_cols_cc].copy()
+        if "Fecha" in _df_cc_show.columns:
+            _df_cc_show["Fecha"] = _df_cc_show["Fecha"].dt.strftime("%d/%m/%Y").fillna("—")
+
+        st.dataframe(
+            _df_cc_show.style.apply(_estilo_cierres, axis=1),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "Indicador": st.column_config.TextColumn("Indicador", width="large"),
+                "Nivel":     st.column_config.TextColumn("Nivel",     width="medium"),
+            },
+        )
+        st.download_button(
+            "📥 Exportar Excel",
+            data=exportar_excel(_df_cc_show, "Consolidado Cierres"),
+            file_name="consolidado_cierres.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="exp_cierres_c",
+        )
