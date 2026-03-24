@@ -58,7 +58,7 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
     # Línea de datos
     x_vals = df_ind["Fecha"] if "Fecha" in df_ind.columns else df_ind["Periodo"]
     mes_labels = (
-        df_ind["Fecha"].dt.strftime("%b %Y") if "Fecha" in df_ind.columns
+        df_ind["Fecha"].apply(_mes_es) if "Fecha" in df_ind.columns
         else df_ind.get("Periodo", pd.Series([""] * len(df_ind)))
     )
     custom = list(zip(mes_labels, df_ind["Categoria"])) if "Categoria" in df_ind.columns else None
@@ -111,13 +111,34 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
     return fig
 
 
+_MESES_ES = {1:"Ene",2:"Feb",3:"Mar",4:"Abr",5:"May",6:"Jun",
+             7:"Jul",8:"Ago",9:"Sep",10:"Oct",11:"Nov",12:"Dic"}
+
+
+def _mes_es(fecha) -> str:
+    """Convierte fecha a 'Mes YYYY' en español."""
+    try:
+        dt = pd.to_datetime(fecha, errors="coerce")
+        if pd.isna(dt):
+            return str(fecha)
+        return f"{_MESES_ES[dt.month]} {dt.year}"
+    except Exception:
+        return str(fecha)
+
+
 def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     """Prepara DataFrame histórico con columnas formateadas para mostrar."""
     df_work = df_ind.copy()
 
-    # Generar columna Mes desde Fecha (reemplaza Periodo)
+    # Excluir filas sin cumplimiento real (Categoria "Sin dato")
+    if "Categoria" in df_work.columns:
+        df_work = df_work[df_work["Categoria"] != "Sin dato"]
+    if df_work.empty:
+        return df_work
+
+    # Generar columna Mes en español desde Fecha
     if "Fecha" in df_work.columns:
-        df_work["Mes"] = pd.to_datetime(df_work["Fecha"], errors="coerce").dt.strftime("%b %Y")
+        df_work["Mes"] = df_work["Fecha"].apply(_mes_es)
     elif "Periodo" in df_work.columns:
         df_work["Mes"] = df_work["Periodo"].astype(str)
 
@@ -125,23 +146,32 @@ def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     if "Anio" in df_work.columns:
         df_work.rename(columns={"Anio": "Año"}, inplace=True)
 
+    # Detectar signo para Meta y Ejecución
+    _signo_meta = df_work["Meta_Signo"].iloc[0] if "Meta_Signo" in df_work.columns else ""
+    _signo_ejec = df_work["Ejecucion_Signo"].iloc[0] if "Ejecucion_Signo" in df_work.columns else ""
+    if pd.isna(_signo_meta): _signo_meta = ""
+    if pd.isna(_signo_ejec): _signo_ejec = ""
+
     cols = ["Mes", "Año", "Meta", "Ejecucion", "Cumplimiento_norm", "Categoria"]
     cols_disp = [c for c in cols if c in df_work.columns]
     df_t = df_work[cols_disp].copy()
     if "Año" in df_t.columns:
         df_t = df_t.sort_values("Año")
 
-    for col in ("Meta", "Ejecucion"):
+    for col, signo in (("Meta", _signo_meta), ("Ejecucion", _signo_ejec)):
         if col in df_t.columns:
-            df_t[col] = pd.to_numeric(df_t[col], errors="coerce").map(
-                lambda v: "" if pd.isna(v) else (f"{v:,.0f}" if v == int(v) else f"{v:,.2f}")
-            )
+            def _fmt_val(v, s=signo):
+                if pd.isna(v): return ""
+                num = f"{v:,.0f}" if float(v) == int(float(v)) else f"{v:,.2f}"
+                return f"{num}{s}" if s else num
+            df_t[col] = pd.to_numeric(df_t[col], errors="coerce").apply(_fmt_val)
+
     if "Cumplimiento_norm" in df_t.columns:
         def _fmt_cumpl(v):
             try:
-                return f"{round(float(v) * 100, 1)}%" if pd.notna(v) else "No aplica"
+                return f"{round(float(v) * 100, 1)}%" if pd.notna(v) else ""
             except (TypeError, ValueError):
-                return "No aplica"
+                return ""
         df_t["Cumplimiento_norm"] = df_t["Cumplimiento_norm"].apply(_fmt_cumpl)
         df_t.rename(columns={"Cumplimiento_norm": "Cumplimiento%"}, inplace=True)
     return df_t
@@ -180,9 +210,9 @@ def grafico_detalle_indicador(df_ind: pd.DataFrame) -> go.Figure:
     """
     df = df_ind.sort_values("Fecha").copy()
 
-    # Usar mes específico desde Fecha en lugar del código de Periodo
+    # Usar mes específico en español desde Fecha
     if "Fecha" in df.columns:
-        periodos = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%b %Y").tolist()
+        periodos = df["Fecha"].apply(_mes_es).tolist()
     else:
         periodos = df["Periodo"].astype(str).tolist()
     cum_pct = (df["Cumplimiento_norm"] * 100).round(1)
@@ -280,7 +310,17 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
         st.warning("Sin datos para este indicador.")
         return
 
-    df_ind_sorted = df_ind.sort_values("Fecha")
+    df_ind_sorted = df_ind.sort_values("Fecha").copy()
+
+    # Rellenar Cumplimiento_norm desde columna 'cumplimiento' si está vacío
+    if "Cumplimiento_norm" in df_ind_sorted.columns and "cumplimiento" in df_ind_sorted.columns:
+        mask_nan = df_ind_sorted["Cumplimiento_norm"].isna()
+        raw_cum = pd.to_numeric(df_ind_sorted.loc[mask_nan, "cumplimiento"], errors="coerce")
+        # Si el valor raw > 1.5 asumimos que ya viene en % (dividir / 100)
+        df_ind_sorted.loc[mask_nan, "Cumplimiento_norm"] = raw_cum.where(
+            raw_cum <= 1.5, raw_cum / 100
+        )
+
     ultimo = df_ind_sorted.iloc[-1]
 
     nombre        = ultimo.get("Indicador", "—")
