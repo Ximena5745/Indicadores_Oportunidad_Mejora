@@ -1627,13 +1627,14 @@ def _reescribir_formulas(ws):
     """
 
     cm = _build_col_map(ws)
-    idx_id     = cm.get('Id')
-    idx_anio   = cm.get('Anio')
-    idx_mes    = cm.get('Mes')
-    idx_sem    = cm.get('Semestre')
-    idx_cumpl  = cm.get('Cumplimiento')
-    idx_cumplr = cm.get('CumplReal')
-    idx_llave  = cm.get('LLAVE')
+    idx_id      = cm.get('Id')
+    idx_anio    = cm.get('Anio')
+    idx_mes     = cm.get('Mes')
+    idx_sem     = cm.get('Semestre')
+    idx_cumpl   = cm.get('Cumplimiento')
+    idx_cumplr  = cm.get('CumplReal')
+    idx_llave   = cm.get('LLAVE')
+    idx_tiporeg = cm.get('TipoRegistro')
 
     n = 0
     for row in ws.iter_rows(min_row=2, values_only=False):
@@ -1645,6 +1646,10 @@ def _reescribir_formulas(ws):
         id_val = _id_str(row[idx_id - 1].value) if idx_id else None
         tope = 1.0 if id_val in IDS_PLAN_ANUAL or id_val in IDS_TOPE_100 else 1.3
 
+        # Detectar métricas: no se reescribe cumplimiento (nunca tienen meta objetivo)
+        tipo_reg_val = row[idx_tiporeg - 1].value if idx_tiporeg else None
+        es_metrica = str(tipo_reg_val or '').strip().lower() == 'metrica'
+
         if idx_anio:
             ws.cell(r, idx_anio).value = formula_G(r)
         if idx_mes:
@@ -1653,12 +1658,18 @@ def _reescribir_formulas(ws):
             ws.cell(r, idx_sem).value = formula_I(r)
         if idx_cumpl:
             c = ws.cell(r, idx_cumpl)
-            c.value = formula_L(r, tope=tope)
-            c.number_format = '0.00%'
+            if es_metrica:
+                c.value = None
+            else:
+                c.value = formula_L(r, tope=tope)
+                c.number_format = '0.00%'
         if idx_cumplr:
             c = ws.cell(r, idx_cumplr)
-            c.value = formula_M(r)
-            c.number_format = '0.00%'
+            if es_metrica:
+                c.value = None
+            else:
+                c.value = formula_M(r)
+                c.number_format = '0.00%'
         if idx_llave:
             ws.cell(r, idx_llave).value = formula_R(r)
         n += 1
@@ -2239,11 +2250,16 @@ def escribir_filas(ws, filas, signos, start_row=None, ids_metrica=None):
 
         _set(r, 'Meta',        meta)
         _set(r, 'Ejecucion',   ejec)
-        # Plan Anual / Tope_100: tope=1.0;  resto: tope=1.3
-        _id_fila = _id_str(fila.get('Id'))
-        _tope = 1.0 if _id_fila in IDS_PLAN_ANUAL or _id_fila in IDS_TOPE_100 else 1.3
-        _set(r, 'Cumplimiento', formula_L(r, tope=_tope), '0.00%')
-        _set(r, 'CumplReal',   formula_M(r), '0.00%')
+        # Métricas: sin cumplimiento (no tienen meta objetivo para comparar)
+        if es_metrica:
+            _set(r, 'Cumplimiento', None)
+            _set(r, 'CumplReal',   None)
+        else:
+            # Plan Anual / Tope_100: tope=1.0;  resto: tope=1.3
+            _id_fila = _id_str(fila.get('Id'))
+            _tope = 1.0 if _id_fila in IDS_PLAN_ANUAL or _id_fila in IDS_TOPE_100 else 1.3
+            _set(r, 'Cumplimiento', formula_L(r, tope=_tope), '0.00%')
+            _set(r, 'CumplReal',   formula_M(r), '0.00%')
         _set(r, 'MetaS',       sg['meta_signo'])
         _set(r, 'EjecS',       ejec_signo)
         _set(r, 'DecMeta',     sg.get('dec_meta', 0))

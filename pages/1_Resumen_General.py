@@ -360,9 +360,12 @@ def _cargar_consolidados() -> pd.DataFrame:
         tope[ids_str.isin(IDS_PLAN_ANUAL | IDS_TOPE_100)] = 1.0
         ratio_cap  = ratio_real.clip(upper=tope)
 
+        # Métricas: nunca calcular cumplimiento (no tienen meta objetivo)
+        es_metrica_mask = df["Tipo_Registro"].astype(str).str.strip().str.lower() == "metrica" \
+            if "Tipo_Registro" in df.columns else pd.Series(False, index=df.index)
         # Para Sentido=Negativo el Excel calcula ejec/meta (sin invertir),
         # por eso siempre se recalcula con la fórmula correcta meta/ejec.
-        mask_calc = (df["cumplimiento"].isna() | sentido_neg) & valid
+        mask_calc = (df["cumplimiento"].isna() | sentido_neg) & valid & ~es_metrica_mask
         df.loc[mask_calc, "cumplimiento"]      = ratio_cap[mask_calc]
         df.loc[mask_calc, "cumplimiento_real"] = ratio_real[mask_calc]
 
