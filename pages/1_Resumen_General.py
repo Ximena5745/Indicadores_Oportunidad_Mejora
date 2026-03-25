@@ -1433,7 +1433,7 @@ with tab_calor:
                 [0.125, "#D32F2F"], [0.375, "#D32F2F"],
                 [0.375, "#FBAF17"], [0.625, "#FBAF17"],
                 [0.625, "#43A047"], [0.875, "#43A047"],
-                [0.875, "#1A3A5C"], [1.000, "#1A3A5C"],
+                [0.875, "#6699FF"], [1.000, "#6699FF"],
             ]
 
             def _nivel_code_c(v):
@@ -1552,7 +1552,15 @@ with tab_calor:
                                    if _kid in _meta_p.index and "Indicador" in _meta_p.columns else _kid
                             _ylabels_p.append(f"{_kid} — {_ind}")
 
-                        _row_h = 28 if len(_pivot_z_p) > 30 else 34
+                        _row_h    = 28 if len(_pivot_z_p) > 30 else 34
+                        _n_cols_p = len(_pivot_z_p.columns)
+
+                        # Ancho fijo según contenido: etiquetas + columnas de datos
+                        _max_lbl  = max((len(l) for l in _ylabels_p), default=20)
+                        _label_w  = min(max(_max_lbl * 6, 200), 340)
+                        _col_w    = 90   # px por columna de datos
+                        _fig_w    = _label_w + _n_cols_p * _col_w + 40
+
                         _fig_p = go.Figure(go.Heatmap(
                             z=_pivot_z_p.values.tolist(),
                             x=_pivot_z_p.columns.tolist(),
@@ -1563,23 +1571,29 @@ with tab_calor:
                             colorscale=_DISC_CS,
                             zmin=0, zmax=4,
                             showscale=False,
+                            xgap=2, ygap=1,
                             hovertemplate=(
                                 "<b>%{y}</b><br>Cierre: <b>%{x}</b><br>"
                                 "Cumplimiento: <b>%{text}</b><extra></extra>"
                             ),
                         ))
-                        _n_cols_p = len(_pivot_z_p.columns)
                         _fig_p.update_layout(
+                            width=_fig_w,
                             height=max(320, len(_pivot_z_p) * _row_h + 80),
                             xaxis=dict(
                                 side="top", tickangle=0,
                                 tickfont=dict(size=11, color="#1A3A5C"),
+                                constrain="domain",
                             ),
-                            yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+                            yaxis=dict(
+                                autorange="reversed",
+                                tickfont=dict(size=10),
+                                constrain="domain",
+                            ),
                             plot_bgcolor="white", paper_bgcolor="white",
-                            margin=dict(t=60, b=10, l=10, r=10),
+                            margin=dict(t=60, b=10, l=_label_w, r=20),
                         )
-                        st.plotly_chart(_fig_p, use_container_width=True, key=f"calor_{_perio}")
+                        st.plotly_chart(_fig_p, use_container_width=False, key=f"calor_{_perio}")
 
                 # Exportar datos completos
                 st.download_button(
