@@ -31,9 +31,11 @@ _OUT_API       = _OUT_DIR / "Consolidado_API_Kawak.xlsx"
 
 YEARS = [2022, 2023, 2024, 2025, 2026]
 
-# Columnas del catálogo Kawak
-COLS_KAWAK = ["Año", "Id", "Indicador", "Clasificacion", "Proceso",
-              "Tipo", "Periodicidad", "Sentido"]
+# Columnas del catálogo Kawak (agregando 'Tipo de variable')
+COLS_KAWAK = [
+    "Año", "Id", "Indicador", "Clasificacion", "Proceso",
+    "Tipo", "Tipo de variable", "Periodicidad", "Sentido"
+]
 
 
 # -----------------------------------------------------------------------------
@@ -85,6 +87,7 @@ def _procesar_kawak_año(path: Path, year: int) -> pd.DataFrame:
     df = pd.read_excel(path)
     df.columns = [str(c).strip() for c in df.columns]
 
+
     col_id   = _encontrar_col(df, ['Id', 'ID'],                       idx_fallback=0)
     col_ind  = _encontrar_col(df, ['Indicador', 'Nombre', 'nombre'],  idx_fallback=1)
     col_clas = _encontrar_col(df, ['Clasificación', 'Clasificacion',
@@ -92,11 +95,14 @@ def _procesar_kawak_año(path: Path, year: int) -> pd.DataFrame:
                                     'clasificación'],                  idx_fallback=2)
     col_proc = _encontrar_col(df, ['Proceso', 'Subproceso', 'SS'],    idx_fallback=3)
     col_tipo = _encontrar_col(df, ['Tipo'],                           idx_fallback=4)
+    col_tipo_var = _encontrar_col(df, ['Tipo de variable', 'Tipo_variable', 'TipoVariable'])
     col_per  = _encontrar_col(df, ['Periodicidad', 'frecuencia'])
     col_sent = _encontrar_col(df, ['Sentido'])
 
+
     def _get(col):
         return df[col] if col else pd.Series([None] * len(df))
+
 
     df_out = pd.DataFrame({
         "Año":          year,
@@ -105,6 +111,7 @@ def _procesar_kawak_año(path: Path, year: int) -> pd.DataFrame:
         "Clasificacion":_get(col_clas).apply(lambda v: str(v).strip() if pd.notna(v) else None),
         "Proceso":      _get(col_proc).apply(lambda v: str(v).strip() if pd.notna(v) else None),
         "Tipo":         _get(col_tipo).apply(lambda v: str(v).strip() if pd.notna(v) else None),
+        "Tipo de variable": _get(col_tipo_var).apply(lambda v: str(v).strip() if pd.notna(v) else None),
         "Periodicidad": _get(col_per).apply(lambda v: str(v).strip() if pd.notna(v) else None),
         "Sentido":      _get(col_sent).apply(lambda v: str(v).strip() if pd.notna(v) else None),
     })
@@ -112,7 +119,7 @@ def _procesar_kawak_año(path: Path, year: int) -> pd.DataFrame:
     df_out = df_out[df_out["Id"].notna() & (df_out["Id"] != "")]
 
     # Limpiar strings residuales
-    for col in ["Clasificacion", "Proceso", "Tipo", "Periodicidad", "Sentido"]:
+    for col in ["Clasificacion", "Proceso", "Tipo", "Tipo de variable", "Periodicidad", "Sentido"]:
         df_out[col] = df_out[col].replace({'nan': None, 'None': None})
 
     return df_out[COLS_KAWAK]

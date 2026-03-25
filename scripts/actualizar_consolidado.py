@@ -79,6 +79,10 @@ _EXT_SER_SUM_RES = 'Aplicar la fórmula a cada serie y luego sumar los resultado
 _EXT_SERIES_TIPOS = frozenset([_EXT_SER_SUM_VAR, _EXT_SER_AVG_RES,
                                 _EXT_SER_AVG_VAR, _EXT_SER_SUM_RES])
 
+# Multiserie Tipo 2 simple: agrega serie['resultado'] y serie['meta'] directamente
+# (sin aplicar fórmulas a variables internas). TipoCalculo determina SUM/AVG/LAST.
+_EXT_DESGLOSE_SERIES = 'Desglose Series'
+
 MESES_ES = {
     1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
     5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
@@ -817,6 +821,67 @@ def cargar_tipo_calculo_map():
         return {}
 
 
+def cargar_variables_campo_map():
+    """
+    Lee la hoja 'Variables' de INPUT_FILE.
+    Retorna {id_str: {'ejec': [simbolos], 'meta': [simbolos]}}
+    preservando el orden de aparición en la hoja (primero = prioridad alta).
+
+    Columna Campo:
+      'Ejecución' / 'Ejecucion' → ejec
+      'Meta'                    → meta
+      'Informativo'             → ignorado (no es meta ni ejec)
+
+    Si un indicador solo tiene símbolos Informativos, su dict queda vacío
+    → se usará la extracción heurística como fallback.
+    """
+    if not INPUT_FILE.exists():
+        return {}
+    try:
+        df = pd.read_excel(INPUT_FILE, sheet_name='Variables')
+        df.columns = [str(c).strip() for c in df.columns]
+        col_id   = next((c for c in df.columns if c.lower() == 'id'), None)
+        col_simb = next((c for c in df.columns
+                         if 'simb' in c.lower() or c.lower() == 'var_simbolo'), None)
+        col_camp = next((c for c in df.columns if 'campo' in c.lower()), None)
+        if not all([col_id, col_simb, col_camp]):
+            print("  [AVISO] Variables: columnas Id/var_simbolo/Campo no encontradas.")
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            id_s = _id_str(row.get(col_id, ''))
+            simb = str(row.get(col_simb, '') or '').strip()
+            camp = str(row.get(col_camp, '') or '').strip()
+            if not id_s or not simb or simb == 'None':
+                continue
+            if id_s not in result:
+                result[id_s] = {'ejec': [], 'meta': []}
+            camp_low = camp.lower()
+            if 'jecuci' in camp_low:
+                result[id_s]['ejec'].append(simb)
+            elif camp_low == 'meta':
+                result[id_s]['meta'].append(simb)
+            # 'informativo' → no agrega a ejec ni meta
+        n_both = sum(1 for v in result.values() if v['ejec'] and v['meta'])
+        n_ejec = sum(1 for v in result.values() if v['ejec'] and not v['meta'])
+        n_info = sum(1 for v in result.values() if not v['ejec'] and not v['meta'])
+        print(f"  Variables/Campo: {len(result)} IDs "
+              f"({n_both} Meta+Ejec | {n_ejec} solo Ejec | {n_info} solo Informativo)")
+        return result
+    except Exception as e:
+        print(f"  [AVISO] Error leyendo Variables del catalogo: {e}")
+        return {}
+
+
+def _extraer_por_simbolos(vars_list, simbolos):
+    """Busca el primer símbolo de la lista en vars_list; retorna su valor o None."""
+    for simb in simbolos:
+        val = extraer_por_simbolo(vars_list, simb)
+        if val is not None:
+            return val
+    return None
+
+
 def _sum_series_resultado(series_raw):
     """
     Suma los 'resultado' de cada serie en el JSON.
@@ -879,6 +944,84 @@ def _calc_ejec_series(series_raw, extraccion):
     return None
 
 
+def _calc_meta_series(series_raw, extraccion):
+    """
+    Computa Meta desde el JSON de series según el tipo de Extraccion.
+
+    Para todos los _EXT_SERIES_TIPOS la Meta se extrae de serie['meta']:
+      _EXT_SER_SUM_VAR / _EXT_SER_SUM_RES → SUM(serie['meta'])
+      _EXT_SER_AVG_VAR / _EXT_SER_AVG_RES → AVG(serie['meta'])
+
+    Retorna None si no hay datos o el tipo no aplica.
+    """
+    lst = parse_json_safe(series_raw)
+    if not lst:
+        return None
+
+    def _nonan(v):
+        return v is not None and not (isinstance(v, float) and np.isnan(v))
+
+    metas = [float(x.get('meta')) for x in lst if _nonan(x.get('meta'))]
+    if not metas:
+        return None
+
+    # Si todos los valores son 0 o 1, son flags binarios (no metas reales) → ignorar
+    if all(m in (0.0, 1.0) for m in metas):
+        return None
+
+    if extraccion in (_EXT_SER_SUM_VAR, _EXT_SER_SUM_RES):
+        return sum(metas)
+    elif extraccion in (_EXT_SER_AVG_VAR, _EXT_SER_AVG_RES):
+        return sum(metas) / len(metas)
+    return None
+
+
+def _agregar_series_por_tipo_calculo(series_raw, tipo_calculo):
+    """
+    Agrega serie['resultado'] y serie['meta'] directamente según TipoCalculo.
+    Usado para Extraccion='Desglose Series' (Multiserie Tipo 2 simple).
+
+    TipoCalculo:
+      'Acumulado' → SUM(serie['resultado']), SUM(serie['meta'])
+      'Promedio'  → AVG(serie['resultado']), AVG(serie['meta'])
+      'Cierre'    → None, None  (usar API resultado directamente)
+
+    Retorna (ejec, meta) o (None, None) si no hay datos.
+    """
+    tc = str(tipo_calculo or '').strip().lower()
+    if tc == 'cierre':
+        return None, None          # TipoCalculo=Cierre → usar API resultado
+
+    lst = parse_json_safe(series_raw)
+    if not lst:
+        return None, None
+
+    def _nonan(v):
+        return v is not None and not (isinstance(v, float) and np.isnan(v))
+
+    ejec_vals = [float(x.get('resultado')) for x in lst if _nonan(x.get('resultado'))]
+    meta_vals  = [float(x.get('meta'))     for x in lst if _nonan(x.get('meta'))]
+
+    if not ejec_vals:
+        return None, None
+
+    if tc == 'acumulado':
+        ejec = sum(ejec_vals)
+        meta = sum(meta_vals) if meta_vals else None
+    elif tc == 'promedio':
+        ejec = sum(ejec_vals) / len(ejec_vals)
+        meta = (sum(meta_vals) / len(meta_vals)) if meta_vals else None
+    else:
+        ejec = sum(ejec_vals)      # fallback: SUM
+        meta = sum(meta_vals) if meta_vals else None
+
+    # Validar que meta no sean flags binarios
+    if meta is not None and all(m in (0.0, 1.0) for m in meta_vals):
+        meta = None
+
+    return ejec, meta
+
+
 def cargar_consolidado_api_kawak_lookup(extraccion_map=None):
     """
     Carga Consolidado_API_Kawak.xlsx y construye un dict
@@ -921,11 +1064,19 @@ def cargar_consolidado_api_kawak_lookup(extraccion_map=None):
             if col_ser:
                 ext = (extraccion_map or {}).get(id_s)
                 if ext in _EXT_SERIES_TIPOS:
-                    # Calcular ejecucion correctamente según tipo de Extraccion
+                    # Calcular Ejecucion y Meta correctamente desde series JSON
                     ser_val = _calc_ejec_series(row[col_ser], ext)
                     if ser_val is not None:
                         res = ser_val
                         n_series_ext += 1
+                    ser_meta = _calc_meta_series(row[col_ser], ext)
+                    if ser_meta is not None:
+                        meta = ser_meta
+                elif ext == _EXT_DESGLOSE_SERIES:
+                    # Multiserie Tipo 2 simple: serie['resultado'] y serie['meta']
+                    # TipoCalculo=Cierre → usar resultado API directamente (no agrega)
+                    # TipoCalculo=Promedio/Acumulado → se calcularía aquí si existieran en API
+                    pass   # actualmente estos IDs no están en la API (PDI indicadores)
                 elif res is None or res == 0.0:
                     # Fallback genérico cuando resultado=0 pero hay series con datos
                     ser_sum = _sum_series_resultado(row[col_ser])
@@ -1885,8 +2036,8 @@ def reparar_semestral_agregados(ws, df_fuente_api, extraccion_map, tipo_calculo_
             fecha = pd.to_datetime(r['fecha'])
         except Exception:
             continue
-        ejec  = _ejec_corrected_from_row(r, extraccion_map, None)
-        meta_v = nan2none(pd.to_numeric(r.get('meta'), errors='coerce'))
+        ejec   = _ejec_corrected_from_row(r, extraccion_map, None)
+        meta_v = _meta_corrected_from_row(r, extraccion_map, None)
         monthly[(id_s, fecha.year, fecha.month)] = (ejec, meta_v)
 
     cm = _build_col_map(ws)
@@ -2087,12 +2238,13 @@ def escribir_hoja_nueva(wb, nombre, df):
 # ─────────────────────────────────────────────────────────────────────
 
 def _extraer_registro(row, hist_escalas, config_patrones=None,
-                      extraccion_map=None, api_kawak_lookup=None):
+                      extraccion_map=None, api_kawak_lookup=None,
+                      variables_campo_map=None):
     """
     Extrae (meta, ejec, fuente, es_na) para una fila de fuente.
 
     Lógica según columna 'Extraccion' del Catalogo Indicadores:
-      - 'Desglose Variables' → usa determinar_meta_ejec con patron VARIABLES
+      - 'Desglose Variables' → Variables/Campo canónico (hoja Variables)
       - 'Consolidado_API_Kawak' o vacío → usa meta/resultado directo
         del lookup de Consolidado_API_Kawak.xlsx
     Kawak2025 siempre usa su propio flujo.
@@ -2116,16 +2268,16 @@ def _extraer_registro(row, hist_escalas, config_patrones=None,
             fecha_key = pd.to_datetime(fecha_raw).normalize()
         except Exception:
             fecha_key = None
-        # Meta desde api_kawak_lookup o campo meta directo
-        meta = None
-        if api_kawak_lookup and fecha_key is not None:
+        # Meta: 1° desde series JSON (fuente canónica), 2° lookup, 3° campo API
+        meta = _calc_meta_series(row.get('series'), extraccion)
+        if meta is None and api_kawak_lookup and fecha_key is not None:
             vals = api_kawak_lookup.get((id_s, fecha_key))
             if vals is not None:
                 meta = vals[0]
         if meta is None:
             meta = nan2none(pd.to_numeric(row.get('meta'), errors='coerce')
                             if not _es_vacio(row.get('meta')) else None)
-        # Ejecucion desde JSON de series (fuente más precisa para filas nuevas)
+        # Ejecucion: 1° desde series JSON, 2° lookup
         ejec = _calc_ejec_series(row.get('series'), extraccion)
         if ejec is None and api_kawak_lookup and fecha_key is not None:
             vals = api_kawak_lookup.get((id_s, fecha_key))
@@ -2136,6 +2288,35 @@ def _extraer_registro(row, hist_escalas, config_patrones=None,
         if is_na_record(row.to_dict() if hasattr(row, 'to_dict') else row):
             return meta, None, 'na_record', True
         return meta, ejec, 'series_extraccion', False
+
+    # ── Caso: Desglose Series (Multiserie Tipo 2 simple) ──────────
+    if extraccion == _EXT_DESGLOSE_SERIES:
+        row_dict = row.to_dict() if hasattr(row, 'to_dict') else row
+        fecha_raw = row_dict.get('fecha')
+        try:
+            fecha_key = pd.to_datetime(fecha_raw).normalize()
+        except Exception:
+            fecha_key = None
+        # Intentar agregar desde series JSON (solo efectivo si TipoCalculo != Cierre)
+        # y si el indicador está en la API (actualmente estos IDs no lo están)
+        ejec = None
+        meta = None
+        if api_kawak_lookup and fecha_key is not None:
+            vals = api_kawak_lookup.get((id_s, fecha_key))
+            if vals is not None:
+                meta, ejec = vals
+        # Fallback a campos directos del API
+        if ejec is None:
+            ejec = nan2none(pd.to_numeric(row_dict.get('resultado'), errors='coerce')
+                            if not _es_vacio(row_dict.get('resultado')) else None)
+        if meta is None:
+            meta = nan2none(pd.to_numeric(row_dict.get('meta'), errors='coerce')
+                            if not _es_vacio(row_dict.get('meta')) else None)
+        if ejec is None:
+            return meta, None, 'sin_resultado', False
+        if is_na_record(row_dict):
+            return meta, None, 'na_record', True
+        return meta, ejec, 'desglose_series', False
 
     # ── Caso: Consolidado_API_Kawak (o vacío) ─────────────────────
     if extraccion != 'Desglose Variables':
@@ -2162,22 +2343,44 @@ def _extraer_registro(row, hist_escalas, config_patrones=None,
         return meta, ejec, fuente, es_na
 
     # ── Caso: Desglose Variables ───────────────────────────────────
+    row_dict = row.to_dict() if hasattr(row, 'to_dict') else row
+
+    # 1) Config_Patrones (override manual, máxima prioridad)
     patron_cfg = config_patrones.get(id_s) if config_patrones else None
-    # Forzar patron VARIABLES si no está configurado explícitamente
-    if patron_cfg is None:
-        patron_cfg = {'patron': 'VARIABLES', 'simbolo_ejec': '', 'simbolo_meta': ''}
+    if patron_cfg and patron_cfg.get('simbolo_ejec'):
+        meta, ejec, fuente, es_na = determinar_meta_ejec(
+            row_dict, hist_meta_escala, patron_cfg=patron_cfg)
+        return meta, ejec, fuente, es_na
+
+    # 2) Variables/Campo (fuente canónica de la hoja Variables)
+    campo_info = (variables_campo_map or {}).get(id_s, {})
+    simbs_ejec = campo_info.get('ejec', [])
+    simbs_meta = campo_info.get('meta', [])
+
+    if simbs_ejec:
+        vars_list = parse_json_safe(row_dict.get('variables'))
+        ejec_v = _extraer_por_simbolos(vars_list, simbs_ejec) if vars_list else None
+        if ejec_v is not None:
+            meta_v = _extraer_por_simbolos(vars_list, simbs_meta) if simbs_meta else None
+            if meta_v is None:
+                # Sin símbolo Meta → campo 'meta' del API
+                meta_v = nan2none(pd.to_numeric(row_dict.get('meta'), errors='coerce')
+                                  if not _es_vacio(row_dict.get('meta')) else None)
+            if is_na_record(row_dict):
+                return meta_v, None, 'na_record', True
+            return meta_v, ejec_v, 'variables_campo', False
+
+    # 3) Fallback: heurística keyword matching (caso Informativo o sin vars JSON)
+    patron_cfg_fb = patron_cfg or {'patron': 'VARIABLES', 'simbolo_ejec': '', 'simbolo_meta': ''}
     meta, ejec, fuente, es_na = determinar_meta_ejec(
-        row.to_dict() if hasattr(row, 'to_dict') else row,
-        hist_meta_escala,
-        patron_cfg=patron_cfg,
-    )
+        row_dict, hist_meta_escala, patron_cfg=patron_cfg_fb)
     return meta, ejec, fuente, es_na
 
 
 def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
                                   config_patrones=None, mapa_procesos=None,
                                   kawak_validos=None, extraccion_map=None,
-                                  api_kawak_lookup=None):
+                                  api_kawak_lookup=None, variables_campo_map=None):
     registros = []
     skipped   = 0
     conteo_na = 0
@@ -2196,7 +2399,8 @@ def construir_registros_historico(df_fuente, llaves_existentes, hist_escalas,
                 continue
         meta, ejec, fuente, es_na = _extraer_registro(
             row, hist_escalas, config_patrones=config_patrones,
-            extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup)
+            extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup,
+            variables_campo_map=variables_campo_map)
         if fuente == 'skip' or fuente == 'sin_resultado':
             skipped += 1
             continue
@@ -2246,10 +2450,37 @@ def _ejec_corrected_from_row(row, extraccion_map, api_kawak_lookup):
     return nan2none(pd.to_numeric(row.get('resultado'), errors='coerce'))
 
 
+def _meta_corrected_from_row(row, extraccion_map, api_kawak_lookup):
+    """
+    Devuelve la Meta correcta para una fila del df_fuente:
+    - Para tipos series: calcula desde serie['meta'] en JSON de series
+    - Fallback: api_kawak_lookup (que ya incluye meta de series) o campo 'meta'
+    """
+    id_s = _id_str(row.get('Id', row.get('ID', '')))
+    ext  = (extraccion_map or {}).get(id_s)
+
+    if ext in _EXT_SERIES_TIPOS:
+        meta = _calc_meta_series(row.get('series'), ext)
+        if meta is not None:
+            return meta
+
+    if api_kawak_lookup:
+        try:
+            fecha_key = pd.to_datetime(row['fecha']).normalize()
+            vals = api_kawak_lookup.get((id_s, fecha_key))
+            if vals is not None and vals[0] is not None:
+                return vals[0]
+        except Exception:
+            pass
+
+    return nan2none(pd.to_numeric(row.get('meta'), errors='coerce'))
+
+
 def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
                                   config_patrones=None, mapa_procesos=None,
                                   kawak_validos=None, extraccion_map=None,
-                                  api_kawak_lookup=None, tipo_calculo_map=None):
+                                  api_kawak_lookup=None, tipo_calculo_map=None,
+                                  variables_campo_map=None):
     """
     Genera registros para Consolidado Semestral.
 
@@ -2297,9 +2528,11 @@ def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
     registros_agg = []
     if ids_agg:
         df_agg_src = df_base[df_base['_ids'].isin(ids_agg)].copy()
-        # Calcular ejecucion correcta para cada fila mensual
+        # Calcular ejecucion y meta correctas para cada fila mensual
         df_agg_src['_ejec_corr'] = df_agg_src.apply(
             lambda r: _ejec_corrected_from_row(r, extraccion_map, api_kawak_lookup), axis=1)
+        df_agg_src['_meta_corr'] = df_agg_src.apply(
+            lambda r: _meta_corrected_from_row(r, extraccion_map, api_kawak_lookup), axis=1)
 
         agg_rows = []
         for (id_val, sem_label), grupo in df_agg_src.groupby(['Id', '_sem']):
@@ -2307,7 +2540,7 @@ def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
             patron = 'AVG' if ids in ids_avg else 'SUM'
 
             ejecs = pd.to_numeric(grupo['_ejec_corr'], errors='coerce').dropna()
-            metas = pd.to_numeric(grupo['meta'],        errors='coerce').dropna()
+            metas = pd.to_numeric(grupo['_meta_corr'], errors='coerce').dropna()
             if len(ejecs) == 0:
                 continue
 
@@ -2355,13 +2588,13 @@ def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
             })
 
     df_sem = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()
-    df_sem = df_sem.drop(columns=['_ids', '_sem', '_ejec_corr'], errors='ignore')
+    df_sem = df_sem.drop(columns=['_ids', '_sem', '_ejec_corr', '_meta_corr'], errors='ignore')
 
     regs_std, skip_std, na_std = construir_registros_historico(
         df_sem, llaves_existentes, hist_escalas,
         config_patrones=config_patrones, mapa_procesos=mapa_procesos,
         kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-        api_kawak_lookup=api_kawak_lookup,
+        api_kawak_lookup=api_kawak_lookup, variables_campo_map=variables_campo_map,
     )
     return regs_std + registros_agg, skip_std, na_std
 
@@ -2369,7 +2602,8 @@ def construir_registros_semestral(df_fuente, llaves_existentes, hist_escalas,
 def construir_registros_cierres(df_fuente, hist_escalas,
                                 config_patrones=None, mapa_procesos=None,
                                 kawak_validos=None, extraccion_map=None,
-                                api_kawak_lookup=None, tipo_calculo_map=None):
+                                api_kawak_lookup=None, tipo_calculo_map=None,
+                                variables_campo_map=None):
     """
     Genera registros para Consolidado Cierres.
 
@@ -2424,8 +2658,16 @@ def construir_registros_cierres(df_fuente, hist_escalas,
                 continue
 
             ejec_agg = (sum(ejecs) / len(ejecs)) if patron == 'AVG' else sum(ejecs)
-            metas    = pd.to_numeric(grupo['meta'], errors='coerce').dropna()
-            meta_agg = (metas.mean() if patron == 'AVG' else metas.sum()) if len(metas) > 0 else None
+            metas_corr = []
+            for _, r in grupo.iterrows():
+                mv = _meta_corrected_from_row(r, extraccion_map, api_kawak_lookup)
+                if mv is not None:
+                    try:
+                        metas_corr.append(float(mv))
+                    except (TypeError, ValueError):
+                        pass
+            meta_agg = ((sum(metas_corr) / len(metas_corr)) if patron == 'AVG'
+                        else sum(metas_corr)) if metas_corr else None
 
             last = grupo.iloc[-1]
             # Fecha de cierre: dic si existe, sino último mes
@@ -2453,7 +2695,8 @@ def construir_registros_cierres(df_fuente, hist_escalas,
         for _, row in candidatos.iterrows():
             meta, ejec, fuente, es_na = _extraer_registro(
                 row, hist_escalas, config_patrones=config_patrones,
-                extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup)
+                extraccion_map=extraccion_map, api_kawak_lookup=api_kawak_lookup,
+                variables_campo_map=variables_campo_map)
             if fuente == 'skip' or fuente == 'sin_resultado':
                 skipped += 1
                 continue
@@ -2563,9 +2806,10 @@ def main():
 
     # ── 4b. Lookups de extracción ─────────────────────────────────
     print("\n[4b] Cargando mapa de Extraccion y lookup Consolidado_API_Kawak...")
-    extraccion_map   = cargar_extraccion_map()
-    tipo_calculo_map = cargar_tipo_calculo_map()
-    api_kawak_lookup = cargar_consolidado_api_kawak_lookup(extraccion_map=extraccion_map)
+    extraccion_map      = cargar_extraccion_map()
+    tipo_calculo_map    = cargar_tipo_calculo_map()
+    variables_campo_map = cargar_variables_campo_map()
+    api_kawak_lookup    = cargar_consolidado_api_kawak_lookup(extraccion_map=extraccion_map)
     n_dv  = sum(1 for v in extraccion_map.values() if v == 'Desglose Variables')
     n_ak  = sum(1 for v in extraccion_map.values() if v == 'Consolidado_API_Kawak')
     n_ser = sum(1 for v in extraccion_map.values() if v in _EXT_SERIES_TIPOS)
@@ -2649,7 +2893,7 @@ def main():
         df_fuente_api, llave_hist, hist_escalas,
         config_patrones=config_patrones, mapa_procesos=mapa_procesos,
         kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-        api_kawak_lookup=api_kawak_lookup)
+        api_kawak_lookup=api_kawak_lookup, variables_campo_map=variables_campo_map)
     print(f"  Nuevos: {len(regs_hist):,} | N/A: {na_hist:,} | Omitidos: {skip_hist:,}")
     if len(df_kawak25) > 0:
         llaves_usadas = llave_hist | {r['LLAVE'] for r in regs_hist}
@@ -2657,7 +2901,7 @@ def main():
             df_kawak25, llaves_usadas, hist_escalas,
             config_patrones=config_patrones, mapa_procesos=mapa_procesos,
             kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-            api_kawak_lookup=api_kawak_lookup)
+            api_kawak_lookup=api_kawak_lookup, variables_campo_map=variables_campo_map)
         regs_hist += regs_k25
         print(f"  + Kawak 2025: {len(regs_k25):,} adicionales (N/A: {na_k25}, omitidos: {sk25})")
     regs_hist.sort(key=lambda x: (str(x['Id']), x['fecha']))
@@ -2674,7 +2918,8 @@ def main():
         df_fuente_api, llave_sem, hist_escalas,
         config_patrones=config_patrones, mapa_procesos=mapa_procesos,
         kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-        api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map)
+        api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map,
+        variables_campo_map=variables_campo_map)
     print(f"  Nuevos: {len(regs_sem):,} | N/A: {na_sem:,} | Omitidos: {skip_sem:,}")
     regs_sem.sort(key=lambda x: (str(x['Id']), x['fecha']))
     ws_sem = wb['Consolidado Semestral']
@@ -2690,13 +2935,15 @@ def main():
         df_fuente_api, hist_escalas,
         config_patrones=config_patrones, mapa_procesos=mapa_procesos,
         kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-        api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map)
+        api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map,
+        variables_campo_map=variables_campo_map)
     if len(df_kawak25) > 0:
         regs_k25_c, sk25_c, na_k25_c = construir_registros_cierres(
             df_kawak25, hist_escalas,
             config_patrones=config_patrones, mapa_procesos=mapa_procesos,
             kawak_validos=kawak_validos, extraccion_map=extraccion_map,
-            api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map)
+            api_kawak_lookup=api_kawak_lookup, tipo_calculo_map=tipo_calculo_map,
+            variables_campo_map=variables_campo_map)
         llaves_c = {r['LLAVE'] for r in regs_cierres}
         regs_k25_c = [r for r in regs_k25_c if r['LLAVE'] not in llaves_c]
         regs_cierres += regs_k25_c
