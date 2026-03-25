@@ -1464,6 +1464,56 @@ with tab_calor:
                 )
             st.markdown("")
 
+            # ── Resumen general de cumplimiento (último período por indicador) ──
+            _last_all = _dfc.sort_values("Fecha").groupby("Id")["Cumplimiento"].last()
+            _niv_all  = _last_all.apply(_nivel_code_c)
+            _cnt_all  = _niv_all.value_counts()
+            _avg_pct  = float(_last_all.dropna().mean() * 100) if not _last_all.dropna().empty else None
+            _total_all = len(_last_all)
+
+            _rc = st.columns([1, 1, 1, 1, 1, 1.2])
+            for _ci, (_code, _bg, _lbl_g) in enumerate([
+                (None,  "#F0F4F8", "Total"),
+                (1,     "#FFCDD2", "🔴 Peligro"),
+                (2,     "#FEF3D0", "🟡 Alerta"),
+                (3,     "#E8F5E9", "🟢 Cumplimiento"),
+                (4,     "#E8EEFF", "🔵 Sobrecumpl."),
+            ]):
+                _val = _total_all if _code is None else int(_cnt_all.get(_code, 0))
+                _pct_lbl = f"<br><span style='font-size:10px;color:#666'>{_val/_total_all*100:.1f}%</span>" \
+                           if _code is not None and _total_all else ""
+                _rc[_ci].markdown(
+                    f"<div style='background:{_bg};border-radius:8px;padding:10px 6px;"
+                    f"text-align:center;border:1px solid #E0E6EF'>"
+                    f"<b style='font-size:1.3rem'>{_val}</b>{_pct_lbl}"
+                    f"<br><span style='font-size:10px'>{_lbl_g}</span></div>",
+                    unsafe_allow_html=True,
+                )
+            if _avg_pct is not None:
+                _color_avg = ("#43A047" if _avg_pct >= 100 else "#FBAF17" if _avg_pct >= 80 else "#D32F2F")
+                _rc[5].markdown(
+                    f"<div style='background:#F8F9FA;border-radius:8px;padding:10px 6px;"
+                    f"text-align:center;border:1px solid #E0E6EF'>"
+                    f"<b style='font-size:1.3rem;color:{_color_avg}'>{_avg_pct:.1f}%</b>"
+                    f"<br><span style='font-size:10px'>Promedio gral.</span></div>",
+                    unsafe_allow_html=True,
+                )
+
+            # Barra de distribución visual
+            if _total_all:
+                _bar_parts = ""
+                for _code, _clr in [(1,"#D32F2F"),(2,"#FBAF17"),(3,"#43A047"),(4,"#6699FF"),(0,"#BDBDBD")]:
+                    _w = int(_cnt_all.get(_code, 0)) / _total_all * 100
+                    if _w > 0:
+                        _bar_parts += (f"<div style='width:{_w:.1f}%;background:{_clr};"
+                                       f"height:10px;display:inline-block;'></div>")
+                st.markdown(
+                    f"<div style='width:100%;border-radius:4px;overflow:hidden;"
+                    f"margin:6px 0 10px 0'>{_bar_parts}</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown("---")
+
             # Etiqueta mes-año para cada registro
             _dfc = _dfc.copy()
             _dfc["_col_label"] = _dfc["Fecha"].apply(
@@ -1553,14 +1603,18 @@ with tab_calor:
 
                         # Datos para la tabla izquierda
                         _ids_tbl = list(_pivot_z_p.index)
+                        def _t(s, n):
+                            s = str(s)
+                            return s[:n - 1] + "…" if len(s) > n else s
+
                         _ind_tbl = [
-                            str(_meta_p.loc[k, "Indicador"])[:55]
+                            _t(_meta_p.loc[k, "Indicador"], 38)
                             if k in _meta_p.index and "Indicador" in _meta_p.columns
                             else str(k)
                             for k in _ids_tbl
                         ]
                         _sub_tbl = [
-                            str(_meta_p.loc[k, "Subproceso"])[:40]
+                            _t(_meta_p.loc[k, "Subproceso"], 24)
                             if k in _meta_p.index and "Subproceso" in _meta_p.columns
                             else ""
                             for k in _ids_tbl
@@ -1630,6 +1684,13 @@ with tab_calor:
                             ),
                         ), row=1, col=2)
 
+                        # El header de go.Table ocupa ~35px; desplazar el dominio Y
+                        # del heatmap para que las filas de datos queden alineadas
+                        _hdr_h    = 35
+                        _margin_v = 20  # t=10 + b=10
+                        _paper_h  = max(_fig_h - _margin_v, 1)
+                        _hdr_frac = _hdr_h / _paper_h   # fracción del header en paper
+
                         _fig_p.update_layout(
                             width=_total_w,
                             height=_fig_h,
@@ -1643,6 +1704,7 @@ with tab_calor:
                             row=1, col=2,
                         )
                         _fig_p.update_yaxes(
+                            domain=[0, 1 - _hdr_frac],
                             autorange="reversed",
                             showticklabels=False,
                             row=1, col=2,
