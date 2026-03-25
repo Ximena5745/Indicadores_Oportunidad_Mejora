@@ -19,6 +19,7 @@ from datetime import date as _date
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 from components.charts import exportar_excel, panel_detalle_indicador
@@ -1546,25 +1547,75 @@ with tab_calor:
                         )
 
                         _meta_p = _dfc_p.drop_duplicates("Id", keep="last").set_index("Id")
-                        _ylabels_p = []
-                        for _kid in _pivot_z_p.index:
-                            _ind = str(_meta_p.loc[_kid, "Indicador"])[:50] \
-                                   if _kid in _meta_p.index and "Indicador" in _meta_p.columns else _kid
-                            _ylabels_p.append(f"{_kid} — {_ind}")
 
-                        _row_h    = 28 if len(_pivot_z_p) > 30 else 34
+                        _row_h    = 28 if len(_pivot_z_p) > 30 else 32
                         _n_cols_p = len(_pivot_z_p.columns)
 
-                        # Ancho fijo según contenido: etiquetas + columnas de datos
-                        _max_lbl  = max((len(l) for l in _ylabels_p), default=20)
-                        _label_w  = min(max(_max_lbl * 6, 200), 340)
-                        _col_w    = 90   # px por columna de datos
-                        _fig_w    = _label_w + _n_cols_p * _col_w + 40
+                        # Datos para la tabla izquierda
+                        _ids_tbl = list(_pivot_z_p.index)
+                        _ind_tbl = [
+                            str(_meta_p.loc[k, "Indicador"])[:55]
+                            if k in _meta_p.index and "Indicador" in _meta_p.columns
+                            else str(k)
+                            for k in _ids_tbl
+                        ]
+                        _sub_tbl = [
+                            str(_meta_p.loc[k, "Subproceso"])[:40]
+                            if k in _meta_p.index and "Subproceso" in _meta_p.columns
+                            else ""
+                            for k in _ids_tbl
+                        ]
+                        _row_fill = [
+                            "#F4F6F9" if i % 2 == 0 else "white"
+                            for i in range(len(_ids_tbl))
+                        ]
 
-                        _fig_p = go.Figure(go.Heatmap(
+                        # Anchos en px: tabla fija + columnas de datos
+                        _id_w, _ind_w, _sub_w = 55, 230, 150
+                        _tbl_w  = _id_w + _ind_w + _sub_w          # 435
+                        _col_w  = 90
+                        _heat_w = _n_cols_p * _col_w
+                        _total_w = _tbl_w + _heat_w + 30
+                        _tbl_frac  = _tbl_w  / (_tbl_w + _heat_w)
+                        _heat_frac = _heat_w / (_tbl_w + _heat_w)
+                        _fig_h = max(320, len(_pivot_z_p) * _row_h + 80)
+
+                        _fig_p = make_subplots(
+                            rows=1, cols=2,
+                            column_widths=[_tbl_frac, _heat_frac],
+                            horizontal_spacing=0.004,
+                            specs=[[{"type": "table"}, {"type": "heatmap"}]],
+                        )
+
+                        # ── Tabla Id / Indicador / Subproceso ─────────────────
+                        _fig_p.add_trace(go.Table(
+                            header=dict(
+                                values=["<b>ID</b>", "<b>Indicador</b>", "<b>Subproceso</b>"],
+                                fill_color="#1A3A5C",
+                                font=dict(color="white", size=11),
+                                height=35,
+                                align=["center", "left", "left"],
+                                line=dict(color="white", width=1),
+                            ),
+                            cells=dict(
+                                values=[_ids_tbl, _ind_tbl, _sub_tbl],
+                                fill_color=[_row_fill, _row_fill, _row_fill],
+                                font=dict(size=10,
+                                          color=["#1A3A5C", "#222", "#555"]),
+                                height=_row_h,
+                                align=["center", "left", "left"],
+                                line=dict(color="#E8ECF0", width=0.5),
+                            ),
+                            columnwidth=[_id_w, _ind_w, _sub_w],
+                        ), row=1, col=1)
+
+                        # ── Heatmap ───────────────────────────────────────────
+                        _fig_p.add_trace(go.Heatmap(
                             z=_pivot_z_p.values.tolist(),
                             x=_pivot_z_p.columns.tolist(),
-                            y=_ylabels_p,
+                            y=list(range(len(_pivot_z_p))),
+                            customdata=[[_ids_tbl[i], _ind_tbl[i]]
+                                        for i in range(len(_ids_tbl))],
                             text=_z_text_p.values.tolist(),
                             texttemplate="%{text}",
                             textfont=dict(size=10),
@@ -1573,27 +1624,31 @@ with tab_calor:
                             showscale=False,
                             xgap=2, ygap=1,
                             hovertemplate=(
-                                "<b>%{y}</b><br>Cierre: <b>%{x}</b><br>"
+                                "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
+                                "Cierre: <b>%{x}</b><br>"
                                 "Cumplimiento: <b>%{text}</b><extra></extra>"
                             ),
-                        ))
+                        ), row=1, col=2)
+
                         _fig_p.update_layout(
-                            width=_fig_w,
-                            height=max(320, len(_pivot_z_p) * _row_h + 80),
-                            xaxis=dict(
-                                side="top", tickangle=0,
-                                tickfont=dict(size=11, color="#1A3A5C"),
-                                constrain="domain",
-                            ),
-                            yaxis=dict(
-                                autorange="reversed",
-                                tickfont=dict(size=10),
-                                constrain="domain",
-                            ),
-                            plot_bgcolor="white", paper_bgcolor="white",
-                            margin=dict(t=60, b=10, l=_label_w, r=20),
+                            width=_total_w,
+                            height=_fig_h,
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            margin=dict(t=10, b=10, l=5, r=10),
                         )
-                        st.plotly_chart(_fig_p, use_container_width=False, key=f"calor_{_perio}")
+                        _fig_p.update_xaxes(
+                            side="top", tickangle=0,
+                            tickfont=dict(size=11, color="#1A3A5C"),
+                            row=1, col=2,
+                        )
+                        _fig_p.update_yaxes(
+                            autorange="reversed",
+                            showticklabels=False,
+                            row=1, col=2,
+                        )
+                        st.plotly_chart(_fig_p, use_container_width=False,
+                                        key=f"calor_{_perio}")
 
                 # Exportar datos completos
                 st.download_button(
