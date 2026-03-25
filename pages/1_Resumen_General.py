@@ -1356,7 +1356,13 @@ with tab_con:
 # TAB MATRIZ DE CALOR
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_calor:
-    _df_cierres = _cargar_consolidado_cierres()
+    # Fuente: Consolidado Historico (= _raw), ya cargado al inicio de la página.
+    # Renombrar columnas a los nombres que espera este tab.
+    _df_cierres = (
+        _raw
+        .rename(columns={"fecha": "Fecha", "cumplimiento": "Cumplimiento"})
+        .copy()
+    )
 
     if _df_cierres.empty:
         st.info("Sin datos de cierres históricos.")
