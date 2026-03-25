@@ -1577,6 +1577,75 @@ def _dedup_cierres_por_año(ws):
 
 
 # ─────────────────────────────────────────────────────────────────────
+# REPARAR META VACÍA EN FILAS EXISTENTES
+# ─────────────────────────────────────────────────────────────────────
+
+def reparar_meta_vacia(ws, api_kawak_lookup, nombre=''):
+    """
+    Recorre filas existentes de la hoja y, para aquellas donde Meta es vacía
+    pero existe un valor en api_kawak_lookup, rellena la celda Meta.
+
+    También rellena Ejecucion cuando está vacía pero la fuente tiene dato.
+    Retorna el número de celdas Meta reparadas.
+    """
+    if not api_kawak_lookup:
+        return 0
+
+    cm = _build_col_map(ws)
+    idx_id    = cm.get('Id')
+    idx_fecha = cm.get('Fecha')
+    idx_meta  = cm.get('Meta')
+    idx_ejec  = cm.get('Ejecucion')
+    if not all([idx_id, idx_fecha, idx_meta, idx_ejec]):
+        return 0
+
+    n_meta = 0
+    n_ejec = 0
+    for row in ws.iter_rows(min_row=2, values_only=False):
+        if row[0].value is None:
+            continue
+        id_raw    = row[idx_id    - 1].value
+        fecha_raw = row[idx_fecha - 1].value
+        meta_cell = row[idx_meta  - 1]
+        ejec_cell = row[idx_ejec  - 1]
+
+        meta_val = meta_cell.value
+        ejec_val = ejec_cell.value
+
+        # Solo actuar si meta está vacía
+        if meta_val is not None and not (isinstance(meta_val, float) and np.isnan(meta_val)):
+            continue
+
+        try:
+            fecha_key = pd.to_datetime(fecha_raw).normalize()
+        except Exception:
+            continue
+
+        id_s = _id_str(id_raw)
+        vals = api_kawak_lookup.get((id_s, fecha_key))
+        if vals is None:
+            continue
+
+        meta_lookup, ejec_lookup = vals
+        if meta_lookup is not None:
+            meta_cell.value = meta_lookup
+            meta_cell.number_format = 'General'
+            n_meta += 1
+
+        # Reparar ejecucion si también está vacía
+        if (ejec_val is None or (isinstance(ejec_val, float) and np.isnan(ejec_val))) \
+                and ejec_lookup is not None:
+            ejec_cell.value = ejec_lookup
+            n_ejec += 1
+
+    if n_meta or n_ejec:
+        print(f"  [{nombre}] Meta reparada: {n_meta} celdas | Ejecucion reparada: {n_ejec} celdas")
+    else:
+        print(f"  [{nombre}] Sin Meta vacía reparable desde el lookup.")
+    return n_meta
+
+
+# ─────────────────────────────────────────────────────────────────────
 # ESCRITURA DE FILAS
 # ─────────────────────────────────────────────────────────────────────
 
@@ -2087,6 +2156,11 @@ def main():
     print("\n[6c] Limpiando Consolidado Cierres (solo 31/12 por Id+Año)...")
     ws_cierres = wb['Consolidado Cierres']
     limpiar_cierres_existentes(ws_cierres)
+
+    # ── 6d. Reparar Meta vacía en filas existentes ─────────────────
+    print("\n[6d] Reparando celdas Meta vacías en filas existentes...")
+    for _nombre_hoja in ('Consolidado Historico', 'Consolidado Semestral', 'Consolidado Cierres'):
+        reparar_meta_vacia(wb[_nombre_hoja], api_kawak_lookup, _nombre_hoja)
 
     # ── 7. Histórico ──────────────────────────────────────────────
     print("\n[7] Nuevos registros Historico...")
