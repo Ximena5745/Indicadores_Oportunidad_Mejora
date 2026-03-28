@@ -1,0 +1,84 @@
+[project]
+name = "Indicadores_Oportunidad_Mejora"
+
+# ── Reglas de negocio ─────────────────────────────────────────────
+# Editar aqui cada año. NO editar código Python.
+[business]
+año_cierre       = 2025
+ids_plan_anual   = ["373","390","414","415","416","417","418","420","469","470","471"]
+ids_tope_100     = ["208","218"]
+# IDs que NO deben excluirse aunque no estén en el catálogo Kawak del año
+ids_siempre_validos = []
+
+[paths]
+base_dir = "."
+data_raw = "data/raw"
+data_output = "data/output"
+
+# Fuentes principales
+input_fuente_consolidado = "data/raw/Resultados_Consolidados_Fuente.xlsx"
+kawak_dir = "data/raw/Kawak"
+api_dir = "data/raw/API"
+fuentes_consolidadas_dir = "data/raw/Fuentes Consolidadas"
+
+# Artefactos esperados
+out_resultados_consolidados = "data/output/Resultados Consolidados.xlsx"
+out_seguimiento_reporte = "data/output/Seguimiento_Reporte.xlsx"
+
+# Archivos generados por consolidar_api.py
+out_kawak_catalogo = "data/raw/Fuentes Consolidadas/Indicadores Kawak.xlsx"
+out_api_consolidado = "data/raw/Fuentes Consolidadas/Consolidado_API_Kawak.xlsx"
+
+[pipeline]
+# Orden de ejecucion del pipeline
+steps = ["consolidar_api", "actualizar_consolidado", "generar_reporte"]
+
+[run]
+# Carpeta donde se guardan reportes y logs del pipeline
+artifacts_dir = "artifacts"
+
+[checks]
+# Validaciones basicas post-ejecucion (sin dependencias extra)
+required_outputs = [
+  "data/raw/Fuentes Consolidadas/Indicadores Kawak.xlsx",
+  "data/raw/Fuentes Consolidadas/Consolidado_API_Kawak.xlsx",
+  "data/output/Resultados Consolidados.xlsx",
+  "data/output/Seguimiento_Reporte.xlsx",
+]
+
+# Hojas que se esperan en los excels principales
+resultados_consolidados_required_sheets = [
+  "Consolidado Historico",
+  "Consolidado Semestral",
+  "Consolidado Cierres",
+  "Catalogo Indicadores",
+]
+
+seguimiento_reporte_required_sheets = [
+  "Tracking Mensual",
+]
+
+# ── Agente Claude ────────────────────────────────────────────────────
+[agent]
+# Modelo Claude a usar para diagnóstico de fallos
+model = "claude-opus-4-6"
+# Máximo de tokens en la respuesta del agente
+max_tokens = 2048
+# Máximo de caracteres de logs enviados al agente
+max_log_chars = 12000
+# Si True, el agente intenta sugerir y aplicar hotfixes simples
+enable_hotfix = false
+
+# ── Programación automática ──────────────────────────────────────────
+[schedule]
+# Expresión cron (GitHub Actions): día 5 de cada mes a las 06:00 UTC
+cron = "0 6 5 * *"
+# Rama donde se hace commit de resultados
+branch = "main"
+# Archivos a incluir en el commit automático
+commit_paths = [
+  "data/output/",
+  "data/raw/Fuentes Consolidadas/",
+  "artifacts/",
+]
+commit_message = "chore(data): actualizar consolidado automático [{date}]"

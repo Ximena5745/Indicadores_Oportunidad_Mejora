@@ -1,0 +1,66 @@
+{
+  "run_id": "20260326_000137",
+  "settings": "config\\settings.toml",
+  "base_dir": "C:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora",
+  "elapsed_total_s": 0.0,
+  "ok": false,
+  "steps": [],
+  "checks": {
+    "missing_outputs": [],
+    "sheets": {
+      "resultados_consolidados": {
+        "path": "data\\output\\Resultados Consolidados.xlsx",
+        "ok": true,
+        "sheet_count": 10,
+        "missing_sheets": []
+      },
+      "seguimiento_reporte": {
+        "path": "data\\output\\Seguimiento_Reporte.xlsx",
+        "ok": true,
+        "sheet_count": 10,
+        "missing_sheets": []
+      },
+      "fuentes_consolidadas_kawak_catalogo": {
+        "path": "data\\raw\\Fuentes Consolidadas\\Indicadores Kawak.xlsx",
+        "ok": true,
+        "sheet_count": null,
+        "missing_sheets": []
+      },
+      "fuentes_consolidadas_api_consolidado": {
+        "path": "data\\raw\\Fuentes Consolidadas\\Consolidado_API_Kawak.xlsx",
+        "ok": true,
+        "sheet_count": null,
+        "missing_sheets": []
+      }
+    }
+  },
+  "qa": {
+    "enabled": true,
+    "primary_checks": {
+      "resultados_consolidados": [
+        {
+          "sheet": "Consolidado Historico",
+          "rows": 2688,
+          "cols_count": 19,
+          "missing_required_columns_ci": []
+        }
+      ],
+      "seguimiento_reporte": [
+        {
+          "sheet": "Tracking Mensual",
+          "rows": 825,
+          "cols_count": 33,
+          "missing_required_columns_ci": []
+        }
+      ]
+    },
+    "previous_run": {
+      "run_id": "20260325_235435",
+      "report": "artifacts\\pipeline_run_20260325_235435.json"
+    }
+  },
+  "artifacts": {
+    "log": "artifacts\\pipeline_run_20260326_000137.log",
+    "report": "artifacts\\pipeline_run_20260326_000137.json"
+  }
+}

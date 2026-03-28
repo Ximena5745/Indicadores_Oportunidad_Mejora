@@ -1,0 +1,29 @@
+# Contrato minimo de datos (fase 1)
+#
+# Nota: en fase 1 el orquestador valida lo esencial SIN parsear YAML
+# (para evitar dependencias nuevas). Este archivo sirve como referencia
+# y sera activado en fase 2 al agregar un parser (o migrarlo a TOML/JSON).
+#
+# Archivos / Hojas esperadas
+
+resultados_consolidados:
+  path: data/output/Resultados Consolidados.xlsx
+  required_sheets:
+    - Consolidado Historico
+    - Consolidado Semestral
+    - Consolidado Cierres
+    - Catalogo Indicadores
+
+seguimiento_reporte:
+  path: data/output/Seguimiento_Reporte.xlsx
+  required_sheets:
+    - Tracking Mensual
+
+fuentes_consolidadas_kawak_catalogo:
+  path: data/raw/Fuentes Consolidadas/Indicadores Kawak.xlsx
+  required_sheets: []
+
+fuentes_consolidadas_api_consolidado:
+  path: data/raw/Fuentes Consolidadas/Consolidado_API_Kawak.xlsx
+  required_sheets: []
+

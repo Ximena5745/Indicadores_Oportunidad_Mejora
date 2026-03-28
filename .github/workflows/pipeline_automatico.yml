@@ -1,0 +1,231 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline Automático — Indicadores Oportunidad de Mejora
+#
+# CUÁNDO CORRE:
+#   • Automático: día 5 de cada mes a las 06:00 UTC
+#   • Manual:     Actions → "Run workflow" (permite elegir opciones)
+#
+# QUÉ HACE:
+#   1. Ejecuta el pipeline ETL (consolidar_api → actualizar_consolidado → generar_reporte)
+#      usando el agente Claude para diagnóstico inteligente si hay fallos
+#   2. Hace commit y push de los resultados actualizados al repositorio
+#   3. La app en Render/Azure se redespliega automáticamente al detectar el commit
+#
+# SECRETOS REQUERIDOS (Settings → Secrets and variables → Actions):
+#   • ANTHROPIC_API_KEY  — para diagnóstico inteligente de fallos (opcional)
+#
+# NOTA: Los datos fuente (data/raw/Kawak/, data/raw/API/) deben estar en el repo.
+#       Si se desea automatizar también la extracción desde Kawak, agregar las
+#       credenciales correspondientes como secrets adicionales.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Pipeline Automático — Indicadores
+
+on:
+  schedule:
+    # Día 5 de cada mes a las 06:00 UTC
+    - cron: "0 6 5 * *"
+
+  workflow_dispatch:
+    inputs:
+      use_agent:
+        description: "Usar Claude Agent (diagnóstico inteligente de fallos)"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Dry-run (no ejecuta scripts, solo valida configuración)"
+        type: boolean
+        default: false
+      commit_results:
+        description: "Hacer commit de resultados al repositorio"
+        type: boolean
+        default: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  PYTHONPATH: "."
+
+jobs:
+  # ── Job 1: Ejecutar pipeline ───────────────────────────────────────────────
+  run-pipeline:
+    name: Ejecutar Pipeline ETL
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # necesario para hacer commit + push de resultados
+
+    steps:
+      # 1. Checkout del repositorio completo
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Configurar Python
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # 3. Instalar dependencias
+      - name: Instalar dependencias
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # tomli para Python < 3.11 (ya incluye tomllib en 3.11+)
+          python -c "import tomllib" 2>/dev/null || pip install tomli
+
+      # 4. Validar configuración
+      - name: Validar configuración
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from scripts.etl.config import AÑO_CIERRE_ACTUAL, OUTPUT_FILE
+          print(f'Año cierre: {AÑO_CIERRE_ACTUAL}')
+          print(f'Output file: {OUTPUT_FILE}')
+          "
+
+      # 5. Ejecutar el agente (con Claude) o el pipeline directo
+      - name: Ejecutar pipeline con agente Claude
+        if: ${{ github.event.inputs.use_agent != 'false' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            EXTRA_FLAGS="--dry-run"
+          fi
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            EXTRA_FLAGS="$EXTRA_FLAGS --no-agent"
+            echo "::warning::ANTHROPIC_API_KEY no configurada — ejecutando sin diagnóstico Claude"
+          fi
+          python scripts/agent_runner.py --settings config/settings.toml $EXTRA_FLAGS
+
+      - name: Ejecutar pipeline directo (sin agente)
+        if: ${{ github.event.inputs.use_agent == 'false' }}
+        run: |
+          FLAGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="--no-exec"
+          fi
+          python scripts/run_pipeline.py --settings config/settings.toml $FLAGS
+
+      # 6. Subir artefactos (logs, reportes JSON) siempre — incluso en fallo
+      - name: Subir artefactos de corrida
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-artifacts-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 30
+
+      # 7. Commit y push de los resultados actualizados
+      - name: Commit resultados al repositorio
+        if: >
+          success() &&
+          github.event.inputs.dry_run != 'true' &&
+          github.event.inputs.commit_results != 'false'
+        run: |
+          git config user.name  "pipeline-bot[bot]"
+          git config user.email "pipeline-bot@users.noreply.github.com"
+
+          # Agregar archivos de datos generados
+          git add --force \
+            "data/output/" \
+            "data/raw/Fuentes Consolidadas/" \
+            "artifacts/" \
+            2>/dev/null || true
+
+          # Solo hacer commit si hay cambios reales
+          if git diff --staged --quiet; then
+            echo "Sin cambios en los datos. No se genera commit."
+          else
+            DATE=$(date +'%Y-%m-%d')
+            git commit -m "chore(data): actualizar consolidado automático [${DATE}]
+
+          Ejecución automática del pipeline ETL.
+          Año cierre: $(python -c 'import sys; sys.path.insert(0,"."); from scripts.etl.config import AÑO_CIERRE_ACTUAL; print(AÑO_CIERRE_ACTUAL)')
+          Disparado por: ${{ github.event_name }}
+          Run ID: ${{ github.run_id }}"
+
+            git push origin ${{ github.ref_name }}
+            echo "::notice::Commit realizado con resultados actualizados."
+          fi
+
+      # 8. Notificación de fallo con contexto
+      - name: Reportar fallo
+        if: failure()
+        run: |
+          echo "::error title=Pipeline ETL Fallido::El pipeline falló en la corrida ${{ github.run_number }}."
+          echo "::error::Revisa los artefactos (artifacts/) para ver los logs detallados y el diagnóstico del agente."
+          # El artefacto agent_run_*.json contiene el diagnóstico completo de Claude
+          ls artifacts/ 2>/dev/null && cat artifacts/agent_run_*.json 2>/dev/null | python -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print('=== RESUMEN DEL AGENTE ===')
+          print(data.get('summary', 'sin resumen'))
+          for step in data.get('steps', []):
+              if not step.get('ok') and step.get('diagnosis'):
+                  print(f\"  Paso fallido: {step['name']}\")
+                  print(f\"  Causa: {step['diagnosis'].get('causa_raiz')}\")
+                  for p in step['diagnosis'].get('pasos_correctivos', []):
+                      print(f\"    - {p}\")
+          " 2>/dev/null || true
+
+  # ── Job 2: Verificación post-pipeline (separado, solo si job 1 tuvo éxito) ─
+  verify-outputs:
+    name: Verificar Outputs
+    runs-on: ubuntu-latest
+    needs: run-pipeline
+    if: success()
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Instalar dependencias mínimas
+        run: pip install pandas openpyxl
+
+      - name: Verificar hojas requeridas en outputs
+        run: |
+          python - <<'EOF'
+          from pathlib import Path
+          import pandas as pd, sys
+
+          checks = {
+              "data/output/Resultados Consolidados.xlsx": [
+                  "Consolidado Historico", "Consolidado Semestral",
+                  "Consolidado Cierres", "Catalogo Indicadores",
+              ],
+          }
+          errors = []
+          for path_str, required_sheets in checks.items():
+              p = Path(path_str)
+              if not p.exists():
+                  errors.append(f"Archivo no encontrado: {path_str}")
+                  continue
+              xl = pd.ExcelFile(str(p), engine="openpyxl")
+              for sheet in required_sheets:
+                  if sheet not in xl.sheet_names:
+                      errors.append(f"Hoja faltante '{sheet}' en {path_str}")
+                  else:
+                      df = xl.parse(sheet)
+                      print(f"  OK  {sheet}: {len(df)} filas")
+
+          if errors:
+              for e in errors:
+                  print(f"::error::{e}")
+              sys.exit(1)
+          else:
+              print("Todos los outputs verificados correctamente.")
+          EOF
