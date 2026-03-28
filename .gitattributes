@@ -1,2 +1,17 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Archivos binarios — no hacer diff de texto ni normalizar líneas
+*.xlsx  binary
+*.xls   binary
+*.xlsm  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+
+# Archivos de datos (no mostrar diff en PRs)
+data/output/*.xlsx    -diff
+data/raw/**/*.xlsx    -diff
+artifacts/*.json      text eol=lf
+artifacts/*.log       text eol=lf

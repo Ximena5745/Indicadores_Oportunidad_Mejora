@@ -1,0 +1,60 @@
+{
+  "run_id": "20260325_235435",
+  "settings": "config\\settings.toml",
+  "base_dir": "C:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora",
+  "elapsed_total_s": 294.068,
+  "ok": true,
+  "steps": [
+    {
+      "name": "consolidar_api",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 24.135,
+      "command": [
+        "C:\\Users\\ximen\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "C:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora\\scripts\\consolidar_api.py"
+      ]
+    },
+    {
+      "name": "actualizar_consolidado",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 239.014,
+      "command": [
+        "C:\\Users\\ximen\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "C:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora\\scripts\\actualizar_consolidado.py"
+      ]
+    },
+    {
+      "name": "generar_reporte",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 30.792,
+      "command": [
+        "C:\\Users\\ximen\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "C:\\Users\\ximen\\OneDrive\\Proyectos_DS\\Indicadores_Oportunidad_Mejora\\generar_reporte.py"
+      ]
+    }
+  ],
+  "checks": {
+    "missing_outputs": [],
+    "sheets": {
+      "resultados_consolidados": {
+        "path": "data\\output\\Resultados Consolidados.xlsx",
+        "ok": true,
+        "sheet_count": 10,
+        "missing_sheets": []
+      },
+      "seguimiento_reporte": {
+        "path": "data\\output\\Seguimiento_Reporte.xlsx",
+        "ok": true,
+        "sheet_count": 10,
+        "missing_sheets": []
+      }
+    }
+  },
+  "artifacts": {
+    "log": "artifacts\\pipeline_run_20260325_235435.log",
+    "report": "artifacts\\pipeline_run_20260325_235435.json"
+  }
+}
