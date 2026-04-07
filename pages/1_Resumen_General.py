@@ -687,8 +687,13 @@ def _preparar_datos_por_fecha(df_all: pd.DataFrame, anio: int, mes: str) -> pd.D
     df["Ejecucion_fmt"] = df.apply(
         lambda r: _fmt_valor(r.get("Ejecucion"), _signo_fmt(r, "Ejec_Signo"), r.get("Dec_Ejec")), axis=1)
 
-    df["Fecha reporte"] = df["fecha"].dt.strftime("%d/%m/%Y").fillna("—") \
-                          if "fecha" in df.columns else "—"
+    # Asegurar dtype datetime después de operaciones (concat/merge) que pueden
+    # haber convertido la columna a object. Esto evita errores al usar el accesor .dt
+    if "fecha" in df.columns:
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+        df["Fecha reporte"] = df["fecha"].dt.strftime("%d/%m/%Y").fillna("—")
+    else:
+        df["Fecha reporte"] = "—"
 
     # ── Paso 2: Join mapa → Proceso real + Vicerrectoría ────────────────────
     mapa = _cargar_mapa()
