@@ -26,10 +26,5 @@ EMBEDDED_MODE = os.getenv("POWER_APPS_EMBEDDED", "").strip().lower() in {
 # único entrypoint. La función _new_main() ejecuta st.navigation() que bloquea act.
 from streamlit_app.main import main as _new_main
 
-# Mostrar commit actual en la UI para diagnóstico de despliegue
-commit_sha = _get_git_commit_short()
-with st.sidebar:
-    st.markdown("**Versión (commit):**")
-    st.code(commit_sha)
-
+# El entrypoint delega a la nueva UI sin elementos de diagnóstico en el sidebar.
 _new_main()

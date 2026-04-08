@@ -15,7 +15,7 @@ class KPIRow:
         for col, (title, value, sub, tone) in zip(cols, self.kpis):
             with col:
                 st.markdown(
-                    f"<div class='kpi-card'><div class='label'>{title}</div><div class='value {tone}'>{value}</div><div class='sub'>{sub}</div></div>",
+                    f"<div class='kpi-card {tone}'><div class='label'>{title}</div><div class='value'>{value}</div><div class='sub'>{sub}</div></div>",
                     unsafe_allow_html=True,
                 )
 

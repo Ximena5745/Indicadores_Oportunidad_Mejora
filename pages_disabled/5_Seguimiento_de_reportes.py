@@ -282,6 +282,7 @@ tabs = st.tabs(nombres_tabs)
 # TAB 0 — RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 with tabs[0]:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     st.markdown("### Vista Resumen")
 
     # ── KPIs ────────────────────────────────────────────────────────────────────
@@ -495,11 +496,13 @@ with tabs[0]:
                 )
         else:
             st.success("✅ No hay indicadores pendientes de reporte en el período seleccionado.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 — CONSOLIDADO
 # ─────────────────────────────────────────────────────────────────────────────
 with tabs[1]:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     st.markdown("### Tabla Consolidada")
     st.caption(
         f"**{len(df_sel):,}** registros para "
@@ -579,6 +582,7 @@ with tabs[1]:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="exp_consolidado",
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TABS DE PERIODICIDAD (tabs[2+])
@@ -587,6 +591,7 @@ for tab_idx, perio_nombre in enumerate(_perios_disp, 2):
     df_p = df_active[df_active[COL_PERIO] == perio_nombre].copy()
 
     with tabs[tab_idx]:
+        st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
         st.markdown(f"### {perio_nombre}")
 
         if df_p.empty:
@@ -732,3 +737,4 @@ for tab_idx, perio_nombre in enumerate(_perios_disp, 2):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"exp_{perio_nombre}",
         )
+        st.markdown("</div>", unsafe_allow_html=True)

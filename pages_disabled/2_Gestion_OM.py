@@ -308,6 +308,7 @@ def _modal_registro_om(id_indicador: str):
 # TÍTULO PRINCIPAL
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("# Gestión de Oportunidades de Mejora")
+st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
 
 # ── Filtros globales (siempre visibles, dependientes en cascada) ──────────────
 _col_proc_gom = "ProcesoPadre" if "ProcesoPadre" in df_raw.columns else "Proceso"
@@ -369,6 +370,7 @@ df_ultimo    = obtener_ultimo_registro(df)
 df_con_datos = df_ultimo[df_ultimo["Cumplimiento_norm"].notna()]
 om_dict      = registros_om_como_dict()
 
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -401,6 +403,7 @@ tab1, tab2 = st.tabs([
 # TAB 1 — IDENTIFICACIÓN + REGISTRO OM (modal)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab1:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     total = len(df_con_datos)
 
     # ── Semáforo ──────────────────────────────────────────────────────────────
@@ -641,12 +644,14 @@ with tab1:
         pass
     if st.session_state.gom_modal_id and (_tabla_tiene_sel or _hay_sel_top10):
         _modal_registro_om(st.session_state.gom_modal_id)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — SEGUIMIENTO DE OM
 # ══════════════════════════════════════════════════════════════════════════════
 with tab2:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     if df_om_xl.empty:
         st.error("No se encontró **OM.xlsx** en `data/raw/`.")
         st.stop()
@@ -998,3 +1003,4 @@ with tab2:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="gom2_exp_ret",
                     )
+    st.markdown("</div>", unsafe_allow_html=True)

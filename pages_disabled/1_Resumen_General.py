@@ -876,6 +876,7 @@ def _estilo_nivel(row):
 
 st.markdown("# 🏠 Reporte de Cumplimiento")
 st.caption("Fuente: **Resultados Consolidados.xlsx** · Hoja: Consolidado Historico · Solo indicadores de Kawak")
+st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
 
 # Carga de datos
 _raw = _cargar_consolidados()
@@ -1018,8 +1019,10 @@ if _f_nom.strip() and "Indicador" in df_prev.columns:
 if _f_tipo and "Tipo_Registro" in df_prev.columns:
     df_prev = df_prev[df_prev["Tipo_Registro"].astype(str).str.strip() == _f_tipo]
 
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("---")
 
+st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
 # ── KPIs con comparativa ──────────────────────────────────────────────────────
 total = len(df_raw)
 cnts  = df_raw["Nivel de cumplimiento"].value_counts()
@@ -1090,6 +1093,7 @@ if not df_prev.empty:
             f"📉 **{n_peor}** empeoraron · respecto al período anterior"
         )
 
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
@@ -1102,6 +1106,7 @@ tab_res, tab_con, tab_calor, tab_cierres = st.tabs([
 # TAB RESUMEN — Gráficas principales
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_res:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     st.markdown("### Distribución General de Cumplimiento")
     gr1, gr2 = st.columns([1, 2])
     with gr1:
@@ -1172,12 +1177,14 @@ with tab_res:
             st.info("Sin datos de Clasificación disponibles.")
     else:
         st.info("Columna Clasificación no encontrada. Verifique el Catálogo de Indicadores.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB CONSOLIDADO — Gráficas interactivas como filtros + tabla
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_con:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     # Usar los mismos datos del período seleccionado en el encabezado
     df_con = df_raw.copy()
 
@@ -1364,12 +1371,14 @@ with tab_con:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="exp_cumplimiento",
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB MATRIZ DE CALOR
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_calor:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     # Fuente: Consolidado Historico (= _raw), ya cargado al inicio de la página.
     # Renombrar columnas a los nombres que espera este tab.
     _df_cierres = (
@@ -1729,7 +1738,7 @@ with tab_calor:
 
                 # Exportar datos completos
                 st.download_button(
-                    "📥 Exportar Excel",
+                    "📥 Exportar datos completos",
                     data=exportar_excel(
                         _dfc[["Id"] + [c for c in _dfc.columns
                                        if c not in ("_col_label", "_año")]].drop_duplicates(),
@@ -1739,12 +1748,14 @@ with tab_calor:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="exp_matriz_c",
                 )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB CONSOLIDADO CIERRES
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_cierres:
+    st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     _df_cierres_t = _cargar_consolidado_cierres()
 
     if _df_cierres_t.empty:
@@ -1855,3 +1866,4 @@ with tab_cierres:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="exp_cierres_c",
         )
+        st.markdown("</div>", unsafe_allow_html=True)
