@@ -46,8 +46,7 @@ def main():
 
     # Configuración del sidebar
     with st.sidebar:
-        commit = _get_git_commit_short()
-        header_html = f"""
+        header_html = """
 <div class='sidebar-header'>
   <div class='sidebar-logo'>
     <svg width='28' height='28' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
@@ -72,12 +71,11 @@ def main():
             default_index=0,
         )
 
-        footer_html = f"""
+        footer_html = """
 <div class='sidebar-status-card' style='margin-top:24px;'>
   <div class='sidebar-status-title'>Pipeline</div>
   <div class='sidebar-status-value'>QA 89% · 87 indicadores</div>
   <div class='sidebar-status-meta'>Últ. ejec: hoy 06:00</div>
-  <div class='version-box' style='margin-top:12px;'>Commit: {commit}</div>
 </div>
 """
         st.markdown(footer_html, unsafe_allow_html=True)
