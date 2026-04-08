@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_extras.switch_page_button import switch_page
 
 st.set_page_config(page_title="Sistema de Indicadores", layout="wide")
 
@@ -14,7 +15,6 @@ h2, h3 { color: #1565C0; }
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-
 def main():
     with st.sidebar:
         st.markdown("---")
@@ -23,24 +23,32 @@ def main():
             st.success("Datos actualizados.")
         st.markdown("---")
 
-    pages = {
-        "Resumen estrategico": [
-            st.Page("pages/cmi_estrategico.py", title="CMI Estrategico", icon="📈"),
-            st.Page("pages/pdi_acreditacion.py", title="PDI / Acreditacion", icon="🏛️"),
-            st.Page("pages/plan_mejoramiento.py", title="Plan de Mejoramiento", icon="📋"),
-        ],
-        "Resumen por procesos": [
-            st.Page("pages/resumen_por_proceso.py", title="Mapa de procesos", icon="🗺️"),
-        ],
-        "Seguimiento operativo": [
-            st.Page("pages/5_Seguimiento_de_reportes.py", title="Seguimiento reportes", icon="📊"),
-            st.Page("pages/2_Gestion_OM.py", title="Gestion de OM", icon="⚠️"),
-            st.Page("pages/4_Registro_OM.py", title="Registro OM", icon="📝"),
-        ],
-    }
-    pg = st.navigation(pages)
-    pg.run()
+        # Sidebar navigation
+        section = st.radio("Navegación", ["Resumen estratégico", "Resumen por procesos", "Seguimiento operativo"], index=0)
 
+    # Main content based on selected section
+    if section == "Resumen estratégico":
+        tab = st.tabs(["CMI Estratégico", "PDI / Acreditación", "Plan de Mejoramiento"])
+        with tab[0]:
+            switch_page("pages/cmi_estrategico.py")
+        with tab[1]:
+            switch_page("pages/pdi_acreditacion.py")
+        with tab[2]:
+            switch_page("pages/plan_mejoramiento.py")
+
+    elif section == "Resumen por procesos":
+        tab = st.tabs(["Mapa de procesos"])
+        with tab[0]:
+            switch_page("pages/resumen_por_proceso.py")
+
+    elif section == "Seguimiento operativo":
+        tab = st.tabs(["Seguimiento reportes", "Gestión de OM", "Registro OM"])
+        with tab[0]:
+            switch_page("pages/5_Seguimiento_de_reportes.py")
+        with tab[1]:
+            switch_page("pages/2_Gestion_OM.py")
+        with tab[2]:
+            switch_page("pages/4_Registro_OM.py")
 
 if __name__ == "__main__":
     main()

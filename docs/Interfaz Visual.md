@@ -38,8 +38,6 @@ Quiero que diseñes el módulo replicando la lógica y la sofisticación de un d
    - organización del estado,
    - estrategia de datos mock,
    - y plan para MVP.
-8. Si detectas ambigüedades, resuélvelas con criterio arquitectónico y explícitalo.
-9. Prioriza diseño ejecutivo, mantenibilidad del código y escalabilidad.
 
 ---
 
@@ -78,19 +76,8 @@ Quiero una interfaz:
 ## Estética general
 La interfaz debe mezclar:
 - sidebar oscura institucional,
-- topbar clara con efecto glass / translucidez,
-- tarjetas blancas o gris muy claro,
-- indicadores con colores vibrantes controlados,
-- banner superior IA con gradiente llamativo pero elegante,
-- iconografía simple tipo Material Symbols,
-- tipografías modernas,
-- espaciado consistente,
-- bordes suaves,
-- hover sutil,
-- badges de estado,
-- chips de filtro,
-- tabs internas,
-- y paneles contextuales.
+- colores corporativos,
+- y gráficos interactivos con animaciones suaves.
 
 ## Tipografía sugerida
 - Títulos: Manrope o equivalente sans-serif de alto peso visual.
@@ -820,4 +807,3 @@ Devuelve la respuesta exactamente en este orden:
 Además, al final agrega un apartado extra llamado:
 ## “Siguiente paso”
 donde indiques qué prompt debería usarse a continuación para pedirte el scaffold inicial en Streamlit.
-``
