@@ -31,13 +31,40 @@ def _inject_styles():
             pass
 
 
+def _get_git_commit_short():
+    import subprocess, os
+    try:
+        p = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
+        return p.stdout.strip()
+    except Exception:
+        return os.getenv("GIT_COMMIT", "unknown")
+
+
 def main():
     _inject_styles()
+
     # Configuración del sidebar
     with st.sidebar:
-        st.title("Sistema de Indicadores")
-        st.markdown("Politécnico Grancolombiano · v2.0 Estratégico")
-        st.markdown("---")
+        # Encabezado personalizado con logo y versión
+        commit = _get_git_commit_short()
+        header_html = f"""
+<div class='sidebar-header'>
+  <div class='sidebar-logo'>
+    <!-- Inline SVG genérico del Poli -->
+    <svg width='28' height='28' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+      <rect width='24' height='24' rx='4' fill='#ffffff22'/>
+      <text x='12' y='16' font-size='10' text-anchor='middle' fill='white' font-family='Arial' font-weight='700'>PG</text>
+    </svg>
+  </div>
+  <div>
+    <div class='sidebar-title'>Sistema de Indicadores</div>
+    <div class='sidebar-subtitle'>Politécnico Grancolombiano · v2.0 Estratégico</div>
+  </div>
+</div>
+<div class='version-box'>Versión: {commit}</div>
+<hr style='border:none;margin:12px 0;border-top:1px solid rgba(255,255,255,0.06)' />
+"""
+        st.markdown(header_html, unsafe_allow_html=True)
 
         # Menú principal — solo se muestran las secciones principales.
         menu = option_menu(
