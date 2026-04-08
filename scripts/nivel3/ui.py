@@ -58,6 +58,49 @@ def render_cmi_by_process(latest: pd.DataFrame, mapping: pd.DataFrame):
         st.plotly_chart(fig, use_container_width=True)
 
 
+def render_cmi_estrategico(latest: pd.DataFrame, mapping: pd.DataFrame):
+    """Renderiza el CMI Estratégico (PDI): Linea -> Objetivo -> Meta estratégica y desglose de indicadores."""
+    st.subheader('CMI Estratégico (PDI)')
+    if mapping is None or mapping.empty:
+        st.info('No hay mapeo CMI disponible (indicadores_cmi_mapping_v2.csv)')
+        return
+
+    # Asegurar columnas clave
+    have = mapping.columns.tolist()
+    for req in ['Linea', 'Objetivo', 'Meta']:
+        if req not in have:
+            st.info(f'El mapeo no contiene la columna `{req}`; revisar `Indicadores por CMI.xlsx`.')
+            return
+
+    # Agrupar por Linea/Objetivo
+    map_df = mapping.copy()
+    map_df['Meta'] = pd.to_numeric(map_df['Meta'], errors='coerce')
+    agg = map_df.groupby(['Linea', 'Objetivo']).agg(indicadores_count=('Id', 'nunique'), meta_mean=('Meta', 'mean')).reset_index()
+    agg['meta_mean'] = agg['meta_mean'].round(2)
+
+    # Treemap por Linea -> Objetivo (valor = cantidad de indicadores)
+    fig = px.treemap(agg, path=['Linea', 'Objetivo'], values='indicadores_count', color='meta_mean', color_continuous_scale='Blues', hover_data=['indicadores_count','meta_mean'])
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Desglose: al seleccionar Linea y Objetivo mostrar indicadores y su último cumplimiento
+    linea_sel = st.selectbox('Seleccionar Línea estratégica', options=sorted(map_df['Linea'].dropna().unique()))
+    objetivos = sorted(map_df.loc[map_df['Linea'] == linea_sel, 'Objetivo'].dropna().unique())
+    objetivo_sel = st.selectbox('Seleccionar Objetivo estratégico', options=objetivos)
+
+    subset = map_df[(map_df['Linea'] == linea_sel) & (map_df['Objetivo'] == objetivo_sel)]
+    ids = subset['Id'].astype(str).tolist()
+
+    # Tomar último cumplimiento desde latest
+    latest_df = latest.copy() if latest is not None else pd.DataFrame()
+    if not latest_df.empty and 'Id' in latest_df.columns:
+        latest_df['Id'] = latest_df['Id'].astype(str)
+        sel = latest_df[latest_df['Id'].isin(ids)][['Id','Indicador'] + ([c for c in ['Cumplimiento','Fecha','Meta'] if c in latest_df.columns])]
+        st.markdown(f'Indicadores en {linea_sel} → {objetivo_sel}: {len(sel)}')
+        st.dataframe(sel.sort_values(by=['Cumplimiento'], ascending=True).head(200))
+    else:
+        st.write(subset[['Id','Indicador','Meta']].rename(columns={'Meta':'Meta Estratégica'}))
+
+
 def render_summary(kpis: dict):
     cols = st.columns(len(kpis))
     for i, (k, v) in enumerate(kpis.items()):
@@ -114,7 +157,8 @@ def render_qc_panel():
 
 
 def main():
-    st.set_page_config(layout='wide', page_title='Tablero Estratégico Operativo (Nivel 3)')
+    # Deshabilitando configuración de página para evitar interferencias
+    # st.set_page_config(layout='wide', page_title='Tablero Estratégico Operativo (Nivel 3)')
     st.title('Tablero Estratégico Operativo — Nivel 3')
 
     # Cargar datos
@@ -133,9 +177,12 @@ def main():
         '% registros fallidos QC': '—',
     }
 
-    tab_cmi, tab_res, tab_kanban, tab_tabla, tab_om, tab_qc = st.tabs(['CMI por Proceso','Resumen','Kanban','Consolidado','OM','QC'])
+    tab_cmi_estr, tab_cmi_proc, tab_res, tab_kanban, tab_tabla, tab_om, tab_qc = st.tabs(['CMI Estratégico (PDI)','CMI por Proceso','Resumen','Kanban','Consolidado','OM','QC'])
 
-    with tab_cmi:
+    with tab_cmi_estr:
+        render_cmi_estrategico(latest, mapping)
+
+    with tab_cmi_proc:
         render_cmi_by_process(latest, mapping)
 
     with tab_res:

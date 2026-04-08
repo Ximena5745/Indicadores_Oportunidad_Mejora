@@ -108,7 +108,8 @@ def derive_status(df: pd.DataFrame, green_thresh: float = 0.95, yellow_thresh: f
 
 
 def main():
-    st.set_page_config(layout="wide", page_title="Prototipo Nivel 3 — Operativo")
+    # Deshabilitando configuración de página para evitar interferencias
+    # st.set_page_config(layout="wide", page_title="Prototipo Nivel 3 — Operativo")
     st.title("Prototipo Nivel 3 — Operativo y Calidad")
 
     # Load data

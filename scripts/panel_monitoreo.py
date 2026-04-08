@@ -79,11 +79,12 @@ def cargar_historico() -> pd.DataFrame:
 # =============================================================================
 
 def main():
-    st.set_page_config(
-        page_title="Monitoreo de Cargas - SGIND",
-        page_icon="📊",
-        layout="wide"
-    )
+    # Deshabilitando configuración de página para evitar interferencias
+    # st.set_page_config(
+    #     page_title="Monitoreo de Cargas - SGIND",
+    #     page_icon="📊",
+    #     layout="wide"
+    # )
     
     st.title("📊 Panel de Monitoreo de Cargas")
     st.markdown("---")

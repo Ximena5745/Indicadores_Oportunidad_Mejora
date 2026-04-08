@@ -80,7 +80,7 @@ for _k, _v in [
         st.session_state[_k] = _v
 
 # ── Sidebar — Filtros ──────────────────────────────────────────────────────────
-st.sidebar.markdown("## Filtros")
+# st.sidebar.markdown("## Filtros")
 
 anios_disp  = sorted(df_raw["Anio"].dropna().unique().tolist()) if "Anio" in df_raw.columns else []
 default_año = [2025] if 2025 in anios_disp else (anios_disp[-1:] if anios_disp else [])
@@ -88,6 +88,7 @@ anios_sel   = st.sidebar.multiselect("Año", options=anios_disp, default=default
 
 meses_disp = sorted(df_raw["Mes"].dropna().unique().tolist()) if "Mes" in df_raw.columns else []
 meses_sel  = st.sidebar.multiselect("Mes", options=meses_disp, default=[])
+
 
 df = df_raw.copy()
 if anios_sel:
