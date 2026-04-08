@@ -1,3 +1,31 @@
 .kpi-value { font-size:24px; font-weight:700; }
 .sidebar-box { background:#ffffff; border-radius:8px; padding:10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
 .topbar { padding: 12px 0; }
+
+/* Import suggested fonts and apply base styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Manrope:wght@600;800&display=swap');
+html, body, [data-testid="stAppViewContainer"] {
+	font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+	background-color: #f8f9fa;
+	color: #191c1d;
+}
+
+/* Topbar styling */
+.topbar { background: transparent; padding: 12px 0; }
+.topbar .title { font-family: 'Manrope', Inter, sans-serif; font-weight: 700; font-size: 20px; color: #04122e; }
+
+/* Sidebar base */
+.stSidebar {
+	background: linear-gradient(180deg, #04122e 0%, #1a2744 100%);
+	color: #ffffff;
+}
+.stSidebar h1, .stSidebar h2, .stSidebar .css-1d391kg { color: #ffffff; }
+
+/* KPI cards */
+.kpi-card { background: #ffffff; border-radius: 8px; padding: 10px; }
+
+/* Utility classes */
+.muted { color: #45464d; }
+
+/* Accessibility: focus outlines */
+a:focus, button:focus { outline: 3px solid rgba(98,0,234,0.16); outline-offset: 2px; }
