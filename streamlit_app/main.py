@@ -23,29 +23,30 @@ def main():
         st.markdown("Politécnico Grancolombiano · v2.0 Estratégico")
         st.markdown("---")
 
-        # Menú principal extendido
+        # Menú principal — solo se muestran las secciones principales.
         menu = option_menu(
             menu_title="Navegación",
-            options=[
-                "Inicio estratégico",
-                "CMI Estratégico",
-                "PDI / Acreditación",
-                "Plan de Mejoramiento",
-                "Resumen por procesos",
-                "Seguimiento reportes",
-                "Gestión de OM",
-            ],
-            icons=["house", "bar-chart-2", "book", "list-task", "layers", "file-earmark-text", "clipboard-check"],
+            options=["Inicio estratégico", "Resumen por procesos", "Seguimiento operativo"],
+            icons=["house", "layers", "clipboard-check"],
             menu_icon="cast",
             default_index=0,
         )
 
     # Routing simple a páginas
     if menu == "Inicio estratégico":
-        # render main dashboard using components
+        # Inicio estratégico: mostrar pestañas internas CMI / PDI / Plan (no como páginas en sidebar)
         Topbar().render()
         Banner().render()
         KPIRow().render()
+        st.markdown("---")
+        # pestañas internas
+        tab_cmi, tab_pdi, tab_plan = st.tabs(["CMI Estratégico", "PDI / Acreditación", "Plan de Mejoramiento"])
+        with tab_cmi:
+            cmi_estrategico.render()
+        with tab_pdi:
+            pdi_acreditacion.render()
+        with tab_plan:
+            plan_mejoramiento.render()
         st.markdown("---")
         Charts(service=DataService()).draw_performance_chart()
 
@@ -59,13 +60,16 @@ def main():
         plan_mejoramiento.render()
 
     elif menu == "Resumen por procesos":
+        # Resumen por procesos se renderiza como una vista con sus propias pestañas (ya implementado en el módulo)
         resumen_por_proceso.render()
 
-    elif menu == "Seguimiento reportes":
-        _5_Seguimiento_de_reportes.render()
-
-    elif menu == "Gestión de OM":
-        _2_Gestion_OM.render()
+    elif menu == "Seguimiento operativo":
+        # Agrupar vistas operativas en pestañas internas
+        tab_a, tab_b = st.tabs(["Seguimiento reportes", "Gestión de OM"])
+        with tab_a:
+            _5_Seguimiento_de_reportes.render()
+        with tab_b:
+            _2_Gestion_OM.render()
 
 
 if __name__ == "__main__":
