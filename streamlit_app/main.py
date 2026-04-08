@@ -122,21 +122,26 @@ def main():
         if st.button("🔄 Actualizar datos", use_container_width=True):
             st.cache_data.clear()
             st.success("Datos actualizados.")
-        st.markdown("---")
-
-    # Navegación multipágina: incluimos páginas existentes desde carpeta `pages/`
+    # Navegación simplificada:
+    # - Resumen estratégico: CMI, PDI, Plan
+    # - Resumen por procesos: Mapa de procesos con tabs (el motor analítico/IA se integra aquí)
+    # - Seguimiento operativo: Reportes, Gestión OM, Registro OM
+    # - Direccionamiento y Auditorías se eliminan del menú → su estructura se integra
+    #   como tabs dentro de "Resumen por procesos" (selección multi-proceso)
+    # - Nivel 3 se elimina del menú.
     pages = {
-        "Dashboard": [
-            st.Page("streamlit_app/pages/inicio_estrategico.py", title="Inicio Estratégico", icon="🏁"),
-            st.Page("pages/5_Seguimiento_de_reportes.py",      title="Seguimiento de reportes",       icon="📊"),
-            st.Page("pages/1_Resumen_General.py",              title="Reporte de Cumplimiento",       icon="🏠"),
-            st.Page("pages/2_Gestion_OM.py",                   title="Gestión de Oportunidades (OM)", icon="⚠️"),
-            st.Page("pages/2_Indicadores_en_Riesgo.py",        title="Indicadores en riesgo",        icon="🚨"),
-            st.Page("pages/3_Acciones_de_Mejora.py",           title="Acciones de mejora",           icon="🛠️"),
-            st.Page("pages/4_Registro_OM.py",                  title="Registro OM",                  icon="📝"),
+        "Resumen estratégico": [
+            st.Page("pages/cmi_estrategico.py",       title="CMI Estratégico",      icon="📈"),
+            st.Page("pages/pdi_acreditacion.py",      title="PDI / Acreditación",   icon="🏛️"),
+            st.Page("pages/plan_mejoramiento.py",     title="Plan de Mejoramiento", icon="📋"),
         ],
-        "Informes especiales": [
-            st.Page("pages/6_Direccionamiento_Estrategico.py", title="Direccionamiento Estratégico",  icon="🏛️"),
+        "Resumen por procesos": [
+            st.Page("pages/resumen_por_proceso.py",   title="Mapa de procesos",     icon="🗺️"),
+        ],
+        "Seguimiento operativo": [
+            st.Page("pages/5_Seguimiento_de_reportes.py", title="Seguimiento reportes", icon="📊"),
+            st.Page("pages/2_Gestion_OM.py",               title="Gestión de OM",         icon="⚠️"),
+            st.Page("pages/4_Registro_OM.py",              title="Registro OM",           icon="📝"),
         ],
     }
 
