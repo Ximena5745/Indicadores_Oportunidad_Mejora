@@ -1,3 +1,11 @@
+streamlit>=1.20
+pandas
+plotly
+numpy
+pydantic
+kaleido
+reportlab
+Pillow
 streamlit>=1.36.0
 plotly>=5.22.0
 pandas>=2.2.2
