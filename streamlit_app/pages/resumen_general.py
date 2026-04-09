@@ -1148,8 +1148,6 @@ def render():
                 unsafe_allow_html=True,
             )
 
-    # Mostrar leyenda pequeña con total de indicadores para evitar confusión (una sola vez)
-    st.caption(f"Indicadores totales (Kawak): {total_indicadores} · Reportados en período: {total_reportados}")
     # total raw (incluye pendientes agregados) -> corresponde a Indicadores totales (Kawak)
     total = len(df_raw)
     # Contar cuantos indicadores tienen fecha (reportados) en el período
@@ -1157,6 +1155,8 @@ def render():
     # Intentar obtener el total real de indicadores desde Kawak (mejor fuente de verdad)
     kawak_df = _cargar_kawak_por_anio(anio_seleccionado)
     total_indicadores = int(len(kawak_df)) if not kawak_df.empty else total
+    # Mostrar leyenda pequeña con total de indicadores para evitar confusión (una sola vez)
+    st.caption(f"Indicadores totales (Kawak): {total_indicadores} · Reportados en período: {total_reportados}")
     # Asegurar que exista la columna 'Nivel de cumplimiento' (algunas fuentes pueden nombrarla distinto)
     if "Nivel de cumplimiento" not in df_raw.columns:
         if "cumplimiento" in df_raw.columns:
