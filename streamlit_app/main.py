@@ -17,19 +17,18 @@ from streamlit_app.pages import (
 st.set_page_config(page_title="Sistema de Indicadores", layout="wide")
 
 
-def _inject_styles():
-    """Carga e inyecta el CSS local en la cabecera de Streamlit."""
-    try:
-        css_path = "streamlit_app/styles/styles.css"
-        with open(css_path, "r", encoding="utf-8") as f:
-            css = f.read()
-        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-    except Exception:
-        # No bloquear la app si falla la carga de estilos
-        try:
-            st.warning("No se pudo cargar estilos locales (styles.css). Usando estilos por defecto.")
-        except Exception:
-            pass
+def load_css(file_path):
+    """Carga un archivo CSS y lo retorna como una cadena."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def main():
+    """Función principal de la aplicación Streamlit."""
+    # Carga de estilos
+    styles = load_css("streamlit_app/styles/main.css")
+    st.markdown(f"<style>{styles}</style>", unsafe_allow_html=True)
+    
+    data_service = DataService()
 
 
 def _load_sidebar_logo_html():

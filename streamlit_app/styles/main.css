@@ -1,0 +1,124 @@
+/* Estilos generales */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Estilo para el sidebar oscuro */
+aside[data-testid="stSidebar"] {
+    background-color: #0f172a !important;
+    border-right: 1px solid #1e293b;
+}
+
+/* Estilo para el texto y los iconos del sidebar */
+aside[data-testid="stSidebar"] a,
+aside[data-testid="stSidebar"] span,
+aside[data-testid="stSidebar"] div {
+    color: #e2e8f0 !important;
+}
+
+/* Resaltado para la página activa en el sidebar */
+aside[data-testid="stSidebar"] a[aria-current="page"] {
+    background-color: #1e293b;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+/* Estilo para los inputs y selects en el sidebar */
+aside[data-testid="stSidebar"] .stSelectbox,
+aside[data-testid="stSidebar"] .stTextInput,
+aside[data-testid="stSidebar"] .stDateInput {
+    background-color: #1e293b;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+aside[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div,
+aside[data-testid="stSidebar"] .stTextInput input,
+aside[data-testid="stSidebar"] .stDateInput input {
+    background-color: transparent !important;
+    color: #e2e8f0 !important;
+    border: none;
+}
+
+/* Ajuste del logo */
+aside[data-testid="stSidebar"] img {
+    max-width: 100%;
+    height: auto;
+    margin-bottom: 20px;
+}
+
+/* Estilo para los botones */
+.stButton>button {
+    border-radius: 8px !important;
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+}
+
+.stButton>button:hover {
+    background-color: #334155 !important;
+}
+
+/* Estilo para expanders */
+.stExpander {
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+
+/* Estilo para gráficos de Plotly - bordes redondeados */
+.js-plotly-plot .plotly {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Fondo para los gráficos */
+.js-plotly-plot {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+    border-radius: 12px !important;
+    padding: 8px !important;
+}
+
+/* Estilo para tablas de Streamlit */
+.stDataFrame {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+.stDataFrame > div > div > div > div {
+    border-radius: 12px !important;
+}
+
+/* Estilo para las filas de la tabla */
+.stDataFrame tbody tr {
+    transition: background-color 0.2s ease !important;
+}
+
+.stDataFrame tbody tr:hover {
+    background-color: #f8fafc !important;
+}
+
+/* Estilo para las celdas de encabezado */
+.stDataFrame thead th {
+    background-color: #f1f5f9 !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #cbd5e1 !important;
+    padding: 12px 8px !important;
+}
+
+/* Estilo para las celdas de datos */
+.stDataFrame tbody td {
+    padding: 8px 12px !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+}
+
+/* Reducir espaciado inicial */
+.stMarkdown p:first-child {
+    margin-top: 0 !important;
+}
+
+.stTitle {
+    margin-bottom: 1rem !important;
+}

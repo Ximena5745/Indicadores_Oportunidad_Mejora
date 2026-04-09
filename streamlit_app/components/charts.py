@@ -11,6 +11,10 @@ class Charts:
 
     def draw_performance_chart(self):
         df = self.service.get_timeseries()
+        if df.empty:
+            st.info("No hay datos de desempeño disponibles.")
+            return
+
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
@@ -18,6 +22,8 @@ class Charts:
                 y=df["value"],
                 name="Realizado",
                 marker_color="#325f99",
+                marker_line_color="#22476f",
+                marker_line_width=1,
                 hovertemplate="%{x|%b %Y}<br>Desempeño: %{y}<extra></extra>",
             )
         )
@@ -34,13 +40,12 @@ class Charts:
         )
         fig.update_layout(
             title="Curva de desempeño institucional",
-            template="plotly_white",
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             margin=dict(l=0, r=0, t=40, b=20),
-            xaxis=dict(showgrid=False, tickformat="%b %Y"),
-            yaxis=dict(showgrid=True, gridcolor="#eef2f7"),
+            xaxis=dict(showgrid=False, tickformat="%b %Y", zeroline=False),
+            yaxis=dict(showgrid=True, gridcolor="#e6edf5", zeroline=False),
         )
         st.plotly_chart(fig, use_container_width=True)
 

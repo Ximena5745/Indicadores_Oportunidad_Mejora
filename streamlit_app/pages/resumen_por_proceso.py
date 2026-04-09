@@ -1,12 +1,49 @@
 import unicodedata
-
 import pandas as pd
 import streamlit as st
 from streamlit_app.components import KPIRow
 from streamlit_app.services.data_service import DataService
+from streamlit_app.components.filters import render_filters
 
+# Meses en español para selección
+MESES_OPCIONES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+]
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _obtener_anios_disponibles(df: pd.DataFrame) -> list:
+    """Retorna lista de años disponibles en el dataset."""
+    if df.empty or "Año" not in df.columns:
+        return []
+    anios = sorted(df["Año"].dropna().unique().tolist())
+    return [int(a) for a in anios if not pd.isna(a)]
+
+
+def _obtener_periodo_default(df: pd.DataFrame):
+    if df.empty or "Año" not in df.columns or "Mes" not in df.columns:
+        return None, None
+
+    periodos = df[["Año", "Mes"]].dropna().copy()
+    if periodos.empty:
+        return None, None
+
+    periodos["Año"] = pd.to_numeric(periodos["Año"], errors="coerce")
+    periodos["Mes"] = pd.to_numeric(periodos["Mes"], errors="coerce")
+    periodos = periodos.dropna().astype(int)
+    if periodos.empty:
+        return None, None
+
+    ultimo = periodos.sort_values(["Año", "Mes"]).iloc[-1]
+    anio = int(ultimo["Año"])
+    mes_idx = int(ultimo["Mes"])
+    if mes_idx < 1 or mes_idx > len(MESES_OPCIONES):
+        return anio, None
+    return anio, MESES_OPCIONES[mes_idx - 1]
 
 def _normalize_text(value):
+# ... (el resto del archivo permanece igual)
+
     if value is None:
         return ""
     text = str(value).strip()
@@ -81,46 +118,81 @@ def render():
     map_df = map_df.dropna(subset=["Proceso"]).reset_index(drop=True)
     map_df["Tipo de proceso"] = map_df.get("Tipo de proceso", "").astype(str)
 
-    tipo_opts = ["Todos"] + sorted(map_df["Tipo de proceso"].dropna().unique().tolist())
-    unidad_opts = ["Todas"]
-    proceso_opts = ["Todos"]
-    subproceso_opts = ["Todos"]
+    # Obtener años disponibles
+    anios_disponibles = _obtener_anios_disponibles(df)
+    anio_default, mes_default = _obtener_periodo_default(df)
 
-    if tipo_opts:
-        col_tipo, col_unidad, col_proceso, col_subproceso = st.columns([1, 1, 1, 1])
-        with col_tipo:
-            tipo_proceso = st.selectbox("Tipo de proceso", tipo_opts, key="resumen_tipo_proceso")
-        if tipo_proceso != "Todos":
-            unidad_opts += sorted(map_df.loc[map_df["Tipo de proceso"] == tipo_proceso, "Unidad"].dropna().unique().tolist())
-        else:
-            unidad_opts += sorted(map_df["Unidad"].dropna().unique().tolist())
-        with col_unidad:
-            unidad = st.selectbox("Unidad", unidad_opts, key="resumen_unidad")
+    with st.expander("🔎 Filtros", expanded=False):
+        _rp_keys = [
+            "resumen_proceso_anio", "resumen_proceso_mes", "resumen_proceso_tipo_proceso",
+            "resumen_proceso_unidad", "resumen_proceso_proceso", "resumen_proceso_subproceso",
+        ]
+        if st.button("Limpiar filtros", key="resumen_proceso_clear"):
+            for _k in _rp_keys:
+                if _k in st.session_state:
+                    del st.session_state[_k]
+            st.rerun()
 
-        unidad_filter = map_df
-        if unidad != "Todas":
-            unidad_filter = unidad_filter[unidad_filter["Unidad"] == unidad]
+        filter_config = {
+            "anio": {
+                "label": "Año",
+                "options": anios_disponibles,
+                "include_all": False,
+                "default": anio_default or (anios_disponibles[-1] if anios_disponibles else None),
+            },
+            "mes": {
+                "label": "Mes",
+                "options": MESES_OPCIONES,
+                "include_all": False,
+                "default": mes_default or "Diciembre",
+            },
+            "tipo_proceso": {"label": "Tipo de proceso", "options": sorted(map_df["Tipo de proceso"].dropna().unique().tolist())},
+            "unidad": {"label": "Unidad", "options": sorted(map_df["Unidad"].dropna().unique().tolist())},
+            "proceso": {"label": "Proceso", "options": sorted(map_df["Proceso"].dropna().unique().tolist())},
+            "subproceso": {"label": "Subproceso", "options": sorted(map_df["Subproceso"].dropna().unique().tolist())}
+        }
 
-        proceso_opts += sorted(unidad_filter["Proceso"].dropna().unique().tolist())
-        with col_proceso:
-            proceso = st.selectbox("Proceso", proceso_opts, key="resumen_proceso")
+        selections = render_filters(
+            df if not df.empty else map_df,
+            filter_config,
+            key_prefix="resumen_proceso",
+            columns_per_row=3,
+        )
 
-        subproceso_filter = unidad_filter
-        if proceso != "Todos":
-            subproceso_filter = subproceso_filter[subproceso_filter["Proceso"] == proceso]
-        subproceso_opts += sorted(subproceso_filter["Subproceso"].dropna().unique().tolist())
-        with col_subproceso:
-            subproceso = st.selectbox("Subproceso", subproceso_opts, key="resumen_subproceso")
-    else:
-        tipo_proceso = "Todos"
-        unidad = "Todas"
-        proceso = "Todos"
-        subproceso = "Todos"
+        anio = selections.get("anio")
+        mes = selections.get("mes")
+        tipo_proceso = selections.get("tipo_proceso", "Todos")
+        unidad = selections.get("unidad", "Todos")
+        proceso = selections.get("proceso", "Todos")
+        subproceso = selections.get("subproceso", "Todos")
+
+    _activos = []
+    if anio:
+        _activos.append(f"Año: {anio}")
+    if mes:
+        _activos.append(f"Mes: {mes}")
+    if tipo_proceso != "Todos":
+        _activos.append(f"Tipo: {tipo_proceso}")
+    if unidad != "Todos":
+        _activos.append(f"Unidad: {unidad}")
+    if proceso != "Todos":
+        _activos.append(f"Proceso: {proceso}")
+    if subproceso != "Todos":
+        _activos.append(f"Subproceso: {subproceso}")
+    if _activos:
+        st.caption("Filtros activos: " + " · ".join(_activos))
 
     if df.empty:
         proc_df = pd.DataFrame()
     else:
         proc_df = df.copy()
+        
+        # Filtrar por fecha si se seleccionaron año y mes
+        if anio and mes:
+            mes_num = MESES_OPCIONES.index(mes) + 1
+            if "Año" in proc_df.columns and "Mes" in proc_df.columns:
+                proc_df = proc_df[(proc_df["Año"] == anio) & (proc_df["Mes"] == mes_num)]
+        
         if "Proceso" in map_df.columns:
             proc_df = proc_df.merge(
                 map_df[["Unidad", "Proceso", "Subproceso", "Tipo de proceso"]],
@@ -143,14 +215,17 @@ def render():
         else subproceso
         if subproceso != "Todos"
         else unidad
-        if unidad != "Todas"
+        if unidad != "Todos"
         else "Todos los procesos"
     )
+
+    periodo_info = f"{mes} {anio}" if anio and mes else "Período no definido"
 
     tabs = st.tabs(["📊 Indicadores", "📋 Resumen", "✅ Calidad", "🔍 Auditoría", "💡 Propuestos", "🤖 Análisis IA"])
 
     with tabs[0]:
         st.markdown(f"### Indicadores — {selected_process}")
+        st.caption(f"Corte consultado: {periodo_info}")
         if proc_df.empty:
             st.info("No hay datos disponibles para el proceso seleccionado.")
         else:
@@ -201,6 +276,7 @@ def render():
 
     with tabs[1]:
         st.markdown(f"#### Resumen — {selected_process}")
+        st.caption(f"Corte consultado: {periodo_info}")
         st.write("Resumen agregado de indicadores filtrados por proceso. Aquí se prioriza el análisis por estado y periodicidad.")
         if proc_df.empty:
             st.info("No hay datos disponibles para el proceso seleccionado.")
@@ -231,7 +307,7 @@ def render():
             ) if "Estado" in proc_df.columns else pd.DataFrame()
             if not status_summary.empty:
                 st.markdown("**Indicadores por estado**")
-                st.table(status_summary)
+                st.dataframe(status_summary, use_container_width=True, hide_index=True)
 
             breakdown_df = (
                 proc_df[["Periodicidad", "Estado"]]
@@ -253,7 +329,7 @@ def render():
             )
             if not top_processes.empty:
                 st.markdown("**Procesos con más indicadores en la selección**")
-                st.table(top_processes)
+                st.dataframe(top_processes, use_container_width=True, hide_index=True)
 
     with tabs[2]:
         st.markdown(f"### Calidad — {selected_process}")
