@@ -1,4 +1,5 @@
 from datetime import date as _date
+import unicodedata
 
 import pandas as pd
 import plotly.express as px
@@ -11,19 +12,46 @@ from streamlit_app.services.strategic_indicators import (
     load_cierres,
 )
 
-MESES_ES = {
-    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
-    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+CORTE_SEMESTRAL = {
+    "Junio": 6,
+    "Diciembre": 12,
+}
+
+LINEA_COLORS = {
+    "Expansión": "#FBAF17",
+    "Transformación organizacional": "#42F2F2",
+    "Calidad": "#EC0677",
+    "Experiencia": "#1FB2DE",
+    "Sostenibilidad": "#A6CE38",
+    "Educación para toda la vida": "#0F385A",
 }
 
 
-def _default_mes_por_anio(anio: int) -> int:
-    hoy = _date.today()
-    if anio < hoy.year:
-        return 12
-    if anio == hoy.year:
-        return max(1, hoy.month - 1)
-    return 1
+def _linea_color(linea: str) -> str:
+    txt = str(linea or "").strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    if "expansi" in txt:
+        return "#FBAF17"
+    if "transform" in txt:
+        return "#42F2F2"
+    if "calidad" in txt:
+        return "#EC0677"
+    if "experien" in txt:
+        return "#1FB2DE"
+    if "sostenib" in txt:
+        return "#A6CE38"
+    if "educaci" in txt or "toda la vida" in txt:
+        return "#0F385A"
+    return "#1f4e79"
+
+
+def _default_corte(anios: list[int]) -> tuple[int, str]:
+    if 2025 in anios:
+        return 2025, "Diciembre"
+    if anios:
+        return anios[-1], "Diciembre"
+    return _date.today().year, "Diciembre"
 
 
 def render():
@@ -50,30 +78,15 @@ def render():
                     del st.session_state[k]
             st.rerun()
 
-        anio = st.selectbox("Año de corte", anios, index=len(anios) - 1, key="cmi_pdi_anio")
-        if st.session_state.get("_cmi_pdi_last_anio") != anio:
-            if "cmi_pdi_mes" in st.session_state:
-                del st.session_state["cmi_pdi_mes"]
-            st.session_state["_cmi_pdi_last_anio"] = anio
-
-        _meses_disponibles = sorted(
-            pd.to_numeric(cierres.loc[pd.to_numeric(cierres["Anio"], errors="coerce") == anio, "Mes"], errors="coerce")
-            .dropna().astype(int).unique().tolist()
+        _anio_default, _corte_default = _default_corte(anios)
+        anio = st.selectbox("Año de corte", anios, index=anios.index(_anio_default), key="cmi_pdi_anio")
+        corte = st.selectbox(
+            "Corte",
+            list(CORTE_SEMESTRAL.keys()),
+            index=list(CORTE_SEMESTRAL.keys()).index(_corte_default),
+            key="cmi_pdi_corte",
         )
-        if not _meses_disponibles:
-            _meses_disponibles = list(range(1, 13))
-
-        _mes_default = _default_mes_por_anio(int(anio))
-        if _mes_default not in _meses_disponibles:
-            _mes_default = _meses_disponibles[-1]
-
-        mes = st.selectbox(
-            "Mes de corte",
-            _meses_disponibles,
-            index=_meses_disponibles.index(_mes_default),
-            key="cmi_pdi_mes",
-            format_func=lambda m: MESES_ES.get(int(m), str(m)),
-        )
+        mes = CORTE_SEMESTRAL[corte]
 
     df = preparar_pdi_con_cierre(int(anio), int(mes))
     if df.empty:
@@ -133,6 +146,8 @@ def render():
     k3.metric("Promedio cumplimiento", f"{promedio:.1f}%")
     k4.metric("Nivel predominante", top_nivel)
 
+    st.caption(f"Corte seleccionado: {corte} {anio}")
+
     st.caption(
         f"Catálogo PDI: {n_lineas_cat} líneas y {n_obj_cat} objetivos. "
         f"Con indicadores Plan Estratégico=1 en corte: {n_lineas_vis} líneas y {n_obj_vis} objetivos."
@@ -144,6 +159,8 @@ def render():
             df.groupby("Linea", dropna=False)["cumplimiento_pct"]
             .mean().fillna(0).reset_index().sort_values("cumplimiento_pct", ascending=True)
         )
+        by_linea["Linea"] = by_linea["Linea"].astype(str)
+        _linea_map = {lin: _linea_color(lin) for lin in by_linea["Linea"].tolist()}
         fig_linea = px.bar(
             by_linea,
             x="cumplimiento_pct",
@@ -151,9 +168,10 @@ def render():
             orientation="h",
             title="Cumplimiento promedio por línea estratégica",
             labels={"cumplimiento_pct": "Cumplimiento (%)", "Linea": "Línea"},
-            color_discrete_sequence=["#1f4e79"],
+            color="Linea",
+            color_discrete_map=_linea_map,
         )
-        fig_linea.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+        fig_linea.update_layout(margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
         st.plotly_chart(fig_linea, use_container_width=True, key="cmi_pdi_linea_bar")
 
     with c2:

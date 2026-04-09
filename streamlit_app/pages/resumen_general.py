@@ -225,7 +225,7 @@ def _cargar_mapa() -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     col_sub    = next((c for c in df.columns if "subproceso" in c.lower() and ".1" not in c.lower()), None)
     col_proc   = next((c for c in df.columns if c.lower() == "proceso"), None)
-    col_vicerr = next((c for c in df.columns if "icerrector" in c.lower()), None)
+    col_vicerr = next((c for c in df.columns if ("icerrector" in c.lower() or c.lower().strip() == "unidad")), None)
     if not col_sub or not col_proc:
         return pd.DataFrame()
     rename = {col_sub: "Subproceso", col_proc: "Proceso"}
@@ -731,9 +731,9 @@ def _fig_donut(df):
         hovertemplate="<b>%{label}</b><br>%{value} indicadores (%{percent})<extra></extra>",
     ))
     fig.update_layout(
-        height=340, showlegend=True,
-        legend=dict(orientation="v", x=1.02, y=0.5),
-        margin=dict(t=10, b=10, l=10, r=160),
+        height=430, showlegend=True,
+        legend=dict(orientation="h", y=-0.12, x=0, xanchor="left"),
+        margin=dict(t=16, b=70, l=10, r=10),
         paper_bgcolor="rgba(0,0,0,0)",  # Transparente para bordes redondeados
         plot_bgcolor="rgba(0,0,0,0)",
         annotations=[dict(text=f"<b>{total}</b><br>total",
@@ -1438,7 +1438,7 @@ def render():
                 _dfc_all["Subproceso"] = _dfc_all["Subproceso_CMI"].where(
                     _dfc_all["Subproceso_CMI"].notna()
                     & ~_dfc_all["Subproceso_CMI"].str.upper().isin(_INVALIDOS_MAPA),
-                    other=_dfc_all["Proceso"] if _dfc_all["Proceso"] in _dfc_all.columns else "",
+                    other=_dfc_all["Proceso"] if "Proceso" in _dfc_all.columns else "",
                 )
                 _dfc_all = _dfc_all.drop(columns=["Subproceso_CMI"], errors="ignore")
 

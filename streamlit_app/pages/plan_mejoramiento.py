@@ -11,19 +11,18 @@ from streamlit_app.services.strategic_indicators import (
     load_cierres,
 )
 
-MESES_ES = {
-    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
-    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+CORTE_SEMESTRAL = {
+    "Junio": 6,
+    "Diciembre": 12,
 }
 
 
-def _default_mes_por_anio(anio: int) -> int:
-    hoy = _date.today()
-    if anio < hoy.year:
-        return 12
-    if anio == hoy.year:
-        return max(1, hoy.month - 1)
-    return 1
+def _default_corte(anios: list[int]) -> tuple[int, str]:
+    if 2025 in anios:
+        return 2025, "Diciembre"
+    if anios:
+        return anios[-1], "Diciembre"
+    return _date.today().year, "Diciembre"
 
 
 def render():
@@ -50,30 +49,15 @@ def render():
                     del st.session_state[k]
             st.rerun()
 
-        anio = st.selectbox("Año de corte", anios, index=len(anios) - 1, key="pm_cna_anio")
-        if st.session_state.get("_pm_cna_last_anio") != anio:
-            if "pm_cna_mes" in st.session_state:
-                del st.session_state["pm_cna_mes"]
-            st.session_state["_pm_cna_last_anio"] = anio
-
-        _meses_disponibles = sorted(
-            pd.to_numeric(cierres.loc[pd.to_numeric(cierres["Anio"], errors="coerce") == anio, "Mes"], errors="coerce")
-            .dropna().astype(int).unique().tolist()
+        _anio_default, _corte_default = _default_corte(anios)
+        anio = st.selectbox("Año de corte", anios, index=anios.index(_anio_default), key="pm_cna_anio")
+        corte = st.selectbox(
+            "Corte",
+            list(CORTE_SEMESTRAL.keys()),
+            index=list(CORTE_SEMESTRAL.keys()).index(_corte_default),
+            key="pm_cna_corte",
         )
-        if not _meses_disponibles:
-            _meses_disponibles = list(range(1, 13))
-
-        _mes_default = _default_mes_por_anio(int(anio))
-        if _mes_default not in _meses_disponibles:
-            _mes_default = _meses_disponibles[-1]
-
-        mes = st.selectbox(
-            "Mes de corte",
-            _meses_disponibles,
-            index=_meses_disponibles.index(_mes_default),
-            key="pm_cna_mes",
-            format_func=lambda m: MESES_ES.get(int(m), str(m)),
-        )
+        mes = CORTE_SEMESTRAL[corte]
 
     df = preparar_cna_con_cierre(int(anio), int(mes))
     if df.empty:
@@ -117,6 +101,7 @@ def render():
         activos.append(f"Indicador contiene: {nombre_q.strip()}")
     if activos:
         st.caption("Filtros activos: " + " · ".join(activos))
+    st.caption(f"Corte seleccionado: {corte} {anio}")
 
     total = len(df)
     con_dato = int(df["cumplimiento_pct"].notna().sum())
@@ -138,6 +123,10 @@ def render():
         f"Con indicadores CNA=1 en corte: {n_fact} factores y {n_car} características."
     )
 
+    factor_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold
+    factor_list = sorted(df["Factor"].dropna().astype(str).unique().tolist())
+    factor_color_map = {f: factor_palette[i % len(factor_palette)] for i, f in enumerate(factor_list)}
+
     r1c1, r1c2 = st.columns([1, 1])
     with r1c1:
         by_factor = (
@@ -151,9 +140,10 @@ def render():
             orientation="h",
             title="Cumplimiento promedio por factor",
             labels={"cumplimiento_pct": "Cumplimiento (%)", "Factor": "Factor"},
-            color_discrete_sequence=["#0f766e"],
+            color="Factor",
+            color_discrete_map=factor_color_map,
         )
-        fig_factor.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+        fig_factor.update_layout(margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
         st.plotly_chart(fig_factor, use_container_width=True, key="pm_factor_avg")
 
     with r1c2:
@@ -191,20 +181,30 @@ def render():
         st.plotly_chart(fig_stack, use_container_width=True, key="pm_factor_nivel_stack")
 
     with r2c2:
-        df_tree = (
-            df.groupby(["Factor", "Caracteristica"], dropna=False)
-            .size().reset_index(name="Cantidad")
-        )
-        fig_tree = px.treemap(
-            df_tree,
-            path=["Factor", "Caracteristica"],
-            values="Cantidad",
-            title="Mapa de indicadores por factor y característica",
-            color="Cantidad",
-            color_continuous_scale="Blues",
-        )
-        fig_tree.update_layout(margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig_tree, use_container_width=True, key="pm_factor_car_tree")
+        df_tree = df[["Factor", "Caracteristica"]].copy()
+        df_tree["Factor"] = df_tree["Factor"].astype(str).str.strip()
+        df_tree["Caracteristica"] = df_tree["Caracteristica"].astype(str).str.strip()
+        df_tree = df_tree[
+            df_tree["Factor"].ne("")
+            & df_tree["Caracteristica"].ne("")
+            & ~df_tree["Factor"].isna()
+            & ~df_tree["Caracteristica"].isna()
+        ]
+        df_tree = df_tree.groupby(["Factor", "Caracteristica"], as_index=False).size().rename(columns={"size": "Cantidad"})
+
+        if df_tree.empty:
+            st.info("No hay datos válidos para el treemap de factor/característica.")
+        else:
+            fig_tree = px.treemap(
+                df_tree,
+                path=["Factor", "Caracteristica"],
+                values="Cantidad",
+                title="Mapa de indicadores por factor y característica",
+                color="Factor",
+                color_discrete_map=factor_color_map,
+            )
+            fig_tree.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+            st.plotly_chart(fig_tree, use_container_width=True, key="pm_factor_car_tree")
 
     st.markdown("### Indicadores CNA")
     tabla = df[[

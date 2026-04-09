@@ -3,9 +3,6 @@ from pathlib import Path
 import streamlit as st
 from streamlit_option_menu import option_menu
 
-from streamlit_app.components import Topbar, Banner, KPIRow, Charts
-from streamlit_app.services.data_service import DataService
-
 from streamlit_app.pages import (
     cmi_estrategico,
     plan_mejoramiento,
@@ -87,7 +84,7 @@ def main():
   {logo_block}
   <div>
     <div class='sidebar-title'>Sistema de Indicadores</div>
-    <div class='sidebar-subtitle'>Politécnico Grancolombiano · v2.0 Estratégico</div>
+        <div class='sidebar-subtitle'>Politécnico Grancolombiano</div>
   </div>
 </div>
 """
@@ -97,7 +94,7 @@ def main():
 
         menu = option_menu(
             menu_title=None,
-            options=["Resumen general", "Inicio estratégico", "Resumen por procesos", "Seguimiento operativo"],
+            options=["Resumen general", "Resumen Estratégico", "Resumen por procesos", "Seguimiento operativo"],
             icons=["file-text", "house", "layers", "clipboard-check"],
             menu_icon="cast",
             default_index=0,
@@ -107,24 +104,13 @@ def main():
         st.markdown("<style>.sidebar-status-card{display:none!important;}.version-box{display:none!important;}</style>", unsafe_allow_html=True)
 
     # Routing simple a páginas
-    if menu == "Inicio estratégico":
-        # Inicio estratégico: mostrar pestañas internas CMI / Plan (no como páginas en sidebar)
-        Topbar().render()
-        Banner().render()
-        KPIRow().render()
-        st.markdown("---")
-        # pestañas internas
+    if menu == "Resumen Estratégico":
+        # Resumen estratégico: cada pestaña tiene su propio resumen ejecutivo.
         tab_cmi, tab_plan = st.tabs(["CMI Estratégico", "Plan de Mejoramiento"])
         with tab_cmi:
             cmi_estrategico.render()
         with tab_plan:
             plan_mejoramiento.render()
-        st.markdown("---")
-        cols = st.columns([2, 1])
-        with cols[0]:
-            Charts(service=DataService()).draw_performance_chart()
-        with cols[1]:
-            Charts(service=DataService()).draw_semaforo()
 
     elif menu == "Resumen general":
         resumen_general.render()
