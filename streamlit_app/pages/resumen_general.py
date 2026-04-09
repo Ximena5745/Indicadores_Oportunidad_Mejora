@@ -1072,6 +1072,15 @@ def render():
     st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
     # ── KPIs con comparativa ──────────────────────────────────────────────────────
     total = len(df_raw)
+    # Asegurar que exista la columna 'Nivel de cumplimiento' (algunas fuentes pueden nombrarla distinto)
+    if "Nivel de cumplimiento" not in df_raw.columns:
+        if "cumplimiento" in df_raw.columns:
+            df_raw["Nivel de cumplimiento"] = df_raw["cumplimiento"].apply(_nivel_c)
+        elif "Cumplimiento" in df_raw.columns:
+            df_raw["Nivel de cumplimiento"] = df_raw["Cumplimiento"].apply(_nivel_c)
+        else:
+            df_raw["Nivel de cumplimiento"] = "Sin dato"
+
     cnts  = df_raw["Nivel de cumplimiento"].value_counts()
 
     # Previos
