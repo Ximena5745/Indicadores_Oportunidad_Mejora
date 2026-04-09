@@ -8,6 +8,134 @@ from streamlit_app.components.filters import render_filters
 from core.config import VICERRECTORIA_COLORS, COLORES
 from components.charts import exportar_excel, panel_detalle_indicador
 
+# Constantes y helpers replicados de Direccionamiento Estratégico
+_PROCESOS_DIR = {
+    "Planeación Estratégica",
+    "Desempeño Institucional",
+    "Gestión de Proyectos",
+}
+_IDS_EXCLUIR_PLAN = {
+    "373", "390", "414", "415", "416", "417", "418", "420", "469", "470", "471"
+}
+_COLOR_PROC = {
+    "Planeación Estratégica":  "#1A3A5C",
+    "Desempeño Institucional": "#1565C0",
+    "Gestión de Proyectos":    "#2E7D32",
+}
+
+
+def _ultimo_por_anio(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "Id" not in df.columns:
+        return df
+    col = "Fecha" if "Fecha" in df.columns else "Periodo"
+    return (df.sort_values(col)
+              .drop_duplicates(subset="Id", keep="last")
+              .reset_index(drop=True))
+
+
+def _kpis(df: pd.DataFrame):
+    total = len(df)
+    cats = {
+        cat: {"n": int((df.get("Categoria") == cat).sum()) if "Categoria" in df.columns else 0}
+        for cat in (globals().get("ORDEN_CATEGORIAS") or ["Peligro", "Alerta", "Cumplimiento", "Sobrecumplimiento", "Sin dato"]) 
+    }
+    for cat in cats:
+        cats[cat]["pct"] = round(cats[cat]["n"] / total * 100, 1) if total else 0
+    return total, cats
+
+
+def _render_kpis(total: int, cats: dict):
+    from core.config import COLORES as _COLORES
+    definiciones = [
+        ("Total",             total,                         _COLORES["primario"],          None),
+        ("🔴 Peligro",        cats["Peligro"]["n"],        _COLORES["peligro"],           f'{cats["Peligro"]["pct"]}%'),
+        ("🟡 Alerta",         cats["Alerta"]["n"],         _COLORES["alerta"],            f'{cats["Alerta"]["pct"]}%'),
+        ("🟢 Cumplimiento",   cats["Cumplimiento"]["n"],   _COLORES["cumplimiento"],      f'{cats["Cumplimiento"]["pct"]}%'),
+        ("🔵 Sobrecumpl.",    cats["Sobrecumplimiento"]["n"],_COLORES["sobrecumplimiento"], f'{cats["Sobrecumplimiento"]["pct"]}%'),
+    ]
+    cols = st.columns(len(definiciones))
+    for col, (label, val, color, delta) in zip(cols, definiciones):
+        with col:
+            st.metric(label, val, delta=delta,
+                      delta_color="off" if label == "Total" else
+                      ("inverse" if "Peligro" in label or "Alerta" in label else "normal"))
+
+
+def _tabla_display(df: pd.DataFrame) -> pd.DataFrame:
+    cols = [c for c in ["Id", "Indicador", "Subproceso", "Periodo", "Meta", "Ejecucion", "Cumplimiento_norm", "Categoria", "Sentido"] if c in df.columns]
+    df = df[cols].copy()
+    if "Cumplimiento_norm" in df.columns:
+        df["Cumplimiento_norm"] = (df["Cumplimiento_norm"] * 100).round(1).astype(str) + "%"
+    return df.rename(columns={"Cumplimiento_norm": "Cumpl.%", "Ejecucion": "Ejecución"})
+
+
+def _estilo_cat(row):
+    from core.config import COLOR_CATEGORIA_CLARO
+    bg = COLOR_CATEGORIA_CLARO.get(row.get("Categoria", ""), "")
+    return [f"background-color:{bg}" if bg else "" for _ in row]
+
+
+def _render_proceso(df_proc: pd.DataFrame, nombre: str, prefix: str, anio: int):
+    if df_proc.empty:
+        st.info(f"Sin indicadores para **{nombre}**.")
+        return
+
+    if "Anio" in df_proc.columns:
+        df_anio = df_proc[df_proc["Anio"] == anio]
+    else:
+        df_anio = df_proc
+
+    df_ult = _ultimo_por_anio(df_anio)
+
+    if df_ult.empty:
+        st.warning(f"Sin datos para **{nombre}** en {anio}.")
+        return
+
+    total, cats = _kpis(df_ult)
+    _render_kpis(total, cats)
+
+    st.markdown("---")
+
+    st.caption(
+        f"**{total}** indicadores · año **{anio}** · "
+        "Haz clic en una fila para ver la ficha histórica completa."
+    )
+    df_show = _tabla_display(df_ult)
+
+    col_cfg = {}
+    if "Indicador" in df_show.columns: col_cfg["Indicador"] = st.column_config.TextColumn("Indicador", width="large")
+    if "Cumpl.%"   in df_show.columns: col_cfg["Cumpl.%"]   = st.column_config.TextColumn("Cumpl.%",   width="small")
+    if "Meta"      in df_show.columns: col_cfg["Meta"]      = st.column_config.NumberColumn("Meta",      format="%.2f")
+    if "Ejecución" in df_show.columns: col_cfg["Ejecución"] = st.column_config.NumberColumn("Ejecución", format="%.2f")
+
+    event = st.dataframe(
+        df_show.style.apply(_estilo_cat, axis=1),
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=f"tbl_{prefix}",
+        column_config=col_cfg if col_cfg else None,
+    )
+
+    curr_rows = event.selection.get("rows", []) if (event and event.selection) else []
+    prev_key  = f"_dir_prev_{prefix}"
+    if curr_rows != st.session_state.get(prev_key, []):
+        st.session_state[prev_key] = curr_rows
+        if curr_rows:
+            idx = curr_rows[0]
+            st.session_state["_dir_ficha_id"]  = str(df_ult.iloc[idx]["Id"])
+            st.session_state["_dir_ficha_nom"] = str(df_ult.iloc[idx].get("Indicador", ""))
+
+    st.download_button(
+        "📥 Exportar",
+        data=exportar_excel(df_show, nombre[:31]),
+        file_name=f"{prefix}_{anio}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"exp_{prefix}",
+    )
+
+
 # Meses en español para selección
 MESES_OPCIONES = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -308,114 +436,65 @@ def render():
                     fig_c = px.histogram(proc_df, x="Cumplimiento", nbins=20, title="Histograma de Cumplimiento")
                     st.plotly_chart(fig_c, use_container_width=True)
 
-    # ---------- Tab 1: Información por proceso (detalle por indicador)
+    # ---------- Tab 1: Información por proceso (replica Direccionamiento Estratégico)
     with tabs[1]:
-        st.markdown(f"### Indicadores — {selected_process}")
-        st.caption(f"Corte consultado: {periodo_info}")
-        if proc_df.empty:
-            st.info("No hay datos disponibles para el proceso seleccionado.")
+        st.markdown("# 🏛️ Direccionamiento Estratégico — Información por proceso")
+
+        # Usar el dataset completo como fuente para Direccionamiento
+        df_raw = df.copy() if not df.empty else pd.DataFrame()
+
+        if df_raw.empty:
+            st.error("No se encontró el dataset principal. Ejecuta primero `actualizar_consolidado.py`.")
+        elif "Proceso" not in df_raw.columns:
+            st.error("El dataset no contiene la columna 'Proceso'.")
         else:
-            total = len(proc_df)
-            reportado = int((proc_df["Estado"] == "Reportado").sum()) if "Estado" in proc_df.columns else 0
-            pendiente = int((proc_df["Estado"] == "Pendiente").sum()) if "Estado" in proc_df.columns else 0
-            no_aplica = int((proc_df["Estado"] == "No aplica").sum()) if "Estado" in proc_df.columns else 0
+            df_dir = df_raw[df_raw["Proceso"].isin(_PROCESOS_DIR)].copy()
+            if df_dir.empty:
+                st.error("No se encontraron indicadores para los procesos de Direccionamiento Estratégico.")
+            else:
+                # Excluir IDs en Planeación Estratégica
+                mask_excl = (df_dir["Proceso"] == "Planeación Estratégica") & df_dir["Id"].astype(str).isin(_IDS_EXCLUIR_PLAN)
+                df_dir = df_dir[~mask_excl].copy()
 
-            cols = st.columns([1, 1, 1, 1])
-            cols[0].metric("Total indicadores", total)
-            cols[1].metric("Reportado", reportado)
-            cols[2].metric("Pendiente", pendiente, delta=f"{round(pendiente/total*100,1)}%" if total else None)
-            cols[3].metric("No aplica", no_aplica)
+                df_plan   = df_dir[df_dir["Proceso"] == "Planeación Estratégica"].copy()
+                df_desemp = df_dir[df_dir["Proceso"] == "Desempeño Institucional"].copy()
+                df_gest   = df_dir[df_dir["Proceso"] == "Gestión de Proyectos"].copy()
 
-            st.markdown("#### Indicadores clave")
-            breakdown = proc_df["Estado"].value_counts().to_dict() if "Estado" in proc_df.columns else {}
-            st.markdown(
-                _render_html_bars(
-                    breakdown,
-                    ["Reportado", "Pendiente", "No aplica"],
-                    {
-                        "Reportado": "#0f3a6d",
-                        "Pendiente": "#ffab00",
-                        "No aplica": "#9e9e9e",
-                    },
-                    max(breakdown.values()) if breakdown else 1,
-                ),
-                unsafe_allow_html=True,
-            )
+                # Selector de año (por defecto 2025 si existe)
+                anios_disp = sorted([int(a) for a in df_dir["Anio"].dropna().unique()]) if "Anio" in df_dir.columns else [2025]
+                anio_def   = 2025 if 2025 in anios_disp else (anios_disp[-1] if anios_disp else 2025)
+                anio_sel   = st.selectbox("Año", anios_disp, index=anios_disp.index(anio_def) if anios_disp else 0, key="dir_anio_proc")
 
-            st.markdown("#### Distribución por periodicidad")
-            periodo_counts = proc_df["Periodicidad"].value_counts().to_dict() if "Periodicidad" in proc_df.columns else {}
-            st.markdown(
-                _render_html_bars(
-                    periodo_counts,
-                    sorted(periodo_counts.keys()),
-                    {
-                        "Anual": "#0f3a6d",
-                        "Bimestral": "#00b8d4",
-                        "Mensual": "#1d4a86",
-                        "Semestral": "#1d9c60",
-                        "Trimestral": "#ffab00",
-                    },
-                    max(periodo_counts.values()) if periodo_counts else 1,
-                ),
-                unsafe_allow_html=True,
-            )
+                st.markdown("---")
+                tab_plan, tab_desemp, tab_gest = st.tabs([
+                    "📋 Planeación Estratégica",
+                    "📊 Desempeño Institucional",
+                    "🗂️ Gestión de Proyectos",
+                ])
 
-    with tabs[1]:
-        st.markdown(f"#### Resumen — {selected_process}")
-        st.caption(f"Corte consultado: {periodo_info}")
-        st.write("Resumen agregado de indicadores filtrados por proceso. Aquí se prioriza el análisis por estado y periodicidad.")
-        if proc_df.empty:
-            st.info("No hay datos disponibles para el proceso seleccionado.")
-        else:
-            periodo_counts = proc_df["Periodicidad"].value_counts().to_dict() if "Periodicidad" in proc_df.columns else {}
-            st.write("**Periodicidad dentro del proceso seleccionado**")
-            st.markdown(
-                _render_html_bars(
-                    periodo_counts,
-                    sorted(periodo_counts.keys()),
-                    {
-                        "Anual": "#0f3a6d",
-                        "Bimestral": "#00b8d4",
-                        "Mensual": "#1d4a86",
-                        "Semestral": "#1d9c60",
-                        "Trimestral": "#ffab00",
-                    },
-                    max(periodo_counts.values()) if periodo_counts else 1,
-                ),
-                unsafe_allow_html=True,
-            )
+                with tab_plan:
+                    _render_proceso(df_plan, "Planeación Estratégica", "plan", anio_sel)
 
-            status_summary = (
-                proc_df["Estado"]
-                .value_counts(dropna=True)
-                .rename_axis("Estado")
-                .reset_index(name="Indicadores")
-            ) if "Estado" in proc_df.columns else pd.DataFrame()
-            if not status_summary.empty:
-                st.markdown("**Indicadores por estado**")
-                st.dataframe(status_summary, use_container_width=True, hide_index=True)
+                with tab_desemp:
+                    _render_proceso(df_desemp, "Desempeño Institucional", "desemp", anio_sel)
 
-            breakdown_df = (
-                proc_df[["Periodicidad", "Estado"]]
-                .dropna(subset=["Periodicidad", "Estado"])
-                .groupby(["Periodicidad", "Estado"], as_index=False)
-                .size()
-                .rename(columns={"size": "Indicadores"})
-            )
-            if not breakdown_df.empty:
-                st.markdown("**Indicadores por periodicidad y estado**")
-                st.dataframe(breakdown_df, use_container_width=True)
+                with tab_gest:
+                    _render_proceso(df_gest, "Gestión de Proyectos", "gest", anio_sel)
 
-            top_processes = (
-                proc_df["Proceso"]
-                .value_counts()
-                .rename_axis("Proceso")
-                .reset_index(name="Indicadores")
-                .head(8)
-            )
-            if not top_processes.empty:
-                st.markdown("**Procesos con más indicadores en la selección**")
-                st.dataframe(top_processes, use_container_width=True, hide_index=True)
+    # ── Diálogo de ficha histórica (único, fuera de tabs) ───────────────────────
+    id_ficha = st.session_state.get("_dir_ficha_id")
+    if id_ficha:
+        nom_ficha = st.session_state.get("_dir_ficha_nom", "")
+        df_hist   = df[df["Id"].astype(str) == id_ficha].copy() if not df.empty else pd.DataFrame()
+
+        @st.dialog(f"📊 {id_ficha} — {nom_ficha[:65]}", width="large")
+        def _ficha():
+            if st.button("✖ Cerrar"):
+                st.session_state["_dir_ficha_id"] = None
+                st.rerun()
+            panel_detalle_indicador(df_hist, id_ficha, df)
+
+        _ficha()
 
     with tabs[3]:
         st.markdown(f"### Calidad — {selected_process}")
