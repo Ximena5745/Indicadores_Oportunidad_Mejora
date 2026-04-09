@@ -125,6 +125,31 @@ def _mes_es(fecha) -> str:
     except Exception:
         return str(fecha)
 
+    def _ensure_fecha_column(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Asegura que el DataFrame tenga una columna `Fecha` de tipo datetime.
+        Busca columnas alternativas (cualquier columna cuyo nombre contenga 'fecha',
+        o bien 'Periodo') y normaliza a `Fecha` con pd.to_datetime.
+        """
+        if df is None or df.empty:
+            return df
+
+        df = df.copy()
+        # Buscar columna que contenga 'fecha' (cualquier casing)
+        date_col = None
+        for c in df.columns:
+            if c.lower() == "fecha" or "fecha" in c.lower():
+                date_col = c
+                break
+        if date_col is None and "Periodo" in df.columns:
+            date_col = "Periodo"
+
+        if date_col is not None:
+            df["Fecha"] = pd.to_datetime(df[date_col], errors="coerce")
+        else:
+            # No hay columna reconocida: crear Fecha con NaT
+            df["Fecha"] = pd.NaT
+        return df
 
 def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     """Prepara DataFrame histórico con columnas formateadas para mostrar."""
@@ -134,7 +159,8 @@ def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     if "Categoria" in df_work.columns:
         df_work = df_work[df_work["Categoria"] != "Sin dato"]
     if df_work.empty:
-        return df_work
+    df_ind = _ensure_fecha_column(df_ind)
+    df_ind = df_ind.sort_values("Fecha").copy()
 
     # Generar columna Mes en español desde Fecha
     if "Fecha" in df_work.columns:
@@ -217,7 +243,8 @@ def grafico_detalle_indicador(df_ind: pd.DataFrame) -> go.Figure:
     - Línea con marcadores: Cumplimiento% (eje derecho)
     - X-axis: etiquetas de Periodo (solo períodos con datos, formato legible)
     """
-    df = df_ind.sort_values("Fecha").copy()
+        df = _ensure_fecha_column(df_ind)
+        df = df.sort_values("Fecha").copy()
 
     # Usar mes específico en español desde Fecha
     if "Fecha" in df.columns:
@@ -316,7 +343,8 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
     """, unsafe_allow_html=True)
 
     if df_ind.empty:
-        st.warning("Sin datos para este indicador.")
+    df_ind_sorted = _ensure_fecha_column(df_ind)
+    df_ind_sorted = df_ind_sorted.sort_values("Fecha").copy()
         return
 
     df_ind_sorted = df_ind.sort_values("Fecha").copy()

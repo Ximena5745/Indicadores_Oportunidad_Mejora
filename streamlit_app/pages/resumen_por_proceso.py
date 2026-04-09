@@ -1,4 +1,6 @@
 import unicodedata
+import os
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -475,6 +477,61 @@ def render():
 
             df_dir = df_raw.copy()
             df_dir["Proceso_final"] = df_dir["Proceso"].apply(_map_proc)
+
+            # Normalizar columna Fecha / Anio / Mes para filtrados
+            # Buscar columna de fecha (cualquier casing que contenga 'fecha') o 'Periodo'
+            date_col = None
+            for c in df_dir.columns:
+                if "fecha" in c.lower():
+                    date_col = c
+                    break
+            if date_col is None and "Periodo" in df_dir.columns:
+                date_col = "Periodo"
+            if date_col is not None:
+                try:
+                    df_dir["Fecha"] = pd.to_datetime(df_dir[date_col], errors="coerce")
+                except Exception:
+                    df_dir["Fecha"] = pd.to_datetime(df_dir[date_col].astype(str), errors="coerce")
+                df_dir["Anio"] = df_dir["Fecha"].dt.year
+                df_dir["Mes"] = df_dir["Fecha"].dt.month
+
+            # Aplicar filtro autoritativo desde Indicadores por CMI.xlsx (hoja 'Worksheet')
+            try:
+                cmi_path = Path("data") / "raw" / "Indicadores por CMI.xlsx"
+                if cmi_path.exists():
+                    cmi_df = pd.read_excel(cmi_path, sheet_name="Worksheet")
+                    # Filtrar filas marcadas en Subprocesos == 1 si existe esa columna
+                    if "Subprocesos" in cmi_df.columns:
+                        cmi_sel = cmi_df[cmi_df["Subprocesos"].astype(str).isin(["1", "1.0"])].copy()
+                    else:
+                        cmi_sel = cmi_df.copy()
+
+                    # Detectar columna identificadora para relacionar con el consolidado
+                    col_lower = {c.lower(): c for c in cmi_sel.columns}
+                    id_col = None
+                    for candidate in ("id", "id_ind", "codigo", "codigo_ind", "codigo_indicador", "indicador"):
+                        if candidate in col_lower:
+                            id_col = col_lower[candidate]
+                            break
+
+                    cmi_ids = set()
+                    if id_col is not None:
+                        cmi_ids = set(cmi_sel[id_col].dropna().astype(str).tolist())
+                    else:
+                        # Intentar emparejar por nombre de indicador si existe
+                        if "Indicador" in cmi_sel.columns:
+                            names = cmi_sel["Indicador"]
+                            cmi_ids = set(names.dropna().astype(str).tolist())
+
+                    # Aplicar filtro por Id o por nombre de indicador cuando sea posible
+                    if cmi_ids:
+                        if "Id" in df_dir.columns:
+                            df_dir = df_dir[df_dir["Id"].astype(str).isin(cmi_ids)].copy()
+                        elif "Indicador" in df_dir.columns:
+                            df_dir = df_dir[df_dir["Indicador"].astype(str).isin(cmi_ids)].copy()
+            except Exception:
+                # No bloquear la vista si falla la carga del archivo CMI
+                pass
 
             # Excluir IDs en Planeación Estratégica (usar Proceso_final)
             mask_excl = (df_dir.get("Proceso_final") == "Planeación Estratégica") & df_dir.get("Id", pd.Series()).astype(str).isin(_IDS_EXCLUIR_PLAN)

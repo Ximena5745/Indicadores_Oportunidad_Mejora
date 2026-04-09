@@ -1136,20 +1136,17 @@ def render():
         _icon = _icons.get(label, "")
         denom_cut = total_cut_reportados if total_cut_reportados else total_cut
         _pct_txt = f'<div style="font-size:0.72rem;color:{border_c};opacity:0.8">{round(val/denom_cut*100,1)}%</div>' if denom_cut and label not in ("Reportados",) else ""
-        with kc_cut[i]:
+        with kc[i]:
             st.markdown(
                 f'<div style="border-left:4px solid {border_c};background:{bg_c};'
-                f'border-radius:10px;padding:14px 8px;text-align:center;'
-                f'box-shadow:0 1px 4px rgba(0,0,0,0.07)'>
-                f'<div style="font-size:1.3rem;margin-bottom:2px">{_icon}</div>'
-                f'<div style="font-size:0.7rem;color:{border_c};font-weight:700;text-transform:uppercase;letter-spacing:0.04em">{label}</div>'
-                f'<div style="font-size:2rem;font-weight:800;color:{border_c};line-height:1.1">{val}</div>'
-                f'{_pct_txt}</div>',
+                f'border-radius:8px;padding:10px 6px;text-align:center;'
+                f'box-shadow:0 1px 3px rgba(0,0,0,0.06)'>
+                f'<div style="font-size:1.1rem;margin-bottom:2px">{_icon}</div>'
+                f'<div style="font-size:0.72rem;color:{border_c};font-weight:700;text-transform:uppercase;letter-spacing:0.04em">{label}</div>'
+                f'<div style="font-size:1.6rem;font-weight:800;color:{border_c};line-height:1.1">{val}</div>'
+                f'{_pct_txt}{d_txt}</div>',
                 unsafe_allow_html=True,
             )
-
-    # total raw (incluye pendientes agregados) -> corresponde a Indicadores totales (Kawak)
-    total = len(df_raw)
     # Contar cuantos indicadores tienen fecha (reportados) en el período
     total_reportados = int(df_raw['fecha'].notna().sum()) if 'fecha' in df_raw.columns else 0
     # Intentar obtener el total real de indicadores desde Kawak (mejor fuente de verdad)
@@ -1292,18 +1289,20 @@ def render():
 
     # ─────────────────────────────────────────────────────────────────────────────
     # TAB RESUMEN — Gráficas principales
-    # ─────────────────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────────────────
     with tab_res:
         st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
         st.markdown("### Distribución General de Cumplimiento")
         gr1, gr2 = st.columns([1, 2])
         with gr1:
             st.markdown("#### Por Nivel")
-            st.plotly_chart(_fig_donut(df_raw), use_container_width=True, key="res_donut")
+            # Mostrar sólo indicadores reportados en el período
+            df_reported = df_raw[df_raw.get("fecha").notna()] if "fecha" in df_raw.columns else df_raw
+            st.plotly_chart(_fig_donut(df_reported), use_container_width=True, key="res_donut")
         with gr2:
             st.markdown("#### Por Vicerrectoría")
             if "Vicerrectoria" in df_raw.columns:
-                st.plotly_chart(_fig_barras_nivel(df_raw, "Vicerrectoria"),
+                st.plotly_chart(_fig_barras_nivel(df_reported, "Vicerrectoria"),
                                 use_container_width=True, key="res_vicerr")
             else:
                 st.info("No hay datos de Vicerrectoría disponibles.")
@@ -1346,10 +1345,12 @@ def render():
             if st.session_state[_SK_RES_PROC]:
                 _proc_sel = st.session_state[_SK_RES_PROC]
                 df_sub = df_raw[df_raw[_col_padre] == _proc_sel]
-                if not df_sub.empty and _col_sub in df_sub.columns:
+                # asegurarse de usar sólo reportados cuando se muestre desglose
+                df_sub_rep = df_sub[df_sub.get("fecha").notna()] if "fecha" in df_sub.columns else df_sub
+                if not df_sub_rep.empty and _col_sub in df_sub_rep.columns:
                     st.markdown(f"**Subprocesos de: {_proc_sel}**")
                     st.plotly_chart(
-                        _fig_barras_nivel(df_sub, _col_sub),
+                        _fig_barras_nivel(df_sub_rep, _col_sub),
                         use_container_width=True, key="res_subproceso",
                     )
 
@@ -1491,40 +1492,49 @@ def render():
         st.caption(f"Mostrando **{len(df_filt)}** de **{len(df_con)}** indicadores · clic en una fila para ver el detalle histórico")
 
         # ── Tabla ─────────────────────────────────────────────────────────────
+        # Columnas mostradas: Id, Indicador, Meta, Ejecución, Cumplimiento, Nivel, Vicerrectoría, Proceso, Subproceso, Periodicidad
         _COLS_CON = [
-            "Id", "Indicador", "Nivel de cumplimiento",
-            "Meta_fmt", "Ejecucion_fmt", "Cumplimiento",
-            "Fecha reporte",
-            "Vicerrectoria", "Proceso", "Subproceso", "Periodicidad", "Sentido", "linea",
+            "Id", "Indicador", "Meta_fmt", "Ejecucion_fmt", "Cumplimiento", "Nivel de cumplimiento",
+            "Vicerrectoria", "Proceso", "Subproceso", "Periodicidad", "linea",
         ]
         cols_show = [c for c in _COLS_CON if c in df_filt.columns]
         df_mostrar = df_filt[cols_show].copy()
 
         col_cfg = {
-            "Id":                    st.column_config.TextColumn("ID",           width="small"),
-            "Indicador":             st.column_config.TextColumn("Indicador",    width="large"),
-            "Nivel de cumplimiento": st.column_config.TextColumn("Nivel",        width="medium"),
-            "Meta_fmt":              st.column_config.TextColumn("Meta",         width="small"),
-            "Ejecucion_fmt":         st.column_config.TextColumn("Ejecución",    width="small"),
-            "Cumplimiento":          st.column_config.TextColumn("Cumplimiento", width="small"),
-            "Fecha reporte":         st.column_config.TextColumn("Fecha",        width="small"),
-            "Vicerrectoria":         st.column_config.TextColumn("Vicerrectoría", width="medium"),
-            "Proceso":               st.column_config.TextColumn("Proceso",      width="medium"),
-            "Subproceso":            st.column_config.TextColumn("Subproceso",   width="medium"),
-            "Periodicidad":          st.column_config.TextColumn("Periodicidad", width="small"),
-            "Sentido":               st.column_config.TextColumn("Sentido",      width="small"),
-            "linea":                 st.column_config.TextColumn("Línea",        width="medium"),
+            "Id":                st.column_config.TextColumn("ID",        width="small"),
+            "Indicador":         st.column_config.TextColumn("Indicador", width="large"),
+            "Meta_fmt":          st.column_config.TextColumn("Meta",       width="small"),
+            "Ejecucion_fmt":     st.column_config.TextColumn("Ejecución",  width="small"),
+            "Cumplimiento":      st.column_config.TextColumn("Cumplimiento", width="small"),
+            "Nivel de cumplimiento": st.column_config.TextColumn("Nivel", width="medium"),
+            "Vicerrectoria":     st.column_config.TextColumn("Vicerrectoría", width="medium"),
+            "Proceso":           st.column_config.TextColumn("Proceso",   width="medium"),
+            "Subproceso":        st.column_config.TextColumn("Subproceso",width="medium"),
+            "Periodicidad":      st.column_config.TextColumn("Periodicidad", width="small"),
+            "linea":             st.column_config.TextColumn("Línea",      width="medium"),
         }
 
-        ev_tabla = st.dataframe(
-            df_mostrar.style.apply(_estilo_nivel, axis=1),
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            column_config=col_cfg,
-            key="con_tabla_detalle",
-        )
+        # Si hay columna 'linea', mostrar una tabla por cada línea con cabecera coloreada
+        def _color_for_name(name: str) -> str:
+            h = abs(hash(name)) % 0xFFFFFF
+            return f"#{h:06x}"
+
+        if "linea" in df_mostrar.columns:
+            for ln in sorted(df_mostrar["linea"].dropna().unique()):
+                color = _color_for_name(str(ln))
+                st.markdown(f"<div style='background:{color};padding:6px;border-radius:6px;color:#fff;font-weight:700;margin-top:8px'>{ln}</div>", unsafe_allow_html=True)
+                sub = df_mostrar[df_mostrar["linea"] == ln].copy()
+                st.dataframe(sub.style.apply(_estilo_nivel, axis=1), use_container_width=True, hide_index=True, column_config=col_cfg)
+        else:
+            ev_tabla = st.dataframe(
+                df_mostrar.style.apply(_estilo_nivel, axis=1),
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                column_config=col_cfg,
+                key="con_tabla_detalle",
+            )
 
         # ── Dialog de detalle ─────────────────────────────────────────────────
         if ev_tabla.selection and ev_tabla.selection.get("rows"):

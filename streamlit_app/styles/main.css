@@ -119,15 +119,16 @@ body {
 .topbar-card {
     background: #ffffff;
     border: 1px solid #dce6f2;
-    border-radius: 14px;
-    box-shadow: 0 8px 20px rgba(15, 56, 90, 0.06);
-    padding: 1rem 1.1rem;
+    border-radius: 8px;
+    box-shadow: 0 6px 12px rgba(15, 56, 90, 0.05);
+    padding: 0.6rem 0.8rem;
 }
 
 .stExpander {
     border: 1px solid #c9d8ea !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     background: #ffffff !important;
+    padding: 0.4rem !important;
 }
 
 /* Fichas KPI */
