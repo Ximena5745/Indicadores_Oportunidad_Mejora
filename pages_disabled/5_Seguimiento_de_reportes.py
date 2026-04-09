@@ -225,12 +225,19 @@ if df_tracking.empty:
 # ══════════════════════════════════════════════════════════════════════════════
 # ENCABEZADO Y FILTROS GLOBALES (Año + Mes)
 # ══════════════════════════════════════════════════════════════════════════════
-st.markdown("# 📊 Seguimiento de Reporte de Indicadores")
+st.markdown(
+    "<div class='topbar-card'><div class='topbar-left'>"
+    "<h1>📊 Seguimiento de Reporte de Indicadores</h1>"
+    "<p class='muted'>Análisis mensual de reportes por proceso, estado y periodicidad.</p>"
+    "</div></div>",
+    unsafe_allow_html=True,
+)
 
 _años_disp = sorted(df_tracking["Año"].dropna().unique().tolist()) \
              if "Año" in df_tracking.columns else []
 _años_disp = [int(a) for a in _años_disp]
 
+st.markdown("<div class='section-panel'>", unsafe_allow_html=True)
 _fc1, _fc2 = st.columns(2)
 with _fc1:
     _año_sel = st.selectbox("Año", _años_disp,
@@ -246,6 +253,7 @@ with _fc2:
                               format_func=lambda x: "— Todos —" if x == "" else x)
     _mes_sel_n = {v: k for k, v in _MESES_ES.items()}.get(_mes_sel_t)
 
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ── Filtrar tracking por Año + Mes ─────────────────────────────────────────────
