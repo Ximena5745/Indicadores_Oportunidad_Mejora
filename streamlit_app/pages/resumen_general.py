@@ -1147,9 +1147,9 @@ def render():
                 f'{_pct_txt}</div>',
                 unsafe_allow_html=True,
             )
-    st.caption(f"Indicadores totales (Kawak) al corte 2025: {total_cut_indicadores} · Reportados en corte: {total_cut_reportados}")
 
-    # ── KPIs con comparativa ──────────────────────────────────────────────────────
+    # Mostrar leyenda pequeña con total de indicadores para evitar confusión (una sola vez)
+    st.caption(f"Indicadores totales (Kawak): {total_indicadores} · Reportados en período: {total_reportados}")
     # total raw (incluye pendientes agregados) -> corresponde a Indicadores totales (Kawak)
     total = len(df_raw)
     # Contar cuantos indicadores tienen fecha (reportados) en el período
