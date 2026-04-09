@@ -481,8 +481,8 @@ def render():
             if not df_dir.empty:
                 df_dir = df_dir[~mask_excl].copy()
 
-                # Selector obligatorio de proceso para esta vista (usar todos los procesos del mapeo)
-                procesos_disp = procesos_map
+            # Selector obligatorio de proceso para esta vista (usar todos los procesos del mapeo)
+            procesos_disp = procesos_map
             pre_idx = 0
             if proceso and proceso != "Todos" and proceso in procesos_disp:
                 pre_idx = procesos_disp.index(proceso)
@@ -491,73 +491,74 @@ def render():
             # Filtrar data del proceso seleccionado (usar Proceso_final)
             df_proc_sel = df_dir[df_dir.get("Proceso_final") == sel_proc].copy()
 
-                # Recuperar subprocesos desde el mapeo y crear solo pestañas con datos
-                try:
-                    subprocs = map_df[map_df["Proceso"] == sel_proc]["Subproceso"].dropna().unique().tolist()
-                except Exception:
-                    subprocs = []
+            # Recuperar subprocesos desde el mapeo y crear solo pestañas con datos
+            try:
+                subprocs = map_df[map_df["Proceso"] == sel_proc]["Subproceso"].dropna().unique().tolist()
+            except Exception:
+                subprocs = []
 
-                # Filtrar subprocesos que sí tienen indicadores en el dataset del proceso
-                available_subprocs = []
-                if subprocs and not df_proc_sel.empty:
-                    for s in subprocs:
-                        has = False
-                        # Si el dataset de tracking tiene columna `Subproceso`, úsala;
-                        # sino, en muchos casos el tracking guarda el subproceso dentro de `Proceso`.
-                        if "Subproceso" in df_proc_sel.columns and not df_proc_sel[df_proc_sel["Subproceso"] == s].empty:
-                            has = True
-                        elif not df_proc_sel[df_proc_sel.get("Proceso") == s].empty:
-                            has = True
-                        if has:
-                            available_subprocs.append(s)
+            # Filtrar subprocesos que sí tienen indicadores en el dataset del proceso
+            available_subprocs = []
+            if subprocs and not df_proc_sel.empty:
+                for s in subprocs:
+                    has = False
+                    # Si el dataset de tracking tiene columna `Subproceso`, úsala;
+                    # sino, en muchos casos el tracking guarda el subproceso dentro de `Proceso`.
+                    if "Subproceso" in df_proc_sel.columns and not df_proc_sel[df_proc_sel["Subproceso"] == s].empty:
+                        has = True
+                    elif not df_proc_sel[df_proc_sel.get("Proceso") == s].empty:
+                        has = True
+                    if has:
+                        available_subprocs.append(s)
 
-                # Si no hay subprocesos con datos, solo mostrar "Resumen general"; en caso contrario, añadir los que sí tienen datos
-                tabs_sub = ["Resumen general"] + available_subprocs
-                tab_objs = st.tabs(tabs_sub)
+            # Si no hay subprocesos con datos, solo mostrar "Resumen general"; en caso contrario, añadir los que sí tienen datos
+            tabs_sub = ["Resumen general"] + available_subprocs
+            tab_objs = st.tabs(tabs_sub)
 
-                # --- Tab Resumen general ---
-                with tab_objs[0]:
-                    st.header(f"Resumen general — {sel_proc}")
-                    # Años disponibles para el proceso
-                    anios_disp = sorted([int(a) for a in df_proc_sel["Anio"].dropna().unique()]) if (not df_proc_sel.empty and "Anio" in df_proc_sel.columns) else []
-                    anio_def   = anios_disp[-1] if anios_disp else None
-                    anio_sel   = st.selectbox("Año", anios_disp, index=(anios_disp.index(anio_def) if anio_def in anios_disp else 0), key="info_proc_anio") if anios_disp else None
-                    periodo_txt = f"{anio_sel}" if anio_sel else "Período no definido"
-                    st.caption(f"Corte consultado: {periodo_txt}")
+            # --- Tab Resumen general ---
+            with tab_objs[0]:
+                st.header(f"Resumen general — {sel_proc}")
 
-                    df_year = df_proc_sel[df_proc_sel["Anio"] == anio_sel] if (anio_sel and "Anio" in df_proc_sel.columns) else df_proc_sel
-                    df_last = _ultimo_por_anio(df_year) if not df_year.empty else pd.DataFrame()
+                # Años disponibles para el proceso
+                anios_disp = sorted([int(a) for a in df_proc_sel["Anio"].dropna().unique()]) if (not df_proc_sel.empty and "Anio" in df_proc_sel.columns) else []
+                anio_def = anios_disp[-1] if anios_disp else None
+                anio_sel = st.selectbox("Año", anios_disp, index=(anios_disp.index(anio_def) if anio_def in anios_disp else 0), key="info_proc_anio") if anios_disp else None
+                periodo_txt = f"{anio_sel}" if anio_sel else "Período no definido"
+                st.caption(f"Corte consultado: {periodo_txt}")
 
-                    total_ind = int(df_proc_sel["Id"].nunique()) if (not df_proc_sel.empty and "Id" in df_proc_sel.columns) else 0
-                    reportados = int((df_year.get("Estado") == "Reportado").sum()) if (not df_year.empty and "Estado" in df_year.columns) else 0
-                    pendientes = int((df_year.get("Estado") == "Pendiente").sum()) if (not df_year.empty and "Estado" in df_year.columns) else 0
-                    avg_cumpl = None
-                    if "Cumplimiento_norm" in df_last.columns:
-                        vals = pd.to_numeric(df_last["Cumplimiento_norm"], errors="coerce").dropna()
-                        if not vals.empty:
-                            avg_cumpl = round(vals.mean() * 100, 1)
+                df_year = df_proc_sel[df_proc_sel["Anio"] == anio_sel] if (anio_sel and "Anio" in df_proc_sel.columns) else df_proc_sel
+                df_last = _ultimo_por_anio(df_year) if not df_year.empty else pd.DataFrame()
 
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Total indicadores", total_ind)
-                    c2.metric("Reportados", reportados, delta=(f"{round(reportados/total_ind*100,1)}%" if total_ind else None))
-                    c3.metric("Pendientes", pendientes, delta=(f"{round(pendientes/total_ind*100,1)}%" if total_ind else None))
-                    c4.metric("Promedio Cumpl.", f"{avg_cumpl}%" if avg_cumpl is not None else "-")
+                total_ind = int(df_proc_sel["Id"].nunique()) if (not df_proc_sel.empty and "Id" in df_proc_sel.columns) else 0
+                reportados = int((df_year.get("Estado") == "Reportado").sum()) if (not df_year.empty and "Estado" in df_year.columns) else 0
+                pendientes = int((df_year.get("Estado") == "Pendiente").sum()) if (not df_year.empty and "Estado" in df_year.columns) else 0
+                avg_cumpl = None
+                if "Cumplimiento_norm" in df_last.columns:
+                    vals = pd.to_numeric(df_last["Cumplimiento_norm"], errors="coerce").dropna()
+                    if not vals.empty:
+                        avg_cumpl = round(vals.mean() * 100, 1)
 
-                    # Distribución por categoría (último registro por id)
-                    if not df_last.empty and "Categoria" in df_last.columns:
-                        cats = df_last["Categoria"].value_counts().reset_index()
-                        cats.columns = ["Categoria", "count"]
-                        fig_cats = px.pie(cats, names="Categoria", values="count", title="Distribución por categoría")
-                        st.plotly_chart(fig_cats, use_container_width=True)
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total indicadores", total_ind)
+                c2.metric("Reportados", reportados, delta=(f"{round(reportados/total_ind*100,1)}%" if total_ind else None))
+                c3.metric("Pendientes", pendientes, delta=(f"{round(pendientes/total_ind*100,1)}%" if total_ind else None))
+                c4.metric("Promedio Cumpl.", f"{avg_cumpl}%" if avg_cumpl is not None else "-")
 
-                    # Tabla resumen de indicadores (puede estar vacía)
-                    if not df_last.empty:
-                        df_tbl = _tabla_display(df_last)
-                        st.dataframe(df_tbl, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("No hay indicadores reportados para el período seleccionado.")
+                # Distribución por categoría (último registro por id)
+                if not df_last.empty and "Categoria" in df_last.columns:
+                    cats = df_last["Categoria"].value_counts().reset_index()
+                    cats.columns = ["Categoria", "count"]
+                    fig_cats = px.pie(cats, names="Categoria", values="count", title="Distribución por categoría")
+                    st.plotly_chart(fig_cats, use_container_width=True)
 
-                # --- Tabs por Subproceso ---
+                # Tabla resumen de indicadores (puede estar vacía)
+                if not df_last.empty:
+                    df_tbl = _tabla_display(df_last)
+                    st.dataframe(df_tbl, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay indicadores reportados para el período seleccionado.")
+
+            # --- Tabs por Subproceso ---
                 for i, sub in enumerate(available_subprocs, start=1):
                     with tab_objs[i]:
                         st.header(f"Subproceso: {sub}")
