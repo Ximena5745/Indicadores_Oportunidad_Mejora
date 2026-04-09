@@ -456,9 +456,13 @@ def render():
                 mask_excl = (df_dir["Proceso"] == "Planeación Estratégica") & df_dir["Id"].astype(str).isin(_IDS_EXCLUIR_PLAN)
                 df_dir = df_dir[~mask_excl].copy()
 
-                # Selector obligatorio de proceso para esta vista
+                # Selector obligatorio de proceso para esta vista (siempre visible)
                 procesos_disp = sorted(df_dir["Proceso"].dropna().unique().tolist())
-                sel_proc = proceso if (proceso and proceso != "Todos") else st.selectbox("Selecciona proceso (requerido)", procesos_disp, key="info_proceso_sel")
+                # Preseleccionar el proceso si viene del filtro global
+                pre_idx = 0
+                if proceso and proceso != "Todos" and proceso in procesos_disp:
+                    pre_idx = procesos_disp.index(proceso)
+                sel_proc = st.selectbox("Selecciona proceso (requerido)", procesos_disp, index=pre_idx, key="info_proceso_sel")
 
                 # Filtrar data del proceso seleccionado
                 df_proc_sel = df_dir[df_dir["Proceso"] == sel_proc].copy()
