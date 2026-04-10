@@ -15,6 +15,31 @@ from services.ai_analysis import analizar_texto_indicador
 COLOR_CAT = COLOR_CATEGORIA
 
 
+def _ensure_fecha_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Asegura que el DataFrame tenga una columna `Fecha` de tipo datetime.
+    Busca columnas alternativas (cualquier columna cuyo nombre contenga 'fecha',
+    o bien 'Periodo') y normaliza a `Fecha` con pd.to_datetime.
+    """
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+    date_col = None
+    for c in df.columns:
+        if c.lower() == "fecha" or "fecha" in c.lower():
+            date_col = c
+            break
+    if date_col is None and "Periodo" in df.columns:
+        date_col = "Periodo"
+
+    if date_col is not None:
+        df["Fecha"] = pd.to_datetime(df[date_col], errors="coerce")
+    else:
+        df["Fecha"] = pd.NaT
+    return df
+
+
 def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Figure:
     """
     Gráfico de línea con zonas de color para el histórico de un indicador.
@@ -25,11 +50,12 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
         fig.update_layout(title="Sin datos disponibles")
         return fig
 
+    df_ind = _ensure_fecha_column(df_ind)
     df_ind = df_ind.sort_values("Fecha").copy()
-    cum_pct = (df_ind["Cumplimiento_norm"] * 100).round(1)
+    cum_pct = (df_ind.get("Cumplimiento_norm", pd.Series(dtype=float)) * 100).round(1)
     y_max = max(130, float(cum_pct.max()) + 15) if not cum_pct.empty else 130
 
-    colores_pts = df_ind["Categoria"].map(COLOR_CAT).fillna("#9E9E9E")
+    colores_pts = df_ind.get("Categoria", pd.Series()).map(COLOR_CAT).fillna("#9E9E9E")
 
     fig = go.Figure()
 
@@ -56,12 +82,12 @@ def grafico_historico_indicador(df_ind: pd.DataFrame, titulo: str = "") -> go.Fi
     )
 
     # Línea de datos
-    x_vals = df_ind["Fecha"] if "Fecha" in df_ind.columns else df_ind["Periodo"]
+    x_vals = df_ind["Fecha"] if "Fecha" in df_ind.columns else df_ind.get("Periodo")
     mes_labels = (
         df_ind["Fecha"].apply(_mes_es) if "Fecha" in df_ind.columns
         else df_ind.get("Periodo", pd.Series([""] * len(df_ind)))
     )
-    custom = list(zip(mes_labels, df_ind["Categoria"])) if "Categoria" in df_ind.columns else None
+    custom = list(zip(mes_labels, df_ind.get("Categoria", pd.Series()))) if "Categoria" in df_ind.columns else None
 
     fig.add_trace(go.Scatter(
         x=x_vals,
@@ -125,31 +151,6 @@ def _mes_es(fecha) -> str:
     except Exception:
         return str(fecha)
 
-    def _ensure_fecha_column(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Asegura que el DataFrame tenga una columna `Fecha` de tipo datetime.
-        Busca columnas alternativas (cualquier columna cuyo nombre contenga 'fecha',
-        o bien 'Periodo') y normaliza a `Fecha` con pd.to_datetime.
-        """
-        if df is None or df.empty:
-            return df
-
-        df = df.copy()
-        # Buscar columna que contenga 'fecha' (cualquier casing)
-        date_col = None
-        for c in df.columns:
-            if c.lower() == "fecha" or "fecha" in c.lower():
-                date_col = c
-                break
-        if date_col is None and "Periodo" in df.columns:
-            date_col = "Periodo"
-
-        if date_col is not None:
-            df["Fecha"] = pd.to_datetime(df[date_col], errors="coerce")
-        else:
-            # No hay columna reconocida: crear Fecha con NaT
-            df["Fecha"] = pd.NaT
-        return df
 
 def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     """Prepara DataFrame histórico con columnas formateadas para mostrar."""
@@ -159,8 +160,7 @@ def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     if "Categoria" in df_work.columns:
         df_work = df_work[df_work["Categoria"] != "Sin dato"]
     if df_work.empty:
-    df_ind = _ensure_fecha_column(df_ind)
-    df_ind = df_ind.sort_values("Fecha").copy()
+        return df_work
 
     # Generar columna Mes en español desde Fecha
     if "Fecha" in df_work.columns:
@@ -184,7 +184,6 @@ def tabla_historica_indicador(df_ind: pd.DataFrame) -> pd.DataFrame:
     if "Año" in df_t.columns:
         df_t = df_t.sort_values("Año")
 
-    # Signos que NO deben concatenarse al valor (son descriptores, no unidades)
     _SIGNOS_NO_CONCAT = {"ENT", "DEC", "N", "METRICA", "MÉTRICA", "NO APLICA",
                          "SIN REPORTE", "NA", ""}
     for col, signo in (("Meta", _signo_meta), ("Ejecucion", _signo_ejec)):
@@ -243,16 +242,16 @@ def grafico_detalle_indicador(df_ind: pd.DataFrame) -> go.Figure:
     - Línea con marcadores: Cumplimiento% (eje derecho)
     - X-axis: etiquetas de Periodo (solo períodos con datos, formato legible)
     """
-        df = _ensure_fecha_column(df_ind)
-        df = df.sort_values("Fecha").copy()
+    df = _ensure_fecha_column(df_ind)
+    df = df.sort_values("Fecha").copy()
 
     # Usar mes específico en español desde Fecha
     if "Fecha" in df.columns:
         periodos = df["Fecha"].apply(_mes_es).tolist()
     else:
         periodos = df["Periodo"].astype(str).tolist()
-    cum_pct = (df["Cumplimiento_norm"] * 100).round(1)
-    colores_pts = df["Categoria"].map(COLOR_CAT).fillna("#9E9E9E").tolist()
+    cum_pct = (df.get("Cumplimiento_norm", pd.Series(dtype=float)) * 100).round(1)
+    colores_pts = df.get("Categoria", pd.Series()).map(COLOR_CAT).fillna("#9E9E9E").tolist()
 
     meta_vals = pd.to_numeric(df.get("Meta", pd.Series(dtype=float)), errors="coerce")
     ejec_vals = pd.to_numeric(df.get("Ejecucion", pd.Series(dtype=float)), errors="coerce")
@@ -343,20 +342,17 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
     """, unsafe_allow_html=True)
 
     if df_ind.empty:
-    df_ind_sorted = _ensure_fecha_column(df_ind)
-    df_ind_sorted = df_ind_sorted.sort_values("Fecha").copy()
+        st.warning("Sin datos para este indicador.")
         return
 
-    df_ind_sorted = df_ind.sort_values("Fecha").copy()
+    df_ind_sorted = _ensure_fecha_column(df_ind)
+    df_ind_sorted = df_ind_sorted.sort_values("Fecha").copy()
 
     # Rellenar Cumplimiento_norm desde columna 'cumplimiento' si está vacío
     if "Cumplimiento_norm" in df_ind_sorted.columns and "cumplimiento" in df_ind_sorted.columns:
         mask_nan = df_ind_sorted["Cumplimiento_norm"].isna()
         raw_cum = pd.to_numeric(df_ind_sorted.loc[mask_nan, "cumplimiento"], errors="coerce")
-        # Si el valor raw > 1.5 asumimos que ya viene en % (dividir / 100)
-        df_ind_sorted.loc[mask_nan, "Cumplimiento_norm"] = raw_cum.where(
-            raw_cum <= 1.5, raw_cum / 100
-        )
+        df_ind_sorted.loc[mask_nan, "Cumplimiento_norm"] = raw_cum.where(raw_cum <= 1.5, raw_cum / 100)
 
     ultimo = df_ind_sorted.iloc[-1]
 
@@ -380,7 +376,7 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
     badge_col = BADGE_COLOR.get(categoria, "#9E9E9E")
 
     # Contenedor con scroll que cubre toda la ficha
-    with st.container(height=620, border=False):
+    with st.container():
         st.markdown(f"### {id_ind} — {nombre}")
 
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
@@ -425,7 +421,7 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        cum_series = df_ind_sorted["Cumplimiento_norm"].dropna() * 100
+        cum_series = df_ind_sorted.get("Cumplimiento_norm", pd.Series(dtype=float)).dropna() * 100
         tendencia, recs = generar_recomendaciones(categoria, cum_series)
 
         tendencia_labels = {
@@ -459,7 +455,6 @@ def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataF
                     )
                     st.info(texto)
 
-                    # ── Insights IA ───────────────────────────────────────────
                     with st.expander("✨ Insights y oportunidades de mejora (IA)", expanded=True):
                         with st.spinner("Analizando..."):
                             ia_result = analizar_texto_indicador(
@@ -487,7 +482,6 @@ def grafico_3d_riesgo(df_cat: pd.DataFrame) -> go.Figure:
     if df.empty:
         return go.Figure()
 
-    # Mapeo proceso -> índice numérico para eje X
     procesos = sorted(df["Proceso"].dropna().unique().tolist())
     proc_map = {p: i for i, p in enumerate(procesos)}
     df["proc_idx"] = df["Proceso"].map(proc_map).fillna(0)
@@ -510,7 +504,7 @@ def grafico_3d_riesgo(df_cat: pd.DataFrame) -> go.Figure:
             line=dict(width=0.5, color="white"),
         ),
         customdata=list(zip(df["Id"].tolist(), df["Proceso"].tolist(),
-                            df["Indicador"].str[:50].tolist())),
+                            df["Indicador"].str[:50].tolist() if "Indicador" in df.columns else [])),
         hovertemplate=(
             "<b>%{customdata[2]}</b><br>"
             "Proceso: %{customdata[1]}<br>"
