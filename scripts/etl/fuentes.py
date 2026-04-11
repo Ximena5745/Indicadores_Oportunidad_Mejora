@@ -50,7 +50,17 @@ def cargar_fuente_consolidada() -> pd.DataFrame:
         "ID": "Id", "nombre": "Indicador", "proceso": "Proceso",
         "frecuencia": "Periodicidad", "sentido": "Sentido",
     })
-    df["LLAVE"] = df.apply(lambda r: make_llave(r["Id"], r["fecha"]), axis=1)
+    id_series = df["Id"].map(_id_str)
+    fecha_series = df["fecha"]
+    df["LLAVE"] = (
+        id_series
+        + "-"
+        + fecha_series.dt.year.astype(int).astype(str)
+        + "-"
+        + fecha_series.dt.month.astype(int).astype(str).str.zfill(2)
+        + "-"
+        + fecha_series.dt.day.astype(int).astype(str).str.zfill(2)
+    )
     return df
 
 
@@ -105,7 +115,21 @@ def cargar_kawak_2025() -> pd.DataFrame:
     if not records:
         return pd.DataFrame()
     df_k = pd.DataFrame(records)
-    df_k["LLAVE"] = df_k.apply(lambda r: make_llave(r["Id"], r["fecha"]), axis=1)
+    id_series = df_k["Id"].map(_id_str)
+    fecha_series = pd.to_datetime(df_k["fecha"], errors="coerce")
+    df_k = df_k.loc[fecha_series.notna()].copy()
+    id_series = id_series.loc[df_k.index]
+    fecha_series = fecha_series.loc[df_k.index]
+    df_k["fecha"] = fecha_series
+    df_k["LLAVE"] = (
+        id_series
+        + "-"
+        + fecha_series.dt.year.astype(int).astype(str)
+        + "-"
+        + fecha_series.dt.month.astype(int).astype(str).str.zfill(2)
+        + "-"
+        + fecha_series.dt.day.astype(int).astype(str).str.zfill(2)
+    )
     return df_k
 
 
@@ -130,7 +154,17 @@ def cargar_kawak_old(years: tuple = (2021,)) -> pd.DataFrame:
         df = df.rename(columns={"frecuencia": "Periodicidad"})
     elif "Periodicidad" not in df.columns:
         df["Periodicidad"] = "Mensual"
-    df["LLAVE"] = df.apply(lambda r: make_llave(r["Id"], r["fecha"]), axis=1)
+    id_series = df["Id"].map(_id_str)
+    fecha_series = df["fecha"]
+    df["LLAVE"] = (
+        id_series
+        + "-"
+        + fecha_series.dt.year.astype(int).astype(str)
+        + "-"
+        + fecha_series.dt.month.astype(int).astype(str).str.zfill(2)
+        + "-"
+        + fecha_series.dt.day.astype(int).astype(str).str.zfill(2)
+    )
     return df
 
 

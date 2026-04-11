@@ -45,7 +45,7 @@ if str(_ROOT) not in sys.path:
 
 # ── ETL modules ───────────────────────────────────────────────────
 from etl.config import AÑO_CIERRE_ACTUAL, OUTPUT_FILE  # noqa: E402
-from etl.normalizacion import _id_str, make_llave  # noqa: E402
+from etl.normalizacion import _id_str  # noqa: E402
 from etl.fuentes import (                          # noqa: E402
     cargar_fuente_consolidada,
     cargar_kawak_validos,
@@ -151,9 +151,10 @@ def main() -> None:
 
         # ── 6. Leer históricos existentes para signos ─────────────────
         logger.info("6. Leyendo hojas existentes…")
-        df_hist_ex    = pd.read_excel(local_output_file, sheet_name="Consolidado Historico")
-        df_sem_ex     = pd.read_excel(local_output_file, sheet_name="Consolidado Semestral")
-        df_cierres_ex = pd.read_excel(local_output_file, sheet_name="Consolidado Cierres")
+        with pd.ExcelFile(local_output_file) as xls:
+            df_hist_ex = pd.read_excel(xls, sheet_name="Consolidado Historico")
+            df_sem_ex = pd.read_excel(xls, sheet_name="Consolidado Semestral")
+            df_cierres_ex = pd.read_excel(xls, sheet_name="Consolidado Cierres")
     signos = obtener_signos(df_hist_ex, df_sem_ex, df_cierres_ex)
     logger.info("   %d indicadores con signo", len(signos))
 
@@ -168,13 +169,14 @@ def main() -> None:
     # ── 8. Construir escalas históricas ───────────────────────────
     logger.info("8. Construyendo escalas históricas…")
     hist_escalas: dict = {}
-    for _, row in df_hist_ex.iterrows():
-        id_s = _id_str(row.get("Id", ""))
-        if id_s and id_s not in hist_escalas:
-            hist_escalas[id_s] = {
-                "Meta":      row.get("Meta"),
-                "Ejecucion": row.get("Ejecucion"),
-            }
+    if not df_hist_ex.empty and "Id" in df_hist_ex.columns:
+        df_hist_ids = (
+            df_hist_ex.assign(_id=df_hist_ex["Id"].map(_id_str))
+            .loc[lambda d: d["_id"].astype(str).str.len() > 0, ["_id", "Meta", "Ejecucion"]]
+            .drop_duplicates(subset=["_id"], keep="first")
+            .set_index("_id")
+        )
+        hist_escalas = df_hist_ids[["Meta", "Ejecucion"]].to_dict(orient="index")
 
     # ── 9. Preparar fuentes para builders ─────────────────────────
     logger.info("9. Preparando fuentes para builders…")
@@ -184,9 +186,17 @@ def main() -> None:
 
     # Normalizar fecha en df_api
     df_api["fecha"] = pd.to_datetime(df_api["fecha"], errors="coerce")
-    df_api = df_api.dropna(subset=["fecha"])
-    df_api["LLAVE"] = df_api.apply(
-        lambda r: make_llave(r["Id"], r["fecha"]), axis=1
+    df_api = df_api.dropna(subset=["fecha"]).copy()
+    id_series = df_api["Id"].map(_id_str)
+    fecha_series = df_api["fecha"]
+    df_api["LLAVE"] = (
+        id_series
+        + "-"
+        + fecha_series.dt.year.astype(int).astype(str)
+        + "-"
+        + fecha_series.dt.month.astype(int).astype(str).str.zfill(2)
+        + "-"
+        + fecha_series.dt.day.astype(int).astype(str).str.zfill(2)
     )
 
     # ── 10. Construir nuevos registros ────────────────────────────

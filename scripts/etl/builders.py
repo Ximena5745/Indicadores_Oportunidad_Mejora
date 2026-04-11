@@ -134,9 +134,11 @@ def construir_registros_semestral(
             elif tc_n == "acumulado": ids_sum.add(ids)
 
     df_base = df_fuente.copy()
-    df_base["_ids"] = df_base["Id"].apply(_id_str)
-    df_base["_sem"] = df_base["fecha"].apply(
-        lambda d: f"{d.year}-{'1' if d.month <= 6 else '2'}"
+    df_base["_ids"] = df_base["Id"].map(_id_str)
+    df_base["_sem"] = (
+        df_base["fecha"].dt.year.astype(int).astype(str)
+        + "-"
+        + (df_base["fecha"].dt.month <= 6).map({True: "1", False: "2"})
     )
 
     partes = []
@@ -145,23 +147,22 @@ def construir_registros_semestral(
     # ── Indicadores Cierre/estándar ──────────────────────────────
     df_std = df_base[~df_base["_ids"].isin(ids_agg)].copy()
     df_std = df_std[df_std["fecha"].dt.month.isin([6, 12])]
-    df_std = df_std[
-        df_std["fecha"] == df_std["fecha"].apply(
-            lambda d: pd.Timestamp(d.year, d.month, ultimo_dia_mes(d.year, d.month))
-        )
-    ]
+    df_std = df_std[df_std["fecha"].dt.day == df_std["fecha"].dt.daysinmonth]
     partes.append(df_std)
 
     # ── Indicadores Promedio/Acumulado ───────────────────────────
     registros_agg: List[Dict] = []
     if ids_agg:
         df_agg_src = df_base[df_base["_ids"].isin(ids_agg)].copy()
-        df_agg_src["_ejec_corr"] = df_agg_src.apply(
-            lambda r: _ejec_corrected_from_row(r, extraccion_map, api_kawak_lookup), axis=1
-        )
-        df_agg_src["_meta_corr"] = df_agg_src.apply(
-            lambda r: _meta_corrected_from_row(r, extraccion_map, api_kawak_lookup), axis=1
-        )
+        agg_records = df_agg_src.to_dict(orient="records")
+        df_agg_src["_ejec_corr"] = [
+            _ejec_corrected_from_row(rec, extraccion_map, api_kawak_lookup)
+            for rec in agg_records
+        ]
+        df_agg_src["_meta_corr"] = [
+            _meta_corrected_from_row(rec, extraccion_map, api_kawak_lookup)
+            for rec in agg_records
+        ]
 
         for (id_val, sem_label), grupo in df_agg_src.groupby(["Id", "_sem"]):
             ids = _id_str(id_val)
