@@ -132,14 +132,26 @@ def get_last_data_row(ws) -> int:
 
 def llaves_de_df(df: pd.DataFrame, id_col: str = "Id", fecha_col: str = "Fecha") -> Set[str]:
     """Calcula LLAVEs desde Id+Fecha (valores reales, no la col LLAVE con fórmulas)."""
-    llaves: Set[str] = set()
-    for _, row in df.iterrows():
-        if pd.isna(row.get(fecha_col)):
-            continue
-        llave = make_llave(row[id_col], row[fecha_col])
-        if llave:
-            llaves.add(llave)
-    return llaves
+    if df.empty or id_col not in df.columns or fecha_col not in df.columns:
+        return set()
+
+    fechas = pd.to_datetime(df[fecha_col], errors="coerce")
+    valid = fechas.notna()
+    if not valid.any():
+        return set()
+
+    ids = df.loc[valid, id_col].map(_id_str)
+    fechas_v = fechas.loc[valid]
+    llaves_series = (
+        ids
+        + "-"
+        + fechas_v.dt.year.astype(int).astype(str)
+        + "-"
+        + fechas_v.dt.month.astype(int).astype(str).str.zfill(2)
+        + "-"
+        + fechas_v.dt.day.astype(int).astype(str).str.zfill(2)
+    )
+    return set(llaves_series.dropna().tolist())
 
 
 def _ejec_score(val: Any) -> int:

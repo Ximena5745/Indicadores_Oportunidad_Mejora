@@ -43,10 +43,10 @@ def construir_registros_historico(
     conteo_na = 0
     df = df_fuente[~df_fuente["LLAVE"].isin(llaves_existentes)].dropna(subset=["LLAVE"])
 
-    for _, row in df.iterrows():
+    for row in df.itertuples(index=False):
         if kawak_validos is not None:
-            id_s = _id_str(row.get("Id") or row.get("ID", ""))
-            fecha_raw = row.get("fecha")
+            id_s = _id_str(getattr(row, "Id", None) or getattr(row, "ID", ""))
+            fecha_raw = getattr(row, "fecha", None)
             try:
                 año = pd.to_datetime(fecha_raw).year
             except Exception:
@@ -70,10 +70,10 @@ def construir_registros_historico(
 
         if es_na:
             try:
-                fecha_ts = pd.to_datetime(row["fecha"])
+                fecha_ts = pd.to_datetime(getattr(row, "fecha", None))
             except Exception:
                 fecha_ts = None
-            periodicidad = str(row.get("Periodicidad", ""))
+            periodicidad = str(getattr(row, "Periodicidad", ""))
             if periodicidad and fecha_ts is not None:
                 if not _fecha_es_periodo_valido(fecha_ts, periodicidad):
                     skipped += 1
@@ -81,15 +81,15 @@ def construir_registros_historico(
             conteo_na += 1
 
         registros.append({
-            "Id":          row["Id"],
-            "Indicador":   limpiar_html(str(row.get("Indicador", ""))),
-            "Proceso":     row.get("Proceso", ""),
-            "Periodicidad":row.get("Periodicidad", ""),
-            "Sentido":     row.get("Sentido", ""),
-            "fecha":       row["fecha"],
+            "Id":          getattr(row, "Id", None),
+            "Indicador":   limpiar_html(str(getattr(row, "Indicador", ""))),
+            "Proceso":     getattr(row, "Proceso", ""),
+            "Periodicidad":getattr(row, "Periodicidad", ""),
+            "Sentido":     getattr(row, "Sentido", ""),
+            "fecha":       getattr(row, "fecha", None),
             "Meta":        meta,
             "Ejecucion":   ejec,
-            "LLAVE":       row["LLAVE"],
+            "LLAVE":       getattr(row, "LLAVE", None),
             "es_na":       es_na,
         })
 

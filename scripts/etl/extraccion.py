@@ -346,7 +346,12 @@ def _extraer_registro(
       'Desglose Variables' → usa Variables/Campo o heurística
       resto / vacío       → lookup api_kawak_directo o heurística
     """
-    row_dict = row.to_dict() if hasattr(row, "to_dict") else row
+    if hasattr(row, "to_dict"):
+        row_dict = row.to_dict()
+    elif hasattr(row, "_asdict"):
+        row_dict = row._asdict()
+    else:
+        row_dict = row
     id_val = row_dict.get("Id") or row_dict.get("ID")
     id_s   = _id_str(id_val)
     id_num = pd.to_numeric(id_val, errors="coerce")
