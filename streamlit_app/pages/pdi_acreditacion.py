@@ -63,9 +63,19 @@ def render():
         return
 
     # --- Filtrado y normalización ---
+
     df = df[df["Clasificacion"].str.contains("acredit", case=False, na=False)]
     df = df.copy()
-    df["cumplimiento_pct"] = pd.to_numeric(df["cumplimiento_pct"], errors="coerce")
+    # Buscar la columna de cumplimiento real disponible
+    col_cumpl = None
+    for c in ["Cumplimiento", "Cumplimiento_norm", "cumplimiento", "cumplimiento_norm"]:
+        if c in df.columns:
+            col_cumpl = c
+            break
+    if col_cumpl is None:
+        st.error("No se encontró ninguna columna de cumplimiento en los datos.")
+        return
+    df["cumplimiento_pct"] = pd.to_numeric(df[col_cumpl], errors="coerce") * 100
     df["brecha"] = df.apply(_brecha, axis=1)
     df["Estado"] = df["cumplimiento_pct"].apply(_clasificar_estado)
 
