@@ -5,11 +5,12 @@ from streamlit_option_menu import option_menu
 
 from streamlit_app.pages import (
     cmi_estrategico,
+    gestion_om,
     plan_mejoramiento,
     resumen_general,
     resumen_por_proceso,
     seguimiento_reportes,
-    gestion_om,
+    tablero_operativo,
 )
 
 st.set_page_config(page_title="Sistema de Indicadores", layout="wide")
@@ -121,10 +122,14 @@ def main():
 
     elif menu == "Seguimiento operativo":
         # Agrupar vistas operativas en pestañas internas
-        tab_a, tab_b = st.tabs(["Seguimiento reportes", "Gestión de OM"])
+        tab_a, tab_b, tab_c = st.tabs(
+            ["Tablero Operativo", "Seguimiento reportes", "Gestión de OM"]
+        )
         with tab_a:
-            seguimiento_reportes.render()
+            tablero_operativo.render()
         with tab_b:
+            seguimiento_reportes.render()
+        with tab_c:
             gestion_om.render()
 
 
