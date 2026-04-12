@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from services.data_loader import cargar_acciones_mejora
 from streamlit_app.services.strategic_indicators import (
     NIVEL_COLOR_EXT,
     load_cna_catalog,
@@ -267,3 +268,82 @@ def render():
         hide_index=True,
         column_config={k: v for k, v in _cfg_cna.items() if k in tabla.columns},
     )
+
+    # ── Acciones de mejora vinculadas a indicadores CNA ───────────────────
+    st.markdown("---")
+    st.markdown("### 📋 Acciones de Mejora asociadas")
+    st.caption("Acciones registradas en acciones_mejora.xlsx cuyo ID coincide con indicadores CNA visibles.")
+
+    df_acc = cargar_acciones_mejora()
+    if df_acc.empty:
+        st.info("No hay datos de acciones de mejora disponibles.")
+    else:
+        # Intentar encontrar columna de ID de indicador en acciones
+        id_col_acc = None
+        for cand in ("ID_INDICADOR", "Id", "ID", "INDICADOR_ID", "id_indicador"):
+            if cand in df_acc.columns:
+                id_col_acc = cand
+                break
+
+        if id_col_acc is None:
+            st.info("No se encontró columna de ID de indicador en acciones_mejora.xlsx.")
+        else:
+            # Normalizar IDs para cruce
+            ids_cna = set(df["Id"].astype(str).str.strip().unique())
+            df_acc_v = df_acc.copy()
+            df_acc_v["_id_norm"] = (
+                df_acc_v[id_col_acc]
+                .apply(lambda x: str(int(float(x))) if str(x).replace(".", "").isdigit() else str(x).strip())
+            )
+            df_acc_cna = df_acc_v[df_acc_v["_id_norm"].isin(ids_cna)].copy()
+
+            if df_acc_cna.empty:
+                st.info("No se encontraron acciones vinculadas a los indicadores CNA del corte actual.")
+            else:
+                # KPIs
+                total_acc = len(df_acc_cna)
+                estado_col = "ESTADO" if "ESTADO" in df_acc_cna.columns else None
+                cerradas = int((df_acc_cna[estado_col] == "Cerrada").sum()) if estado_col else 0
+                abiertas = total_acc - cerradas
+                avance_ser = pd.to_numeric(df_acc_cna.get("AVANCE", pd.Series(dtype=float)), errors="coerce").dropna()
+                avance_prom = float(avance_ser.mean()) if not avance_ser.empty else None
+                vencidas = int((df_acc_cna.get("Estado_Tiempo", "") == "Vencida").sum()) if "Estado_Tiempo" in df_acc_cna.columns else None
+
+                ak1, ak2, ak3, ak4 = st.columns(4)
+                ak1.metric("Total acciones", total_acc)
+                ak2.metric("Cerradas", cerradas)
+                ak3.metric("Abiertas", abiertas)
+                ak4.metric("Avance promedio", f"{avance_prom:.1f}%" if avance_prom is not None else "—")
+
+                if vencidas is not None:
+                    st.caption(f"Acciones vencidas: **{vencidas}**")
+
+                # Gráfica avance por estado
+                if estado_col and "AVANCE" in df_acc_cna.columns:
+                    _acc_g = df_acc_cna.groupby(estado_col)["AVANCE"].mean().reset_index()
+                    _acc_g.columns = ["Estado", "Avance promedio (%)"]
+                    _acc_g["Avance promedio (%)"] = _acc_g["Avance promedio (%)"].round(1)
+                    fig_acc = px.bar(
+                        _acc_g,
+                        x="Estado",
+                        y="Avance promedio (%)",
+                        title="Avance promedio por estado de acción",
+                        color="Estado",
+                        text_auto=True,
+                    )
+                    fig_acc.update_layout(margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
+                    st.plotly_chart(fig_acc, use_container_width=True, key="pm_acc_avance")
+
+                # Tabla de acciones
+                _show_cols = [c for c in [
+                    "_id_norm", "ACCION", "ESTADO", "Estado_Tiempo",
+                    "AVANCE", "FECHA_ESTIMADA_CIERRE", "RESPONSABLE",
+                ] if c in df_acc_cna.columns]
+                _rename = {"_id_norm": "Id indicador", "ACCION": "Acción", "ESTADO": "Estado",
+                           "Estado_Tiempo": "Estado tiempo", "AVANCE": "Avance (%)",
+                           "FECHA_ESTIMADA_CIERRE": "Fecha compromiso", "RESPONSABLE": "Responsable"}
+                if _show_cols:
+                    tbl_acc = df_acc_cna[_show_cols].rename(columns=_rename).copy()
+                    if "Avance (%)" in tbl_acc.columns:
+                        tbl_acc["Avance (%)"] = pd.to_numeric(tbl_acc["Avance (%)"], errors="coerce").round(1)
+                    st.dataframe(tbl_acc, use_container_width=True, hide_index=True, height=320)

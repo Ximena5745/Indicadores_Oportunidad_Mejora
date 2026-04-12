@@ -1,7 +1,34 @@
 from datetime import date, datetime
+import json
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+_RUTA_KPI_DIAG = (
+    Path(__file__).resolve().parents[2] / "data" / "output" / "artifacts" / "kpi_diagnostico.json"
+)
+
+
+def _guardar_kpi_diag(con_ia: bool, elapsed: float) -> None:
+    """Persiste una medición de tiempo diagnóstico en el JSON histórico."""
+    registro = {
+        "ts": datetime.now().isoformat(),
+        "con_ia": con_ia,
+        "segundos": round(elapsed, 2),
+    }
+    try:
+        if _RUTA_KPI_DIAG.exists():
+            with open(_RUTA_KPI_DIAG, "r", encoding="utf-8") as f:
+                historico = json.load(f)
+        else:
+            historico = []
+        historico.append(registro)
+        _RUTA_KPI_DIAG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_RUTA_KPI_DIAG, "w", encoding="utf-8") as f:
+            json.dump(historico, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # No bloquear la UI si falla la escritura
 
 from components.charts import exportar_excel
 from core.config import CACHE_TTL
@@ -133,6 +160,8 @@ def _registrar_tiempo_diagnostico(con_ia: bool) -> None:
     else:
         metrics["without_ai_sec"].append(elapsed)
 
+    _guardar_kpi_diag(con_ia, elapsed)
+
 
 def _render_diag_kpi() -> None:
     metrics = st.session_state["om_diag_metrics"]
@@ -165,7 +194,29 @@ def _render_diag_kpi() -> None:
         f"Muestras: sin IA={len(without_ai)} | con IA={len(with_ai)}. "
         "Metricas de sesion para baseline operativo rapido."
     )
-
+    # ── Histórico de sesiones anteriores ──────────────────────────────────
+    if _RUTA_KPI_DIAG.exists():
+        try:
+            with open(_RUTA_KPI_DIAG, "r", encoding="utf-8") as f:
+                hist = json.load(f)
+            if hist:
+                df_hist = pd.DataFrame(hist)
+                df_hist["segundos"] = pd.to_numeric(df_hist["segundos"], errors="coerce")
+                h_sin = df_hist[~df_hist["con_ia"]]["segundos"].dropna()
+                h_con = df_hist[df_hist["con_ia"]]["segundos"].dropna()
+                h_avg_sin = float(h_sin.mean()) if not h_sin.empty else None
+                h_avg_con = float(h_con.mean()) if not h_con.empty else None
+                with st.expander(f"Baseline histórico ({len(df_hist)} mediciones acumuladas)", expanded=False):
+                    hk1, hk2, hk3 = st.columns(3)
+                    hk1.metric("Promedio sin IA (histórico)", f"{h_avg_sin / 60:.1f} min" if h_avg_sin else "N/D")
+                    hk2.metric("Promedio con IA (histórico)", f"{h_avg_con / 60:.1f} min" if h_avg_con else "N/D")
+                    if h_avg_sin and h_avg_con and h_avg_sin > 0:
+                        reduccion = (h_avg_sin - h_avg_con) / h_avg_sin * 100
+                        hk3.metric("Reduccion historica", f"{reduccion:.1f}%")
+                    else:
+                        hk3.metric("Reduccion historica", "N/D")
+        except Exception:
+            pass
 
 def _build_consolidado_om(df_reg: pd.DataFrame) -> pd.DataFrame:
     total = len(df_reg)
