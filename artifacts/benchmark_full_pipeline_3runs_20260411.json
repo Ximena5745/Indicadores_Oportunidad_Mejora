@@ -1,0 +1,41 @@
+﻿{
+    "timestamp":  "2026-04-11T18:05:50",
+    "method":  "manual_e2e_runs",
+    "runs":  [
+                 {
+                     "run":  1,
+                     "consolidar_api_s":  10.472,
+                     "consolidar_api_ok":  true,
+                     "actualizar_consolidado_s":  34.573,
+                     "actualizar_consolidado_ok":  true,
+                     "generar_reporte_s":  3.349,
+                     "generar_reporte_ok":  true,
+                     "total_s":  48.413
+                 },
+                 {
+                     "run":  2,
+                     "consolidar_api_s":  8.674,
+                     "consolidar_api_ok":  true,
+                     "actualizar_consolidado_s":  38.168,
+                     "actualizar_consolidado_ok":  true,
+                     "generar_reporte_s":  3.168,
+                     "generar_reporte_ok":  true,
+                     "total_s":  50.014
+                 },
+                 {
+                     "run":  3,
+                     "consolidar_api_s":  8.414,
+                     "consolidar_api_ok":  true,
+                     "actualizar_consolidado_s":  32.029,
+                     "actualizar_consolidado_ok":  true,
+                     "generar_reporte_s":  3.314,
+                     "generar_reporte_ok":  true,
+                     "total_s":  43.757
+                 }
+             ],
+    "summary":  {
+                    "total_min_s":  43.757,
+                    "total_median_s":  48.413,
+                    "total_max_s":  50.014
+                }
+}
