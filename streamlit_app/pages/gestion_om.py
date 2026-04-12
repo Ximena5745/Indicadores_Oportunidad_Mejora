@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -6,7 +6,8 @@ import streamlit as st
 from components.charts import exportar_excel
 from core.config import CACHE_TTL
 from core.db_manager import guardar_registro_om, leer_registros_om
-from services.data_loader import cargar_dataset
+from services.ai_analysis import analizar_texto_indicador
+from services.data_loader import cargar_acciones_mejora, cargar_dataset
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -24,7 +25,11 @@ def _cargar_indicadores_riesgo() -> pd.DataFrame:
     if "Categoria" in df.columns:
         df = df[df["Categoria"].isin(["Peligro", "Alerta"])].copy()
 
-    cols = [c for c in ["Id", "Indicador", "Proceso", "Categoria", "Periodicidad", "Anio", "Mes"] if c in df.columns]
+    cols = [
+        c
+        for c in ["Id", "Indicador", "Proceso", "Categoria", "Cumplimiento", "Periodicidad", "Anio", "Mes"]
+        if c in df.columns
+    ]
     return df[cols].reset_index(drop=True)
 
 
@@ -35,9 +40,289 @@ def _meses_disponibles() -> list[str]:
     ]
 
 
+def _normalizar_periodicidad(periodicidad: str) -> str:
+    p = str(periodicidad or "").strip().lower()
+    p = p.replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+    return p
+
+
+def _periodos_disponibles(periodicidad: str) -> list[str]:
+    p = _normalizar_periodicidad(periodicidad)
+    if p == "bimestral":
+        return ["Ene-Feb", "Mar-Abr", "May-Jun", "Jul-Ago", "Sep-Oct", "Nov-Dic"]
+    if p == "trimestral":
+        return ["Ene-Mar", "Abr-Jun", "Jul-Sep", "Oct-Dic"]
+    if p == "semestral":
+        return ["Ene-Jun", "Jul-Dic"]
+    if p == "anual":
+        return ["Anual"]
+    return _meses_disponibles()
+
+
+def _indice_periodo_actual(periodicidad: str, periodos: list[str]) -> int:
+    if not periodos:
+        return 0
+
+    mes = date.today().month
+    p = _normalizar_periodicidad(periodicidad)
+
+    if p == "mensual":
+        return max(0, min(len(periodos) - 1, mes - 1))
+    if p == "bimestral":
+        return max(0, min(len(periodos) - 1, (mes - 1) // 2))
+    if p == "trimestral":
+        return max(0, min(len(periodos) - 1, (mes - 1) // 3))
+    if p == "semestral":
+        return 0 if mes <= 6 else 1
+    return 0
+
+
+def _id_str(v) -> str:
+    if pd.isna(v):
+        return ""
+    s = str(v).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return ""
+    try:
+        f = float(s)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return s
+
+
+def _buscar_col(df: pd.DataFrame, candidatos: list[str]) -> str | None:
+    if df.empty:
+        return None
+    normalizadas = {str(c).strip().lower(): c for c in df.columns}
+    for cand in candidatos:
+        key = cand.strip().lower()
+        if key in normalizadas:
+            return normalizadas[key]
+    return None
+
+
+def _bool_si(v) -> bool:
+    if pd.isna(v):
+        return False
+    s = str(v).strip().lower()
+    return s in {"1", "si", "sí", "true", "x", "yes", "y"}
+
+
+def _init_diag_metrics() -> None:
+    if "om_diag_metrics" not in st.session_state:
+        st.session_state["om_diag_metrics"] = {
+            "with_ai_sec": [],
+            "without_ai_sec": [],
+        }
+
+
+def _registrar_tiempo_diagnostico(con_ia: bool) -> None:
+    inicio = st.session_state.get("om_diag_start")
+    if inicio is None:
+        return
+
+    elapsed = (datetime.now() - inicio).total_seconds()
+    if elapsed <= 0:
+        return
+
+    metrics = st.session_state["om_diag_metrics"]
+    if con_ia:
+        metrics["with_ai_sec"].append(elapsed)
+    else:
+        metrics["without_ai_sec"].append(elapsed)
+
+
+def _render_diag_kpi() -> None:
+    metrics = st.session_state["om_diag_metrics"]
+    with_ai = metrics["with_ai_sec"]
+    without_ai = metrics["without_ai_sec"]
+
+    avg_with = (sum(with_ai) / len(with_ai)) if with_ai else None
+    avg_without = (sum(without_ai) / len(without_ai)) if without_ai else None
+
+    st.markdown("### KPI de diagnostico (Sesion actual)")
+    k1, k2, k3 = st.columns(3)
+
+    with k1:
+        val = f"{avg_without / 60:.1f} min" if avg_without is not None else "N/D"
+        st.metric("Antes (sin IA)", val)
+
+    with k2:
+        val = f"{avg_with / 60:.1f} min" if avg_with is not None else "N/D"
+        st.metric("Despues (con IA)", val)
+
+    with k3:
+        if avg_with is not None and avg_without is not None and avg_without > 0:
+            ahorro_sec = avg_without - avg_with
+            ahorro_pct = (ahorro_sec / avg_without) * 100
+            st.metric("Reduccion estimada", f"{ahorro_sec / 60:.1f} min", delta=f"{ahorro_pct:+.1f}%")
+        else:
+            st.metric("Reduccion estimada", "N/D")
+
+    st.caption(
+        f"Muestras: sin IA={len(without_ai)} | con IA={len(with_ai)}. "
+        "Metricas de sesion para baseline operativo rapido."
+    )
+
+
+def _build_consolidado_om(df_reg: pd.DataFrame) -> pd.DataFrame:
+    total = len(df_reg)
+    con_om = int((df_reg.get("tiene_om", pd.Series(dtype=int)) == 1).sum())
+    sin_om = total - con_om
+    cobertura = (con_om / total * 100) if total > 0 else 0.0
+
+    return pd.DataFrame([
+        {
+            "Registros totales": total,
+            "Con OM": con_om,
+            "Sin OM": sin_om,
+            "Cobertura OM (%)": round(cobertura, 1),
+        }
+    ])
+
+
+def _build_consolidado_por_periodo(df_reg: pd.DataFrame) -> pd.DataFrame:
+    if df_reg.empty:
+        return df_reg
+
+    df = df_reg.copy()
+    if "tiene_om" in df.columns:
+        df["tiene_om"] = pd.to_numeric(df["tiene_om"], errors="coerce").fillna(0).astype(int)
+    else:
+        df["tiene_om"] = 0
+
+    agrupado = (
+        df.groupby(["anio", "periodo"], dropna=False)
+        .agg(registros=("id", "count"), con_om=("tiene_om", "sum"))
+        .reset_index()
+    )
+    agrupado["sin_om"] = agrupado["registros"] - agrupado["con_om"]
+    agrupado["cobertura_om_pct"] = ((agrupado["con_om"] / agrupado["registros"]).fillna(0) * 100).round(1)
+    return agrupado.sort_values(["anio", "periodo"], ascending=[False, True]).reset_index(drop=True)
+
+
+def _resumen_om_por_id(df_reg: pd.DataFrame) -> pd.DataFrame:
+    if df_reg.empty:
+        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om"])
+
+    df = df_reg.copy()
+    df["Id"] = df.get("id_indicador", "").apply(_id_str)
+    df = df[df["Id"] != ""].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om"])
+
+    if "fecha_registro" in df.columns:
+        df = df.sort_values("fecha_registro", ascending=False)
+
+    out = (
+        df.groupby("Id", as_index=False)
+        .agg(
+            tiene_om=("tiene_om", "max"),
+            numero_om=("numero_om", "first"),
+            periodo_om=("periodo", "first"),
+            anio_om=("anio", "first"),
+        )
+    )
+    out["tiene_om"] = pd.to_numeric(out["tiene_om"], errors="coerce").fillna(0).astype(int)
+    return out
+
+
+def _resumen_acciones_por_id(df_acc: pd.DataFrame) -> pd.DataFrame:
+    base_cols = ["Id", "tiene_accion", "avance_accion", "mitiga_reto", "mitiga_proyecto"]
+    if df_acc.empty:
+        return pd.DataFrame(columns=base_cols)
+
+    id_col = _buscar_col(df_acc, ["Id", "ID", "Id Indicador", "ID Indicador", "id_indicador", "id indicador"]) or ""
+    if not id_col:
+        return pd.DataFrame(columns=base_cols)
+
+    av_col = _buscar_col(df_acc, ["AVANCE", "Avance", "% Avance", "Porcentaje Avance"]) or ""
+    tipo_col = _buscar_col(df_acc, ["Tipo", "TIPO", "Tipo de accion", "Tipo Accion", "TIPO_ACCION"]) or ""
+    reto_col = _buscar_col(df_acc, ["Reto", "RETO", "Mitiga con reto", "mitiga_reto"]) or ""
+    proyecto_col = _buscar_col(df_acc, ["Proyecto", "PROYECTO", "Mitiga con proyecto", "mitiga_proyecto"]) or ""
+
+    df = df_acc.copy()
+    df["Id"] = df[id_col].apply(_id_str)
+    df = df[df["Id"] != ""].copy()
+    if df.empty:
+        return pd.DataFrame(columns=base_cols)
+
+    df["_avance"] = pd.to_numeric(df[av_col], errors="coerce") if av_col else pd.NA
+
+    if tipo_col:
+        tipo = df[tipo_col].astype(str).str.lower()
+        df["_is_reto"] = tipo.str.contains("reto", na=False)
+        df["_is_proyecto"] = tipo.str.contains("proyecto", na=False)
+    else:
+        df["_is_reto"] = False
+        df["_is_proyecto"] = False
+
+    if reto_col:
+        df["_is_reto"] = df["_is_reto"] | df[reto_col].apply(_bool_si)
+    if proyecto_col:
+        df["_is_proyecto"] = df["_is_proyecto"] | df[proyecto_col].apply(_bool_si)
+
+    out = (
+        df.groupby("Id", as_index=False)
+        .agg(
+            tiene_accion=("Id", "count"),
+            avance_accion=("_avance", "mean"),
+            mitiga_reto=("_is_reto", "max"),
+            mitiga_proyecto=("_is_proyecto", "max"),
+        )
+    )
+    out["tiene_accion"] = (out["tiene_accion"] > 0).astype(int)
+    out["avance_accion"] = pd.to_numeric(out["avance_accion"], errors="coerce").round(1)
+    out["mitiga_reto"] = out["mitiga_reto"].astype(bool)
+    out["mitiga_proyecto"] = out["mitiga_proyecto"].astype(bool)
+    return out
+
+
+def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df_acc: pd.DataFrame) -> pd.DataFrame:
+    if df_riesgo.empty:
+        return pd.DataFrame()
+
+    df_peligro = df_riesgo[df_riesgo.get("Categoria", "").astype(str).str.lower() == "peligro"].copy()
+    if df_peligro.empty:
+        return pd.DataFrame()
+
+    df_peligro["Id"] = df_peligro["Id"].apply(_id_str)
+
+    om = _resumen_om_por_id(df_reg)
+    acc = _resumen_acciones_por_id(df_acc)
+
+    m = df_peligro.merge(om, on="Id", how="left").merge(acc, on="Id", how="left")
+    for c in ["tiene_om", "tiene_accion"]:
+        m[c] = pd.to_numeric(m.get(c), errors="coerce").fillna(0).astype(int)
+    for c in ["mitiga_reto", "mitiga_proyecto"]:
+        m[c] = m.get(c).fillna(False).astype(bool)
+
+    m["tipo_mitigacion"] = "Sin accion"
+    m.loc[m["tiene_om"] == 1, "tipo_mitigacion"] = "OM"
+    m.loc[m["tiene_accion"] == 1, "tipo_mitigacion"] = "Accion de mejora"
+    m.loc[m["mitiga_reto"], "tipo_mitigacion"] = "Reto"
+    m.loc[m["mitiga_proyecto"], "tipo_mitigacion"] = "Proyecto"
+
+    m["accion_creada"] = (m["tiene_om"] == 1) | (m["tiene_accion"] == 1)
+    m["avance_mitigacion_pct"] = pd.to_numeric(m.get("avance_accion"), errors="coerce").round(1)
+
+    cols = [
+        "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
+        "tiene_om", "numero_om", "tipo_mitigacion", "accion_creada",
+        "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct",
+    ]
+    cols = [c for c in cols if c in m.columns]
+    m = m[cols]
+    return m.sort_values(["accion_creada", "tipo_mitigacion", "Id"], ascending=[True, True, True]).reset_index(drop=True)
+
+
 def render():
-    st.title("Gestión de Oportunidades de Mejora")
+    st.title("Gestion de Oportunidades de Mejora")
     st.caption("Registro y seguimiento de OMs sobre indicadores en alerta y peligro.")
+
+    _init_diag_metrics()
 
     df_riesgo = _cargar_indicadores_riesgo()
     if df_riesgo.empty:
@@ -49,39 +334,88 @@ def render():
     col_m2.metric("En Peligro", int((df_riesgo.get("Categoria", pd.Series(dtype=str)) == "Peligro").sum()))
     col_m3.metric("En Alerta", int((df_riesgo.get("Categoria", pd.Series(dtype=str)) == "Alerta").sum()))
 
-    opciones = {
-        f"{row['Id']} - {row.get('Indicador', '')}": row["Id"]
-        for _, row in df_riesgo.iterrows()
-    }
+    opciones = {f"{row['Id']} - {row.get('Indicador', '')}": row["Id"] for _, row in df_riesgo.iterrows()}
     seleccionado = st.selectbox("Indicador", options=list(opciones.keys()))
     id_sel = opciones[seleccionado]
-    fila = df_riesgo[df_riesgo["Id"] == id_sel].iloc[0]
 
+    if st.session_state.get("om_diag_current_id") != id_sel:
+        st.session_state["om_diag_current_id"] = id_sel
+        st.session_state["om_diag_start"] = datetime.now()
+
+    fila = df_riesgo[df_riesgo["Id"] == id_sel].iloc[0]
     st.markdown(
-        f"**Proceso:** {fila.get('Proceso', 'N/D')}  \\n+**Categoría actual:** {fila.get('Categoria', 'N/D')}"
+        f"**Proceso:** {fila.get('Proceso', 'N/D')}  \\n**Categoria actual:** {fila.get('Categoria', 'N/D')}  \\n**Periodicidad:** {fila.get('Periodicidad', 'N/D')}"
     )
+
+    _render_diag_kpi()
+
+    st.markdown("### Asistente IA para diagnostico")
+    st.caption("Escribe el analisis del responsable y obten causas probables y oportunidades de mejora accionables.")
+
+    ai_input_key = f"om_ai_input_{id_sel}"
+    ai_output_key = f"om_ai_output_{id_sel}"
+    analisis_responsable = st.text_area(
+        "Analisis del responsable",
+        key=ai_input_key,
+        placeholder=(
+            "Ejemplo: Se evidencio incumplimiento por retrasos en validacion documental, "
+            "alta rotacion del equipo y dependencia de aprobaciones externas."
+        ),
+        height=120,
+    )
+
+    col_ai_1, _ = st.columns([1, 2])
+    with col_ai_1:
+        analizar_ai = st.button("Generar analisis IA", use_container_width=True)
+
+    if analizar_ai:
+        if len(str(analisis_responsable).strip()) < 30:
+            st.warning("El analisis debe tener al menos 30 caracteres para generar recomendaciones utiles.")
+        else:
+            with st.spinner("Analizando contexto y generando oportunidades de mejora..."):
+                resultado_ia = analizar_texto_indicador(
+                    id_ind=str(id_sel),
+                    nombre=str(fila.get("Indicador", "")),
+                    proceso=str(fila.get("Proceso", "")),
+                    categoria=str(fila.get("Categoria", "")),
+                    cumplimiento=str(fila.get("Cumplimiento", "N/D")),
+                    texto_analisis=str(analisis_responsable).strip(),
+                )
+
+            if resultado_ia is None:
+                st.info("No fue posible generar el analisis IA. Verifica ANTHROPIC_API_KEY o intenta nuevamente.")
+            else:
+                st.session_state[ai_output_key] = resultado_ia
+
+    if ai_output_key in st.session_state and st.session_state[ai_output_key]:
+        st.success("Sugerencias IA generadas. Puedes usarlas como base para tu registro OM.")
+        st.markdown(st.session_state[ai_output_key])
 
     with st.form("form_registro_om", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         with c1:
-            anio = st.number_input("Año", min_value=2020, max_value=2100, value=int(date.today().year), step=1)
+            anio = st.number_input("Ano", min_value=2020, max_value=2100, value=int(date.today().year), step=1)
         with c2:
-            periodo = st.selectbox("Mes", options=_meses_disponibles(), index=max(0, date.today().month - 1))
+            periodicidad_ind = str(fila.get("Periodicidad", "Mensual"))
+            periodos = _periodos_disponibles(periodicidad_ind)
+            idx = _indice_periodo_actual(periodicidad_ind, periodos)
+            periodo = st.selectbox(f"Periodo ({periodicidad_ind})", options=periodos, index=idx)
         with c3:
-            tiene_om = st.radio("¿Se abrió OM?", options=["Sí", "No"], horizontal=True)
+            tiene_om = st.radio("Se abrio OM?", options=["Si", "No"], horizontal=True)
 
         numero_om = ""
         comentario = ""
-        if tiene_om == "Sí":
-            numero_om = st.text_input("Número OM")
+        if tiene_om == "Si":
+            numero_om = st.text_input("Numero OM")
         else:
-            comentario = st.text_area("Comentario / Justificación", placeholder="Mínimo 20 caracteres")
+            comentario_inicial = st.session_state.get(ai_output_key, "")
+            comentario = st.text_area("Comentario / Justificacion", value=comentario_inicial, placeholder="Minimo 20 caracteres")
 
         guardar = st.form_submit_button("Guardar registro", use_container_width=True)
 
     if guardar:
-        if tiene_om == "Sí" and not str(numero_om).strip():
-            st.error("Debes ingresar el número de OM.")
+        if tiene_om == "Si" and not str(numero_om).strip():
+            st.error("Debes ingresar el numero de OM.")
         elif tiene_om == "No" and len(str(comentario).strip()) < 20:
             st.error("El comentario debe tener al menos 20 caracteres.")
         else:
@@ -91,21 +425,112 @@ def render():
                 "proceso": str(fila.get("Proceso", "")),
                 "periodo": str(periodo),
                 "anio": int(anio),
-                "tiene_om": 1 if tiene_om == "Sí" else 0,
-                "numero_om": str(numero_om).strip() if tiene_om == "Sí" else "",
+                "tiene_om": 1 if tiene_om == "Si" else 0,
+                "numero_om": str(numero_om).strip() if tiene_om == "Si" else "",
                 "comentario": str(comentario).strip() if tiene_om == "No" else "",
             }
             if guardar_registro_om(payload):
+                con_ia = bool(st.session_state.get(ai_output_key))
+                _registrar_tiempo_diagnostico(con_ia=con_ia)
+                st.session_state["om_diag_start"] = datetime.now()
                 st.success("Registro OM guardado correctamente.")
             else:
                 st.error("No se pudo guardar el registro OM.")
 
     st.markdown("### Registros OM")
-    anio_filtro = st.number_input("Filtrar registros por año", min_value=2020, max_value=2100, value=int(date.today().year), step=1)
+    anio_filtro = st.number_input("Filtrar registros por ano", min_value=2020, max_value=2100, value=int(date.today().year), step=1)
     registros = leer_registros_om(anio=int(anio_filtro))
-    if registros:
-        df_reg = pd.DataFrame(registros)
-        st.dataframe(df_reg, use_container_width=True, height=350)
+    df_reg = pd.DataFrame(registros) if registros else pd.DataFrame()
+
+    df_acc = cargar_acciones_mejora()
+    df_mit = _matriz_mitigacion_peligro(df_riesgo, df_reg, df_acc)
+
+    st.markdown("### Mitigacion de indicadores en Peligro")
+    if not df_mit.empty:
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            procesos = [""] + sorted(df_mit["Proceso"].dropna().astype(str).unique().tolist()) if "Proceso" in df_mit.columns else [""]
+            proc_sel = st.selectbox("Proceso", procesos, format_func=lambda x: "Todos" if x == "" else x, key="om_mit_proc")
+        with f2:
+            tipos = [""] + sorted(df_mit["tipo_mitigacion"].dropna().astype(str).unique().tolist())
+            tipo_sel = st.selectbox("Tipo de mitigacion", tipos, format_func=lambda x: "Todos" if x == "" else x, key="om_mit_tipo")
+        with f3:
+            estado_sel = st.selectbox("Estado de accion", ["Todos", "Con accion", "Sin accion"], key="om_mit_estado")
+
+        df_mit_view = df_mit.copy()
+        if proc_sel and "Proceso" in df_mit_view.columns:
+            df_mit_view = df_mit_view[df_mit_view["Proceso"] == proc_sel]
+        if tipo_sel:
+            df_mit_view = df_mit_view[df_mit_view["tipo_mitigacion"] == tipo_sel]
+        if estado_sel == "Con accion":
+            df_mit_view = df_mit_view[df_mit_view["accion_creada"]]
+        elif estado_sel == "Sin accion":
+            df_mit_view = df_mit_view[~df_mit_view["accion_creada"]]
+
+        total = len(df_mit_view)
+        con_acc = int(df_mit_view["accion_creada"].sum()) if total else 0
+        sin_acc = total - con_acc
+        cobertura = (con_acc / total * 100) if total else 0.0
+        avance = pd.to_numeric(df_mit_view["avance_mitigacion_pct"], errors="coerce").dropna() if total else pd.Series(dtype=float)
+        avance_prom = float(avance.mean()) if not avance.empty else None
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Peligro total", total)
+        m2.metric("Con accion", con_acc)
+        m3.metric("Sin accion", sin_acc)
+        m4.metric("Cobertura mitigacion", f"{cobertura:.1f}%")
+
+        if avance_prom is not None:
+            st.caption(f"Avance promedio de mitigacion (acciones con dato): {avance_prom:.1f}%")
+        else:
+            st.caption("Sin dato de avance aun para las acciones asociadas.")
+
+        st.caption(f"Mostrando {len(df_mit_view)} de {len(df_mit)} indicadores en Peligro.")
+        st.dataframe(df_mit_view, use_container_width=True, height=320)
+
+        # Exportar vista filtrada a Excel
+        _export_cols = [c for c in [
+            "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
+            "tiene_om", "numero_om", "tipo_mitigacion",
+            "accion_creada", "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct",
+        ] if c in df_mit_view.columns]
+        df_export = df_mit_view[_export_cols].copy()
+        # Convertir booleanos a etiquetas legibles
+        for _bc in ("tiene_om", "accion_creada", "mitiga_reto", "mitiga_proyecto"):
+            if _bc in df_export.columns:
+                df_export[_bc] = df_export[_bc].map({True: "Sí", False: "No"}).fillna("No")
+        st.download_button(
+            label="⬇ Descargar matriz de mitigacion (Excel)",
+            data=exportar_excel(df_export, nombre_hoja="Mitigacion_Peligro"),
+            file_name=f"mitigacion_peligro_{anio_filtro}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    else:
+        st.info("No hay indicadores en Peligro para consolidar mitigacion.")
+
+    if not df_reg.empty:
+        tab1, tab2, tab3 = st.tabs(["Consolidado", "Por periodo", "Detalle registros"])
+
+        with tab1:
+            st.markdown("#### Consolidado OM")
+            df_cons = _build_consolidado_om(df_reg)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Registros", int(df_cons.iloc[0]["Registros totales"]))
+            c2.metric("Con OM", int(df_cons.iloc[0]["Con OM"]))
+            c3.metric("Sin OM", int(df_cons.iloc[0]["Sin OM"]))
+            c4.metric("Cobertura", f"{df_cons.iloc[0]['Cobertura OM (%)']:.1f}%")
+            st.dataframe(df_cons, use_container_width=True)
+
+        with tab2:
+            st.markdown("#### Consolidado por periodo")
+            df_periodo = _build_consolidado_por_periodo(df_reg)
+            st.dataframe(df_periodo, use_container_width=True, height=320)
+
+        with tab3:
+            st.markdown("#### Detalle de registros")
+            st.dataframe(df_reg, use_container_width=True, height=350)
+
         st.download_button(
             label="Descargar registros OM (Excel)",
             data=exportar_excel(df_reg, nombre_hoja="Registros_OM"),
@@ -114,4 +539,4 @@ def render():
             use_container_width=True,
         )
     else:
-        st.info("No hay registros OM para el año seleccionado.")
+        st.info("No hay registros OM para el ano seleccionado.")

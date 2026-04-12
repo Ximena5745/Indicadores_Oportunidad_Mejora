@@ -801,6 +801,66 @@ def _estilo_nivel(row):
             for c in row.index]
 
 
+def _build_alertas_temporales(df_actual: pd.DataFrame, df_prev: pd.DataFrame) -> dict:
+    base = {
+        "nuevos_peligro": pd.DataFrame(),
+        "deterioros": pd.DataFrame(),
+        "mejoras": pd.DataFrame(),
+        "delta_proceso": pd.DataFrame(),
+    }
+    if df_actual.empty or df_prev.empty:
+        return base
+
+    cols_act = [c for c in ["Id", "Indicador", "Nivel de cumplimiento", "ProcesoPadre", "Proceso", "Cumplimiento"] if c in df_actual.columns]
+    cols_prev = [c for c in ["Id", "Nivel de cumplimiento", "ProcesoPadre", "Proceso", "Cumplimiento"] if c in df_prev.columns]
+    merge = df_actual[cols_act].merge(
+        df_prev[cols_prev].rename(
+            columns={
+                "Nivel de cumplimiento": "Nivel_prev",
+                "Cumplimiento": "Cumplimiento_prev",
+                "ProcesoPadre": "ProcesoPadre_prev",
+                "Proceso": "Proceso_prev",
+            }
+        ),
+        on="Id",
+        how="inner",
+    )
+    if merge.empty:
+        return base
+
+    merge["ord_act"] = merge["Nivel de cumplimiento"].map(_ORDEN_NUM)
+    merge["ord_prev"] = merge["Nivel_prev"].map(_ORDEN_NUM)
+    validos = merge[(merge["ord_act"] >= 0) & (merge["ord_prev"] >= 0)].copy()
+    if validos.empty:
+        return base
+
+    base["nuevos_peligro"] = validos[
+        (validos["Nivel de cumplimiento"] == "Peligro") & (validos["Nivel_prev"] != "Peligro")
+    ].copy()
+    base["deterioros"] = validos[validos["ord_act"] < validos["ord_prev"]].copy()
+    base["mejoras"] = validos[validos["ord_act"] > validos["ord_prev"]].copy()
+
+    col_proc = "ProcesoPadre" if "ProcesoPadre" in df_actual.columns else ("Proceso" if "Proceso" in df_actual.columns else None)
+    col_proc_prev = "ProcesoPadre" if "ProcesoPadre" in df_prev.columns else ("Proceso" if "Proceso" in df_prev.columns else None)
+    if col_proc and col_proc_prev:
+        act = df_actual[["Id", col_proc, "Nivel de cumplimiento"]].copy()
+        prev = df_prev[["Id", col_proc_prev, "Nivel de cumplimiento"]].copy()
+        act["peligro_act"] = (act["Nivel de cumplimiento"] == "Peligro").astype(int)
+        prev["peligro_prev"] = (prev["Nivel de cumplimiento"] == "Peligro").astype(int)
+        proc_act = act.groupby(col_proc, dropna=False)["peligro_act"].sum().reset_index()
+        proc_prev = prev.groupby(col_proc_prev, dropna=False)["peligro_prev"].sum().reset_index()
+        proc = proc_act.merge(proc_prev, left_on=col_proc, right_on=col_proc_prev, how="outer")
+        proc["proceso"] = proc[col_proc].fillna(proc[col_proc_prev])
+        proc["peligro_act"] = pd.to_numeric(proc["peligro_act"], errors="coerce").fillna(0).astype(int)
+        proc["peligro_prev"] = pd.to_numeric(proc["peligro_prev"], errors="coerce").fillna(0).astype(int)
+        proc["delta_peligro"] = proc["peligro_act"] - proc["peligro_prev"]
+        base["delta_proceso"] = proc[["proceso", "peligro_act", "peligro_prev", "delta_peligro"]].sort_values(
+            ["delta_peligro", "peligro_act"], ascending=[False, False]
+        )
+
+    return base
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PÁGINA
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1127,6 +1187,49 @@ def render():
                                 "Cum. act.": st.column_config.TextColumn("Cum. act.",  width="small"),
                             },
                         )
+
+    alertas_tmp = _build_alertas_temporales(df_raw, df_prev)
+    if not df_prev.empty:
+        st.markdown("### Alertas comparativas temporales")
+        a1, a2, a3 = st.columns(3)
+
+        nuevos_peligro = alertas_tmp["nuevos_peligro"]
+        deterioros = alertas_tmp["deterioros"]
+        mejoras = alertas_tmp["mejoras"]
+        delta_proceso = alertas_tmp["delta_proceso"]
+
+        with a1:
+            if nuevos_peligro.empty:
+                st.success("Sin nuevos indicadores en Peligro vs periodo anterior.")
+            else:
+                st.error(f"{len(nuevos_peligro)} indicadores entraron en Peligro.")
+                muestra = nuevos_peligro[[c for c in ["Id", "Indicador"] if c in nuevos_peligro.columns]].head(5)
+                if not muestra.empty:
+                    st.dataframe(muestra, use_container_width=True, hide_index=True)
+
+        with a2:
+            if deterioros.empty:
+                st.info("Sin deterioros de categoria relevantes vs periodo anterior.")
+            else:
+                st.warning(f"{len(deterioros)} indicadores deterioraron su categoria.")
+                muestra = deterioros[[c for c in ["Id", "Indicador", "Nivel_prev", "Nivel de cumplimiento"] if c in deterioros.columns]].head(5)
+                if not muestra.empty:
+                    st.dataframe(muestra, use_container_width=True, hide_index=True)
+
+        with a3:
+            if mejoras.empty:
+                st.info("Sin mejoras de categoria detectadas vs periodo anterior.")
+            else:
+                st.success(f"{len(mejoras)} indicadores mejoraron su categoria.")
+                muestra = mejoras[[c for c in ["Id", "Indicador", "Nivel_prev", "Nivel de cumplimiento"] if c in mejoras.columns]].head(5)
+                if not muestra.empty:
+                    st.dataframe(muestra, use_container_width=True, hide_index=True)
+
+        if not delta_proceso.empty:
+            top_riesgo = delta_proceso[delta_proceso["delta_peligro"] > 0].head(5)
+            if not top_riesgo.empty:
+                st.markdown("#### Procesos con mayor incremento de Peligro")
+                st.dataframe(top_riesgo, use_container_width=True, hide_index=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("---")
