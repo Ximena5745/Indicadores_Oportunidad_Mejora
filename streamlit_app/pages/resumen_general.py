@@ -1147,7 +1147,7 @@ def render():
     total_reportados = int(df_raw['fecha'].notna().sum()) if 'fecha' in df_raw.columns else 0
     # Intentar obtener el total real de indicadores desde Kawak (mejor fuente de verdad)
     kawak_df = _cargar_kawak_por_anio(anio_seleccionado)
-    total_indicadores = int(len(kawak_df)) if not kawak_df.empty else total
+    total_indicadores = int(len(kawak_df)) if not kawak_df.empty else 0
     # Mostrar leyenda pequeña con total de indicadores para evitar confusión (una sola vez)
     st.caption(f"Indicadores totales (Kawak): {total_indicadores} · Reportados en período: {total_reportados}")
     # Asegurar que exista la columna 'Nivel de cumplimiento' (algunas fuentes pueden nombrarla distinto)
@@ -1183,7 +1183,7 @@ def render():
         }
         _icon = _icons.get(label, "")
         # Mostrar porcentaje relativo al total reportado cuando exista, sino al total de indicadores
-        denom = total_reportados if total_reportados else total
+        denom = total_reportados if total_reportados else total_indicadores
         _pct_txt = f'<div style="font-size:0.72rem;color:{border_c};opacity:0.8">{round(val/denom*100,1)}%</div>' if denom and label not in ("Reportados", "Indicadores") else ""
         if val_prev is not None and label != "Total":
             delta = val - val_prev
