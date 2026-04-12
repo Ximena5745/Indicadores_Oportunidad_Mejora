@@ -6,7 +6,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.config import NIVEL_BG, NIVEL_ICON
 from streamlit_app.services.strategic_indicators import (
     NIVEL_COLOR_EXT,
     load_pdi_catalog,
