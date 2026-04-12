@@ -3,8 +3,10 @@ import unicodedata
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from core.config import NIVEL_BG, NIVEL_ICON
 from streamlit_app.services.strategic_indicators import (
     NIVEL_COLOR_EXT,
     load_pdi_catalog,
@@ -44,6 +46,195 @@ def _linea_color(linea: str) -> str:
     if "educaci" in txt or "toda la vida" in txt:
         return "#0F385A"
     return "#1f4e79"
+
+
+# ─── Pesos por línea estratégica para el ISI ─────────────────────────────────
+# Ajustables según prioridad institucional; suman 1.0
+_PESOS_LINEA: dict[str, float] = {
+    "expansion":                      0.20,
+    "transformacion organizacional":   0.18,
+    "calidad":                         0.22,
+    "experiencia":                     0.15,
+    "sostenibilidad":                  0.15,
+    "educacion para toda la vida":     0.10,
+}
+_PESO_DEFAULT = 1.0  # peso neutro si la línea no está en el mapa
+
+# Bonus por sobrecumplimiento y penalización por peligro (puntos sobre 100)
+_BONUS_SOBRE = 5.0
+_PEN_PELIGRO = -8.0
+_PEN_ALERTA  = -3.0
+
+
+def _nm_linea(s: str) -> str:
+    s = str(s or "").strip().lower()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return s
+
+
+def _calcular_isi(df: pd.DataFrame) -> tuple[float, pd.DataFrame, pd.DataFrame]:
+    """Calcula el Índice de Salud Institucional (0-100).
+
+    Retorna (isi, df_por_linea, df_por_objetivo).
+    Fórmula:
+      1. Cumplimiento promedio ponderado por línea (escala 0-100)
+      2. Ajustes: bonus por sobrecumplimiento, penalización por peligro/alerta
+      3. Clip [0, 100]
+    """
+    if df.empty or "cumplimiento_pct" not in df.columns:
+        return 0.0, pd.DataFrame(), pd.DataFrame()
+
+    df_v = df[df["cumplimiento_pct"].notna()].copy()
+    if df_v.empty:
+        return 0.0, pd.DataFrame(), pd.DataFrame()
+
+    # Peso por fila según su línea
+    df_v["_peso"] = df_v["Linea"].apply(
+        lambda l: _PESOS_LINEA.get(_nm_linea(str(l)), _PESO_DEFAULT / len(_PESOS_LINEA))
+    )
+
+    # Promedio ponderado global
+    denom = df_v["_peso"].sum()
+    if denom == 0:
+        return 0.0, pd.DataFrame(), pd.DataFrame()
+    base_score = float((df_v["cumplimiento_pct"] * df_v["_peso"]).sum() / denom)
+
+    # Ajustes por distribución de niveles
+    n_total = len(df_v)
+    n_sobre  = int((df_v["Nivel de cumplimiento"] == "Sobrecumplimiento").sum())
+    n_peligro = int((df_v["Nivel de cumplimiento"] == "Peligro").sum())
+    n_alerta  = int((df_v["Nivel de cumplimiento"] == "Alerta").sum())
+    ajuste = (
+        (n_sobre  / n_total) * _BONUS_SOBRE +
+        (n_peligro / n_total) * _PEN_PELIGRO +
+        (n_alerta  / n_total) * _PEN_ALERTA
+    ) if n_total else 0.0
+
+    isi = float(min(max(base_score + ajuste, 0.0), 100.0))
+
+    # Por línea
+    por_linea = (
+        df_v.groupby("Linea", dropna=False)
+        .agg(
+            indicadores=("cumplimiento_pct", "count"),
+            cumplimiento=("cumplimiento_pct", "mean"),
+            peligro=("Nivel de cumplimiento", lambda x: (x == "Peligro").sum()),
+            alerta=("Nivel de cumplimiento",  lambda x: (x == "Alerta").sum()),
+        )
+        .reset_index()
+    )
+    por_linea["cumplimiento"] = por_linea["cumplimiento"].round(1)
+
+    # Por objetivo
+    por_obj = (
+        df_v.groupby(["Linea", "Objetivo"], dropna=False)
+        .agg(
+            indicadores=("cumplimiento_pct", "count"),
+            cumplimiento=("cumplimiento_pct", "mean"),
+            peligro=("Nivel de cumplimiento", lambda x: (x == "Peligro").sum()),
+        )
+        .reset_index()
+    )
+    por_obj["cumplimiento"] = por_obj["cumplimiento"].round(1)
+
+    return isi, por_linea, por_obj
+
+
+def _fig_gauge_isi(isi: float) -> go.Figure:
+    """Gauge semicircular para el Índice de Salud Institucional."""
+    if isi >= 95:
+        color = "#28a745"
+        label = "Excelente"
+    elif isi >= 80:
+        color = "#a8d08d"
+        label = "Bueno"
+    elif isi >= 65:
+        color = "#ffc107"
+        label = "En riesgo"
+    else:
+        color = "#dc3545"
+        label = "Crítico"
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=isi,
+        number={"suffix": "/100", "font": {"size": 32, "color": "#0f385a"}},
+        delta={"reference": 80, "increasing": {"color": "#28a745"}, "decreasing": {"color": "#dc3545"}},
+        gauge={
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#9ba8b7"},
+            "bar": {"color": color, "thickness": 0.30},
+            "bgcolor": "white",
+            "borderwidth": 2,
+            "bordercolor": "#dce6f2",
+            "steps": [
+                {"range": [0, 65],  "color": "#FFCDD2"},
+                {"range": [65, 80], "color": "#FEF9E7"},
+                {"range": [80, 95], "color": "#E8F5E9"},
+                {"range": [95, 100], "color": "#DDEEFF"},
+            ],
+            "threshold": {"line": {"color": "#0f385a", "width": 4}, "thickness": 0.9, "value": 80},
+        },
+        title={"text": f"Índice de Salud Institucional<br><span style='font-size:0.85rem;color:{color}'>{label}</span>",
+               "font": {"size": 15, "color": "#0f385a"}},
+    ))
+    fig.update_layout(
+        height=300,
+        margin=dict(t=60, b=10, l=30, r=30),
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
+def _fig_treemap_pdi(df: pd.DataFrame) -> go.Figure:
+    """Treemap jerárquico: PDI → Línea → Objetivo → Indicador.
+
+    Color por cumplimiento_pct; tamaño uniforme (1 por indicador).
+    """
+    req = {"Linea", "Objetivo", "Id", "cumplimiento_pct"}
+    if not req.issubset(df.columns) or df.empty:
+        return go.Figure()
+
+    df_t = df.copy()
+    df_t["Indicador_label"] = df_t.apply(
+        lambda r: f"{r['Id']}: {str(r.get('Indicador',''))[:45]}", axis=1
+    )
+    df_t["cumplimiento_pct"] = pd.to_numeric(df_t["cumplimiento_pct"], errors="coerce").fillna(0)
+    df_t["_size"] = 1
+
+    # Etiqueta de texto con % para hover
+    df_t["_label_hover"] = df_t["cumplimiento_pct"].apply(lambda v: f"{v:.1f}%")
+
+    fig = px.treemap(
+        df_t,
+        path=[px.Constant("PDI"), "Linea", "Objetivo", "Indicador_label"],
+        values="_size",
+        color="cumplimiento_pct",
+        color_continuous_scale=[
+            [0.00, "#FFCDD2"],  # peligro
+            [0.75, "#FEF9E7"],  # alerta
+            [0.95, "#E8F5E9"],  # cumplimiento
+            [1.00, "#D0E4FF"],  # sobrecumplimiento
+        ],
+        range_color=[0, 130],
+        custom_data=["_label_hover", "Nivel de cumplimiento"],
+        title="Árbol de Objetivos PDI — Línea → Objetivo → Indicador",
+    )
+    fig.update_traces(
+        hovertemplate="<b>%{label}</b><br>Cumplimiento: %{customdata[0]}<br>Nivel: %{customdata[1]}<extra></extra>",
+        textinfo="label",
+    )
+    fig.update_layout(
+        height=520,
+        margin=dict(t=50, b=10, l=10, r=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        coloraxis_colorbar=dict(
+            title="Cumpl. %",
+            tickvals=[0, 80, 100, 130],
+            ticktext=["0%", "80%", "100%", "130%"],
+        ),
+    )
+    return fig
 
 
 def _default_corte(anios: list[int]) -> tuple[int, str]:
@@ -147,18 +338,48 @@ def render():
     n_lineas_cat = int(pdi_catalog["Linea"].nunique()) if not pdi_catalog.empty else n_lineas_vis
     n_obj_cat = int(pdi_catalog["Objetivo"].nunique()) if not pdi_catalog.empty else n_obj_vis
 
-    k1, k2, k3, k4 = st.columns(4)
+    # ── Índice de Salud Institucional ──────────────────────────────────────
+    isi, por_linea, por_obj = _calcular_isi(df)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Indicadores PDI", total)
     k2.metric("Con cumplimiento", con_dato)
     k3.metric("Promedio cumplimiento", f"{promedio:.1f}%")
     k4.metric("Nivel predominante", top_nivel)
+    k5.metric(
+        "🏥 Salud institucional",
+        f"{isi:.1f}/100",
+        delta=f"{isi - 80:+.1f} vs umbral 80",
+        delta_color="normal",
+    )
 
     st.caption(f"Corte seleccionado: {corte} {anio}")
-
     st.caption(
         f"Catálogo PDI: {n_lineas_cat} líneas y {n_obj_cat} objetivos. "
         f"Con indicadores Plan Estratégico=1 en corte: {n_lineas_vis} líneas y {n_obj_vis} objetivos."
     )
+
+    # ── Panel ISI + tabla por línea ────────────────────────────────────────
+    isi_c1, isi_c2 = st.columns([1, 2])
+    with isi_c1:
+        st.plotly_chart(_fig_gauge_isi(isi), use_container_width=True, key="cmi_isi_gauge")
+    with isi_c2:
+        if not por_linea.empty:
+            st.markdown("**Salud por línea estratégica**")
+            _pl = por_linea.copy()
+            _pl.columns = ["Línea", "Indicadores", "Cumpl. promedio (%)", "En Peligro", "En Alerta"]
+            _pl["Cumpl. promedio (%)"] = _pl["Cumpl. promedio (%)"].round(1)
+            st.dataframe(_pl, use_container_width=True, hide_index=True, height=240)
+
+    if not por_obj.empty:
+        with st.expander("Detalle por objetivo estratégico", expanded=False):
+            _po = por_obj.copy()
+            _po.columns = ["Línea", "Objetivo", "Indicadores", "Cumpl. promedio (%)", "En Peligro"]
+            _po["Cumpl. promedio (%)"] = _po["Cumpl. promedio (%)"].round(1)
+            _po = _po.sort_values(["Línea", "Cumpl. promedio (%)"])
+            st.dataframe(_po, use_container_width=True, hide_index=True, height=320)
+
+    st.markdown("---")
 
     c1, c2 = st.columns([1, 1])
     with c1:
@@ -258,3 +479,16 @@ def render():
         hide_index=True,
         column_config={k: v for k, v in _cfg_pdi.items() if k in tabla.columns},
     )
+
+    # ── Treemap PDI ────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 🌳 Árbol de Objetivos PDI")
+    st.caption(
+        "Drill-down interactivo: haz clic en una línea para explorar sus objetivos "
+        "e indicadores. El color representa el nivel de cumplimiento."
+    )
+    fig_tree = _fig_treemap_pdi(df)
+    if fig_tree.data:
+        st.plotly_chart(fig_tree, use_container_width=True, key="cmi_treemap_pdi")
+    else:
+        st.info("Sin datos suficientes para el árbol PDI en el corte seleccionado.")
