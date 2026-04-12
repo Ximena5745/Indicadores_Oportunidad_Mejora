@@ -87,19 +87,9 @@ def render():
         df = df[df["Periodo"] == sel["horizonte"]]
 
     # --- KPIs Scorecard ---
-    k1, k2, k3 = st.columns(3)
+    k1, k2 = st.columns(2)
     k1.metric("Cumplimiento promedio (%)", f"{df['cumplimiento_pct'].mean():.1f}%" if not df.empty else "-")
     k2.metric("Brecha promedio (pp)", f"{df['brecha'].mean():.1f}" if not df.empty else "-")
-    # Tasa cierre OM: OM cerradas / OM totales (por Id)
-    df_acc = cargar_acciones_mejora()
-    if not df_acc.empty:
-        om_ids = set(df["Id"])
-        om_cerradas = df_acc[(df_acc["ESTADO"] == "CERRADA") & (df_acc["ID_INDICADOR"].isin(om_ids))]
-        om_total = df_acc[df_acc["ID_INDICADOR"].isin(om_ids)]
-        tasa_cierre = 100 * len(om_cerradas) / len(om_total) if len(om_total) else 0
-        k3.metric("Tasa cierre OM (%)", f"{tasa_cierre:.1f}%")
-    else:
-        k3.metric("Tasa cierre OM (%)", "-")
 
 
     # --- Árbol de Objetivos (Treemap drill-down) ---
