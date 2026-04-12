@@ -594,4 +594,4 @@ def render():
                     st.markdown(_render_indicator_table(df_o2), unsafe_allow_html=True)
         # separación entre líneas
         st.markdown("<br>", unsafe_allow_html=True)
->>>>>>> cabfc3f3d09e2017a2a5a5531d7dfab387ee96f1
+
