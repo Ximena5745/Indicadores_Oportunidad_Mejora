@@ -24,6 +24,17 @@ def _clasificar_estado(cumpl):
     return "Sobrecumplimiento"
 
 def render():
+        # DEPURACIÓN: Mostrar los IDs CNA y los IDs históricos
+        st.write("IDs CNA:", list(ids_cna)[:10], "... total:", len(ids_cna))
+        st.write("IDs en históricos:", df_hist["Id"].unique()[:10], "... total:", df_hist["Id"].nunique())
+        st.write("DataFrame tras cruce:")
+        st.write(df.head())
+
+        # Asegurar que las columnas clave estén presentes
+        # Si faltan, traerlas del catálogo CNA
+        for col in ["Linea", "Objetivo", "Indicador"]:
+            if col not in df.columns and col in df_cna.columns:
+                df = df.merge(df_cna[["Id", col]], on="Id", how="left")
     st.title("Gestión y Acreditación (Nivel 2)")
     st.caption("Panel de cumplimiento, brechas y matriz de acreditación.")
 
