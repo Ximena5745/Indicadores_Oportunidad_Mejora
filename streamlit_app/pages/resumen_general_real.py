@@ -1,3 +1,47 @@
+def calcular_cascada(df):
+    # Nivel 4: Indicador (hoja)
+    nivel4 = df.copy()
+    nivel4["Nivel"] = 4
+    nivel4["Total_Indicadores"] = 1
+    nivel4 = nivel4[["Nivel", "Linea", "Objetivo", "Meta_PDI", "Indicador", "cumplimiento_pct", "Total_Indicadores"]]
+    nivel4 = nivel4.rename(columns={"cumplimiento_pct": "Cumplimiento"})
+
+    # Nivel 3: Meta_PDI
+    nivel3 = (
+        df.groupby(["Linea", "Objetivo", "Meta_PDI"], dropna=False)
+        .agg(Cumplimiento=("cumplimiento_pct", "mean"), Total_Indicadores=("Indicador", "count"))
+        .reset_index()
+    )
+    nivel3["Nivel"] = 3
+    nivel3["Indicador"] = None
+    nivel3 = nivel3[["Nivel", "Linea", "Objetivo", "Meta_PDI", "Indicador", "Cumplimiento", "Total_Indicadores"]]
+
+    # Nivel 2: Objetivo
+    nivel2 = (
+        df.groupby(["Linea", "Objetivo"], dropna=False)
+        .agg(Cumplimiento=("cumplimiento_pct", "mean"), Total_Indicadores=("Indicador", "count"))
+        .reset_index()
+    )
+    nivel2["Nivel"] = 2
+    nivel2["Meta_PDI"] = None
+    nivel2["Indicador"] = None
+    nivel2 = nivel2[["Nivel", "Linea", "Objetivo", "Meta_PDI", "Indicador", "Cumplimiento", "Total_Indicadores"]]
+
+    # Nivel 1: Linea
+    nivel1 = (
+        df.groupby(["Linea"], dropna=False)
+        .agg(Cumplimiento=("cumplimiento_pct", "mean"), Total_Indicadores=("Indicador", "count"))
+        .reset_index()
+    )
+    nivel1["Nivel"] = 1
+    nivel1["Objetivo"] = None
+    nivel1["Meta_PDI"] = None
+    nivel1["Indicador"] = None
+    nivel1 = nivel1[["Nivel", "Linea", "Objetivo", "Meta_PDI", "Indicador", "Cumplimiento", "Total_Indicadores"]]
+
+    # Unir todos los niveles
+    cascada = pd.concat([nivel1, nivel2, nivel3, nivel4], ignore_index=True)
+    return cascada
 """
 pages/resumen_general_real.py — Resumen General con datos reales de Consolidado Cierres.
 
@@ -287,6 +331,16 @@ def render():
     prev_pdi_df = preparar_pdi_con_cierre(prev_year, prev_month if prev_month else 12) if prev_month else pd.DataFrame()
 
     best_improvements, worst_declines = _compute_trends(pdi_df, prev_pdi_df)
+    # --- Nueva lógica de cascada ---
+    # Asegura que existan las columnas requeridas
+    for col in ["Linea", "Objetivo", "Meta_PDI", "Indicador"]:
+        if col not in pdi_df.columns:
+            pdi_df[col] = None
+    cascada_df = calcular_cascada(pdi_df)
+    # Puedes mostrar la tabla para depuración:
+    # st.dataframe(cascada_df)
+    # Aquí podrías construir el gráfico de cascada con Plotly o ECharts usando cascada_df
+    # Por ahora, mantenemos el sunburst como referencia visual
     sunburst = _build_sunburst(pdi_df)
     st.plotly_chart(sunburst, use_container_width=True)
 
