@@ -294,15 +294,16 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
             # stronger styling to match reference: larger inner text, thin separators, radial labels
             fig.data[0].update(
-                uniformtext=dict(minsize=12, mode='hide'),
-                textfont=dict(family='Arial', size=12, color='#0b1946'),
-                insidetextfont=dict(family='Arial', size=18, color='#08306B'),
-                marker=dict(line=dict(color='#ffffff', width=3)),
+                uniformtext=dict(minsize=10, mode='show'),
+                textfont=dict(family='Inter, sans-serif', size=12, color='#062A4F'),
+                insidetextfont=dict(family='Inter, sans-serif', size=18, color='#062A4F'),
+                marker=dict(line=dict(color='#FFFFFF', width=3)),
                 branchvalues='total',
                 separation=2,
-                texttemplate='%{text}',
+                texttemplate='%{label}<br>%{customdata[0]:.1f}%',
                 hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
-                insidetextorientation='radial'
+                insidetextorientation='radial',
+                constraintext='ellipsis'
             )
     except Exception:
         # no queremos romper la renderización por problemas de versionado de plotly
