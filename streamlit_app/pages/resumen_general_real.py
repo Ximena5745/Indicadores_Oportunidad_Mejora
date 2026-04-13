@@ -274,7 +274,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         parents=outer_parents,
         values=outer_values,
         branchvalues="total",
-        marker=dict(colors=outer_colors, line=dict(color="#ffffff", width=1)),
+        marker=dict(colors=outer_colors, line=dict(color=outer_colors, width=0)),
         customdata=outer_custom,
         text=outer_text,
         textinfo='text',
@@ -282,6 +282,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
         domain=dict(x=[0,1], y=[0,1]),
         maxdepth=2,
+        sort=False
     ))
 
     # Inner ring: larger, colored percentage text
@@ -290,7 +291,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         parents=["" for _ in inner_labels],
         values=inner_values,
         branchvalues="total",
-        marker=dict(colors=inner_colors, line=dict(color="#ffffff", width=2)),
+        marker=dict(colors=inner_colors, line=dict(color=inner_colors, width=0)),
         customdata=inner_custom,
         text=inner_text,
         textinfo='text',
@@ -333,8 +334,14 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 trace.update(uniformtext=dict(minsize=9, mode='hide'))
         except Exception:
             pass
-
-    fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=720)
+    # Layout tuned to mimic target: no legend, neutral background, larger figure
+    fig.update_layout(
+        margin=dict(t=10, l=10, r=10, b=10),
+        height=780,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        showlegend=False
+    )
     return fig
 
 
