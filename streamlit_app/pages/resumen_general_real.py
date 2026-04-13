@@ -207,13 +207,28 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         line_counts = df.groupby('Linea').size().to_dict()
         obj_counts = df.groupby(['Linea', 'Objetivo']).size().to_dict()
 
+        # helper to match color keys ignoring accents/case
+        def _norm_key(s: str) -> str:
+            import unicodedata, re
+            if s is None:
+                return ""
+            t = str(s).strip().lower()
+            t = unicodedata.normalize("NFD", t)
+            t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+            # replace any non-alphanumeric with a single space and collapse spaces
+            t = re.sub(r"[^0-9a-z]+", " ", t)
+            t = re.sub(r"\s+", " ", t).strip()
+            return t
+
+        normalized_color_map = { _norm_key(k): v for k, v in LINEA_COLORS.items() }
+
         for _, line in lines.iterrows():
             linea_name = line["Linea"]
             labels.append(linea_name)
             parents.append("")
             values.append(int(line_counts.get(linea_name, 0)) or 1)
             customdata.append([line["cumplimiento_pct"] if pd.notna(line["cumplimiento_pct"]) else 0])
-            colors.append(LINEA_COLORS.get(linea_name, "#6B728E"))
+            colors.append(normalized_color_map.get(_norm_key(linea_name), "#6B728E"))
 
         for _, row in grouped.iterrows():
             obj_name = row["Objetivo"]
@@ -222,7 +237,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             parents.append(parent_name)
             values.append(int(obj_counts.get((parent_name, obj_name), 0)) or 1)
             customdata.append([row["cumplimiento_pct"] if pd.notna(row["cumplimiento_pct"]) else 0])
-            colors.append(LINEA_COLORS.get(parent_name, "#6B728E"))
+            colors.append(normalized_color_map.get(_norm_key(parent_name), "#6B728E"))
 
         # Wrap long labels to multiple lines so they fit inside sectors
         def wrap_label(s: str, width: int = 18) -> str:
@@ -243,9 +258,9 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         text = []
         for lab, cd, parent in zip(labels, customdata, parents):
             pct = (cd[0] if cd and cd[0] is not None else 0)
-            wrapped = wrap_label(lab, width=18)
-            # Show label + percentage for all rings to match reference
-            text.append(f"{wrapped}\n{pct:.1f}%")
+            wrapped = wrap_label(lab, width=20)
+            # show label and percentage (no decimals) centered via newline
+            text.append(f"{wrapped}\n{pct:.0f}%")
 
     # Split inner (Linea) and outer (Objetivo) for independent styling
     inner_idxs = [i for i, p in enumerate(parents) if p == ""]
@@ -283,7 +298,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         text=all_text,
         textinfo='text',
         insidetextorientation="radial",
-        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
+        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.0f}%<extra></extra>",
         domain=dict(x=[0,1], y=[0,1]),
         maxdepth=2,
         sort=False
