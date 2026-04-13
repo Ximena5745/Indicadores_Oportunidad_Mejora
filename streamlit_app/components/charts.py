@@ -3,6 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit_app.services.data_service import DataService
+from streamlit_app.styles.design_system import COLORS, get_vivid_palette
 
 
 class Charts:
@@ -16,13 +17,16 @@ class Charts:
             return
 
         fig = go.Figure()
+        primary = COLORS.get("primary")
+        vivid = get_vivid_palette()[0]
+
         fig.add_trace(
             go.Bar(
                 x=df["date"],
                 y=df["value"],
                 name="Realizado",
-                marker_color="#325f99",
-                marker_line_color="#22476f",
+                marker_color=primary,
+                marker_line_color=primary,
                 marker_line_width=1,
                 hovertemplate="%{x|%b %Y}<br>Desempeño: %{y}<extra></extra>",
             )
@@ -33,7 +37,7 @@ class Charts:
                 y=df["value"],
                 name="Tendencia",
                 mode="lines+markers",
-                line=dict(color="#00b8d4", width=4),
+                line=dict(color=vivid, width=4),
                 marker=dict(size=8),
                 hovertemplate="%{x|%b %Y}<br>Tendencia: %{y}<extra></extra>",
             )
@@ -53,10 +57,10 @@ class Charts:
         df = self.service.get_semaforo()
         max_val = df["valor"].max() if not df.empty else 1
         color_map = {
-            "Peligro": "#ff3b30",
-            "Alerta": "#ffab00",
-            "Cumplimiento": "#00c853",
-            "Sobrecumplimiento": "#00b8d4",
+            "Peligro": COLORS.get("danger"),
+            "Alerta": COLORS.get("warning"),
+            "Cumplimiento": COLORS.get("success"),
+            "Sobrecumplimiento": COLORS.get("sobrecumplimiento"),
         }
         html_rows = [
             "<div class='html-bar-chart'>",

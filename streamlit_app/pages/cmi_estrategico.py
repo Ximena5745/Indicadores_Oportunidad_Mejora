@@ -12,6 +12,7 @@ from streamlit_app.services.strategic_indicators import (
     preparar_pdi_con_cierre,
     load_cierres,
 )
+from streamlit_app.styles.design_system import get_line_color
 
 CORTE_SEMESTRAL = {
     "Junio": 6,
@@ -44,7 +45,8 @@ def _linea_color(linea: str) -> str:
         return "#A6CE38"
     if "educaci" in txt or "toda la vida" in txt:
         return "#0F385A"
-    return "#1f4e79"
+    # Fallback al sistema de diseño (si existe mapeo global)
+    return get_line_color(linea)
 
 
 # ─── Pesos por línea estratégica para el ISI ─────────────────────────────────

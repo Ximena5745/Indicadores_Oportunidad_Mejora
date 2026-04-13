@@ -36,6 +36,7 @@ from streamlit_app.utils.formatting import (
     fmt_num as _fmt_num,
     fmt_valor as _fmt_valor,
 )
+from streamlit_app.styles.design_system import get_line_color
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 from pathlib import Path
@@ -1555,8 +1556,12 @@ def render():
 
         # Si hay columna 'linea', mostrar una tabla por cada línea con cabecera coloreada
         def _color_for_name(name: str) -> str:
-            h = abs(hash(name)) % 0xFFFFFF
-            return f"#{h:06x}"
+            # Usar el mapeo global de paletas por línea cuando exista
+            try:
+                return get_line_color(str(name))
+            except Exception:
+                h = abs(hash(name)) % 0xFFFFFF
+                return f"#{h:06x}"
 
         if "linea" in df_mostrar.columns:
             for ln in sorted(df_mostrar["linea"].dropna().unique()):
