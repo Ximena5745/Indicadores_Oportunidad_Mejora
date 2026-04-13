@@ -250,22 +250,59 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             else:
                 text.append(wrapped)
 
-    fig = go.Figure(go.Sunburst(
-        labels=labels,
-        parents=parents,
-        values=values,
+    # Split inner (Linea) and outer (Objetivo) for independent styling
+    inner_idxs = [i for i, p in enumerate(parents) if p == ""]
+    outer_idxs = [i for i, p in enumerate(parents) if p != ""]
+
+    inner_labels = [labels[i] for i in inner_idxs]
+    inner_values = [values[i] for i in inner_idxs]
+    inner_colors = [colors[i] for i in inner_idxs]
+    inner_custom = [customdata[i] for i in inner_idxs]
+    inner_text = [text[i] for i in inner_idxs]
+
+    outer_labels = [labels[i] for i in outer_idxs]
+    outer_parents = [parents[i] for i in outer_idxs]
+    outer_values = [values[i] for i in outer_idxs]
+    outer_colors = [colors[i] for i in outer_idxs]
+    outer_custom = [customdata[i] for i in outer_idxs]
+    outer_text = [text[i] for i in outer_idxs]
+
+    fig = go.Figure()
+    # Outer ring: smaller white text
+    fig.add_trace(go.Sunburst(
+        labels=outer_labels,
+        parents=outer_parents,
+        values=outer_values,
         branchvalues="total",
-        marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-        customdata=customdata,
-        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
+        marker=dict(colors=outer_colors, line=dict(color="#ffffff", width=1)),
+        customdata=outer_custom,
+        text=outer_text,
+        textinfo='text',
         insidetextorientation="radial",
+        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
+        domain=dict(x=[0,1], y=[0,1]),
         maxdepth=2,
-        text=text,
-        textinfo='text'
+    ))
+
+    # Inner ring: larger, colored percentage text
+    fig.add_trace(go.Sunburst(
+        labels=inner_labels,
+        parents=["" for _ in inner_labels],
+        values=inner_values,
+        branchvalues="total",
+        marker=dict(colors=inner_colors, line=dict(color="#ffffff", width=2)),
+        customdata=inner_custom,
+        text=inner_text,
+        textinfo='text',
+        insidetextorientation="radial",
+        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
+        domain=dict(x=[0,1], y=[0,1]),
+        maxdepth=1,
+        insidetextfont=dict(size=16, color="#08306B", family='Arial')
     ))
 
     # Improve readability: uniform text sizing and placement
-    fig.update_traces(uniformtext=dict(minsize=10, mode='show'), textfont=dict(family='Arial', size=12))
+    fig.update_traces(selector=dict(type='sunburst'), uniformtext=dict(minsize=10, mode='hide'))
     fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=720)
     return fig
 
