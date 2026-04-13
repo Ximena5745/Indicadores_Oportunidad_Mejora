@@ -241,11 +241,14 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
 
         # Build wrapped text lines; put percentage on its own centered line
         text = []
-        for lab, cd in zip(labels, customdata):
+        for lab, cd, parent in zip(labels, customdata, parents):
             pct = (cd[0] if cd and cd[0] is not None else 0)
-            # choose width smaller for objectives if label longer
             wrapped = wrap_label(lab, width=18)
-            text.append(f"{wrapped}\n{pct:.1f}%")
+            # Show label + percentage only for inner ring (parents == ""); outer ring shows wrapped label only
+            if parent == "":
+                text.append(f"{wrapped}\n{pct:.1f}%")
+            else:
+                text.append(wrapped)
 
     fig = go.Figure(go.Sunburst(
         labels=labels,
@@ -257,12 +260,12 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
         insidetextorientation="radial",
         maxdepth=2,
-        texttemplate="%{label}<br>%{customdata[0]:.1f}%",
-        textinfo='label+text'
+        text=text,
+        textinfo='text'
     ))
 
     # Improve readability: uniform text sizing and placement
-    fig.update_traces(uniformtext=dict(minsize=10, mode='hide'), textfont=dict(family='Arial', size=12))
+    fig.update_traces(uniformtext=dict(minsize=10, mode='show'), textfont=dict(family='Arial', size=12))
     fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=720)
     return fig
 
