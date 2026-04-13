@@ -274,10 +274,10 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                     wrapped_lines.append(" ".join(cur))
             # clean and return joined lines
             cleaned = [re.sub(r"\s+", " ", ln).strip() for ln in wrapped_lines]
-            return "<br>".join(cleaned)
+            return "\n".join(cleaned)
 
         # Build wrapped text lines; include percentage on its own line for both inner and outer
-        # Use HTML line breaks (<br>) since Plotly renders them reliably inside sector text
+        # Use '\n' line breaks so Plotly places lines within sectors
         text = []
         for lab, cd, parent in zip(labels, customdata, parents):
             pct = (cd[0] if cd and cd[0] is not None else 0)
@@ -286,8 +286,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 wrapped = wrap_label(lab, width=12)
             else:
                 wrapped = wrap_label(lab, width=26)
-            # show label and percentage (no decimals) using HTML break
-            text.append(f"{wrapped}<br>{pct:.0f}%")
+            # show label and percentage (no decimals) using newline
+            text.append(f"{wrapped}\n{pct:.0f}%")
 
     # Split inner (Linea) and outer (Objetivo) for independent styling
     inner_idxs = [i for i, p in enumerate(parents) if p == ""]
@@ -315,6 +315,51 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     all_custom = customdata
     all_text = text
 
+    # Do not change slice sizes here — keep original values to preserve proportions
+
+    # Prepare per-label text using newlines (Plotly respects '\n' inside sectors)
+    if not all_text or len(all_text) != len(all_labels):
+        all_text = []
+        for lab, cd in zip(all_labels, all_custom):
+            pct = (cd[0] if cd and cd[0] is not None else 0)
+            all_text.append(f"{lab}\n{pct:.0f}%")
+
+    # Customize Sostenibilidad text to be slightly larger and bold
+    # Keep Sostenibilidad styling consistent with other labels; centering applied above
+
+    # Equalize objective sizes under 'Transformación organizacional' so children share same value
+    try:
+        transform_key = _norm_key('Transformación organizacional')
+        # find parent label matching transform
+        parent_label = None
+        for lbl in all_labels:
+            if _norm_key(lbl) == transform_key:
+                parent_label = lbl
+                break
+        if parent_label:
+            child_idxs = [i for i, p in enumerate(all_parents) if p == parent_label]
+            if child_idxs:
+                parent_idx = all_labels.index(parent_label)
+                parent_val = int(all_values[parent_idx]) if parent_idx < len(all_values) else None
+                if parent_val and len(child_idxs) > 0:
+                    equal_val = max(1, int(parent_val / len(child_idxs)))
+                    for i in child_idxs:
+                        all_values[i] = equal_val
+    except Exception:
+        pass
+
+    # Make top-level Linea labels uppercase to increase emphasis (visual 'bold')
+    try:
+        for i, p in enumerate(all_parents):
+            if p == "":
+                # text entries are like "label\nXX%"
+                parts = str(all_text[i]).split('\n')
+                if parts:
+                    parts[0] = parts[0].upper()
+                    all_text[i] = '\n'.join(parts)
+    except Exception:
+        pass
+
     fig.add_trace(go.Sunburst(
         labels=all_labels,
         parents=all_parents,
@@ -324,7 +369,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         customdata=all_custom,
         text=all_text,
         textinfo='text',
-        insidetextorientation="radial",
+        texttemplate='%{text}',
+        insidetextorientation="horizontal",
         hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.0f}%<extra></extra>",
         domain=dict(x=[0,1], y=[0,1]),
         maxdepth=2,
@@ -335,17 +381,18 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     try:
         if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
             # stronger styling to match reference: larger inner text, thin separators, radial labels
+            # Increase sizes and emphasize the percentage in blue via texttemplate
             fig.data[0].update(
                 uniformtext=dict(minsize=10, mode='show'),
-                textfont=dict(family='Inter, sans-serif', size=12, color='#062A4F'),
-                insidetextfont=dict(family='Inter, sans-serif', size=18, color='#062A4F'),
+                textfont=dict(family='Inter, sans-serif', size=14, color='#062A4F'),
+                insidetextfont=dict(family='Inter, sans-serif', size=24, color='#0B5FFF'),
                 marker=dict(line=dict(color='#FFFFFF', width=3)),
                 branchvalues='total',
                 separation=2,
-                # use the prepared wrapped `text` (label + percentage) so lines break correctly
+                # use raw text (with newlines) and let Plotly render it
                 texttemplate='%{text}',
                 hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
-                insidetextorientation='radial',
+                insidetextorientation='horizontal',
                 constraintext='ellipsis'
             )
     except Exception:
