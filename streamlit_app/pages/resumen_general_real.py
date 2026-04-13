@@ -337,13 +337,13 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 parent_nk = _norm_key(parent_label) if parent_label else ""
                 # Amplify Educación more and reduce Sostenibilidad further
                 if nk == edu_key and (not parent_label):
-                    all_values[i] = max(1, int(all_values[i] * 3.5))
+                    all_values[i] = max(1, int(all_values[i] * 5))
                 # If a node is a child of Educación, enlarge it as well
                 elif parent_nk == edu_key:
-                    all_values[i] = max(1, int(all_values[i] * 2.5))
+                    all_values[i] = max(1, int(all_values[i] * 3))
                 # reduce Sostenibilidad further
                 if nk == sus_key:
-                    all_values[i] = max(1, int(all_values[i] * 0.35))
+                    all_values[i] = max(1, int(all_values[i] * 0.25))
             except Exception:
                 continue
     except Exception:
