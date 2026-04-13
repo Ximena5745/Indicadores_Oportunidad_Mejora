@@ -185,28 +185,30 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     if df.empty:
         labels = ["Sin datos"]
         parents = [""]
-        values = [0]
+        values = [1]
+        customdata = [[0]]
         colors = ["#6B728E"]
     else:
-        grouped = (
-            df.groupby(["Linea", "Objetivo"], dropna=False)
-              .agg(cumplimiento_pct=("cumplimiento_pct", "mean"))
-              .reset_index()
-        )
+        # Nivel 1: Linea
+        lines = df.groupby("Linea", dropna=False).agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
+        # Nivel 2: Objetivo
+        grouped = df.groupby(["Linea", "Objetivo"], dropna=False).agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
         labels = []
         parents = []
         values = []
+        customdata = []
         colors = []
-        lines = grouped.groupby("Linea").agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
         for _, line in lines.iterrows():
             labels.append(line["Linea"])
             parents.append("")
-            values.append(line["cumplimiento_pct"] if pd.notna(line["cumplimiento_pct"]) else 0)
+            values.append(1)  # valor fijo para estructura
+            customdata.append([line["cumplimiento_pct"] if pd.notna(line["cumplimiento_pct"]) else 0])
             colors.append(LINEA_COLORS.get(line["Linea"], "#6B728E"))
         for _, row in grouped.iterrows():
             labels.append(row["Objetivo"])
             parents.append(row["Linea"])
-            values.append(row["cumplimiento_pct"] if pd.notna(row["cumplimiento_pct"]) else 0)
+            values.append(1)
+            customdata.append([row["cumplimiento_pct"] if pd.notna(row["cumplimiento_pct"]) else 0])
             colors.append(LINEA_COLORS.get(row["Linea"], "#6B728E"))
     fig = go.Figure(go.Sunburst(
         labels=labels,
@@ -214,7 +216,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         values=values,
         branchvalues="total",
         marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-        hovertemplate="<b>%{label}</b><br>Cumplimiento: %{value:.1f}%<extra></extra>",
+        customdata=customdata,
+        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
         insidetextorientation="radial",
     ))
     fig.update_layout(margin=dict(t=30, l=0, r=0, b=0), height=600)
