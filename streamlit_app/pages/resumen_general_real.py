@@ -659,6 +659,10 @@ def render():
     month_label = selected_month if selected_month else "último disponible"
     st.caption(f"Corte seleccionado: {selected_year} — Mes {month_label}")
 
+    # Asegurar que el mes predeterminado sea diciembre si no se selecciona otro
+    if selected_month is None:
+        selected_month = 12
+
     pdi_df = preparar_pdi_con_cierre(selected_year, selected_month if selected_month else 12)
     # Aplicar filtros explícitos de año/mes a las visualizaciones
     if not pdi_df.empty:
