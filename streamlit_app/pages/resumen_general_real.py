@@ -334,11 +334,11 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             try:
                 nk = _norm_key(lab)
                 if nk == edu_key:
-                    # make Educación noticeably larger so its text fits (user requested ×2.5)
-                    all_values[i] = int(all_values[i] * 2.5)
+                    # increase Educación more (×3) per request
+                    all_values[i] = int(all_values[i] * 3)
                 if nk == sus_key:
-                    # reduce Sostenibilidad to balance the chart
-                    all_values[i] = max(1, int(all_values[i] * 0.6))
+                    # decrease Sostenibilidad further (×0.4)
+                    all_values[i] = max(1, int(all_values[i] * 0.4))
             except Exception:
                 continue
     except Exception:
@@ -365,6 +365,14 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                     all_values[pidx] = int(s)
             except Exception:
                 all_values[pidx] = int(s)
+    except Exception:
+        pass
+
+    # Expand objective nodes slightly to make outer text more visible (multiply nodes with a parent)
+    try:
+        for i, p in enumerate(all_parents):
+            if p and i < len(all_values):
+                all_values[i] = max(1, int(all_values[i] * 1.2))
     except Exception:
         pass
 
@@ -406,7 +414,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         parents=all_parents,
         values=all_values,
         branchvalues="total",
-        marker=dict(colors=all_colors, line=dict(color="#ffffff", width=4)),
+        marker=dict(colors=all_colors, line=dict(color="#ffffff", width=1)),
         customdata=all_custom,
         text=all_text,
         textinfo='text',
