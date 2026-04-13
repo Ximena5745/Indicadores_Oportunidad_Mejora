@@ -302,7 +302,17 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     ))
 
     # Improve readability: uniform text sizing and placement
-    fig.update_traces(selector=dict(type='sunburst'), uniformtext=dict(minsize=10, mode='hide'))
+    # Some Plotly versions raise when using update_traces with selector dict in certain envs (Streamlit Cloud).
+    # Apply updates per-trace to be robust.
+    for trace in fig.data:
+        try:
+            if getattr(trace, 'type', None) == 'sunburst':
+                trace.update(uniformtext=dict(minsize=10, mode='hide'))
+                # ensure text font defaults
+                trace.update(textfont=dict(family='Arial', size=12))
+        except Exception:
+            # ignore per-trace update failures to avoid breaking the app
+            pass
     fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=720)
     return fig
 
