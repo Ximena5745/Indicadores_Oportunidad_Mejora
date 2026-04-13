@@ -359,10 +359,28 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     m["accion_creada"] = (m["tiene_om"] == 1) | (m["tiene_accion"] == 1)
     m["avance_mitigacion_pct"] = pd.to_numeric(m.get("avance_accion"), errors="coerce").round(1)
 
+    # Incluir porcentaje de cumplimiento actual (si está disponible) y asegurar número OM
+    # Cumplimiento puede estar en columnas 'Cumplimiento' (0-100 o 0-1) o 'Cumplimiento_norm' (0-1)
+    if "Cumplimiento" in m.columns:
+        m["Cumplimiento_pct"] = pd.to_numeric(m.get("Cumplimiento"), errors="coerce")
+        # si está en rango 0..1, convertir a 0..100
+        if m["Cumplimiento_pct"].max(skipna=True) <= 1.5:
+            m["Cumplimiento_pct"] = (m["Cumplimiento_pct"] * 100).round(1)
+        else:
+            m["Cumplimiento_pct"] = m["Cumplimiento_pct"].round(1)
+    elif "Cumplimiento_norm" in m.columns:
+        m["Cumplimiento_pct"] = (pd.to_numeric(m.get("Cumplimiento_norm"), errors="coerce") * 100).round(1)
+    else:
+        m["Cumplimiento_pct"] = pd.NA
+
+    # Asegurar que numero_om exista (viene de la tabla registros_om)
+    if "numero_om" not in m.columns:
+        m["numero_om"] = ""
+
     cols = [
         "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
         "tiene_om", "numero_om", "tipo_mitigacion", "accion_creada",
-        "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct",
+        "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct", "Cumplimiento_pct",
     ]
     cols = [c for c in cols if c in m.columns]
     m = m[cols]

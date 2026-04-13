@@ -9,6 +9,7 @@ from streamlit_app.components import KPIRow
 from streamlit_app.components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
 from streamlit_app.services.data_service import DataService
 from streamlit_app.components.filters import render_filters
+from core.calculos import simple_categoria_desde_porcentaje
 from core.config import CACHE_TTL, VICERRECTORIA_COLORS, COLORES
 from components.charts import exportar_excel, panel_detalle_indicador
 
@@ -110,6 +111,20 @@ def _render_proceso(df_proc: pd.DataFrame, nombre: str, prefix: str, anio: int):
     if df_ult.empty:
         st.warning(f"Sin datos para **{nombre}** en {anio}.")
         return
+
+    # Si no hay columna 'Categoria' o está vacía, intentar inferirla desde cumplimiento
+    try:
+        if "Categoria" not in df_ult.columns or df_ult["Categoria"].isna().all():
+            if "Cumplimiento_norm" in df_ult.columns:
+                df_ult["Categoria"] = df_ult["Cumplimiento_norm"].apply(
+                    lambda v: simple_categoria_desde_porcentaje(v * 100) if pd.notna(v) else "Sin dato"
+                )
+            elif "Cumplimiento" in df_ult.columns:
+                df_ult["Categoria"] = df_ult["Cumplimiento"].apply(
+                    lambda v: simple_categoria_desde_porcentaje(float(v) * 100) if pd.notna(v) else "Sin dato"
+                )
+    except Exception:
+        pass
 
     total, cats = _kpis(df_ult)
     _render_kpis(total, cats)
@@ -311,6 +326,9 @@ def render():
             collapsible=True,
         )
 
+        # Opción para mostrar subprocesos (por defecto ocultos)
+        show_subprocs = st.checkbox("Mostrar subprocesos", value=False, key="resumen_show_subprocs")
+
         anio = selections.get("anio")
         mes = selections.get("mes")
         tipo_proceso = selections.get("tipo_proceso", "Todos")
@@ -351,6 +369,22 @@ def render():
                 on="Proceso",
                 how="left",
             )
+
+        # Normalizar Proceso: algunos inputs guardan Subproceso en la columna 'Proceso'
+        try:
+            sub_map = {}
+            for _, r in map_df.dropna(subset=["Subproceso", "Proceso"]).iterrows():
+                sub_map[_normalize_text(r["Subproceso"]) ] = r["Proceso"]
+
+            def _map_proc_global(val):
+                if pd.isna(val):
+                    return val
+                key = _normalize_text(val)
+                return sub_map.get(key, val)
+
+            proc_df["Proceso_final"] = proc_df.get("Proceso", pd.Series()).apply(_map_proc_global)
+        except Exception:
+            proc_df["Proceso_final"] = proc_df.get("Proceso", pd.Series())
 
         if tipo_proceso != "Todos" and "Tipo de proceso" in proc_df.columns:
             proc_df = proc_df[proc_df["Tipo de proceso"] == tipo_proceso]
@@ -439,10 +473,12 @@ def render():
 
             # Barra: top Procesos por reportados
             if "Proceso" in proc_df.columns:
-                proc_counts = proc_df[proc_df.get("Estado") == "Reportado"].groupby("Proceso")["Id"].nunique().reset_index(name="reportados") if "Id" in proc_df.columns else proc_df[proc_df.get("Estado") == "Reportado"].groupby("Proceso").size().reset_index(name="reportados")
+                # Preferir Proceso_final cuando exista
+                proc_key = "Proceso_final" if "Proceso_final" in proc_df.columns else "Proceso"
+                proc_counts = proc_df[proc_df.get("Estado") == "Reportado"].groupby(proc_key)["Id"].nunique().reset_index(name="reportados") if "Id" in proc_df.columns else proc_df[proc_df.get("Estado") == "Reportado"].groupby(proc_key).size().reset_index(name="reportados")
                 proc_counts = proc_counts.sort_values("reportados", ascending=False).head(25)
                 if not proc_counts.empty:
-                    fig_proc = px.bar(proc_counts, x="reportados", y="Proceso", orientation="h", title="Top procesos por reportados")
+                    fig_proc = px.bar(proc_counts, x="reportados", y=proc_key, orientation="h", title="Top procesos por reportados")
                     st.plotly_chart(fig_proc, use_container_width=True)
 
             # Cumplimiento: si existe columna Cumplimiento o Nivel, mostrar distribución
@@ -635,16 +671,17 @@ def render():
                     st.info("No hay indicadores reportados para el período seleccionado.")
 
             # --- Tabs por Subproceso ---
-                for i, sub in enumerate(available_subprocs, start=1):
-                    with tab_objs[i]:
-                        st.header(f"Subproceso: {sub}")
-                        # Soportar tracking que guarde el subproceso en la columna `Subproceso` o en `Proceso`
-                        if "Subproceso" in df_proc_sel.columns:
-                            df_sub = df_proc_sel[df_proc_sel["Subproceso"] == sub].copy()
-                        else:
-                            df_sub = df_proc_sel[df_proc_sel.get("Proceso") == sub].copy()
-                        # Reusar _render_proceso (muestra mensaje si df_sub está vacío)
-                        _render_proceso(df_sub, sub, f"sub_{i}", anio_sel)
+                if show_subprocs:
+                    for i, sub in enumerate(available_subprocs, start=1):
+                        with tab_objs[i]:
+                            st.header(f"Subproceso: {sub}")
+                            # Soportar tracking que guarde el subproceso en la columna `Subproceso` o en `Proceso`
+                            if "Subproceso" in df_proc_sel.columns:
+                                df_sub = df_proc_sel[df_proc_sel["Subproceso"] == sub].copy()
+                            else:
+                                df_sub = df_proc_sel[df_proc_sel.get("Proceso") == sub].copy()
+                            # Reusar _render_proceso (muestra mensaje si df_sub está vacío)
+                            _render_proceso(df_sub, sub, f"sub_{i}", anio_sel)
 
     # ── Diálogo de ficha histórica (único, fuera de tabs) ───────────────────────
     id_ficha = st.session_state.get("_dir_ficha_id")

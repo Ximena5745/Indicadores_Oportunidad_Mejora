@@ -105,14 +105,30 @@ def render():
         return
 
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    # Meses en español
+    MESES_OPCIONES = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
 
     anios = sorted(pd.to_numeric(df.get("Año", pd.Series(dtype=float)), errors="coerce").dropna().astype(int).unique().tolist())
+    # default: prefer 2025 if present, else the latest year
     with col_f1:
-        anio_sel = st.selectbox("Año", options=["Todos"] + anios)
+        year_options = ["Todos"] + anios
+        if 2025 in anios:
+            default_idx = 1 + anios.index(2025)
+        else:
+            default_idx = max(0, len(year_options) - 1)
+        anio_sel = st.selectbox("Año", options=year_options, index=default_idx)
 
-    meses = sorted(pd.to_numeric(df.get("Mes", pd.Series(dtype=float)), errors="coerce").dropna().astype(int).unique().tolist())
+    meses_nums = sorted(pd.to_numeric(df.get("Mes", pd.Series(dtype=float)), errors="coerce").dropna().astype(int).unique().tolist())
     with col_f2:
-        mes_sel = st.selectbox("Mes", options=["Todos"] + meses)
+        # map numeric months to names for display
+        mes_names = [MESES_OPCIONES[m - 1] for m in meses_nums if 1 <= m <= 12]
+        mes_options = ["Todos"] + mes_names
+        # default to Diciembre if available
+        default_mes_idx = mes_options.index("Diciembre") if "Diciembre" in mes_options else max(0, len(mes_options) - 1)
+        mes_sel = st.selectbox("Mes", options=mes_options, index=default_mes_idx)
 
     procesos = sorted(df["Proceso"].dropna().astype(str).unique().tolist()) if "Proceso" in df.columns else []
     with col_f3:
@@ -126,7 +142,16 @@ def render():
     if anio_sel != "Todos" and "Año" in df_view.columns:
         df_view = df_view[df_view["Año"] == anio_sel]
     if mes_sel != "Todos" and "Mes" in df_view.columns:
-        df_view = df_view[df_view["Mes"] == mes_sel]
+        # mes_sel is a month name; map back to number
+        try:
+            mes_num = MESES_OPCIONES.index(mes_sel) + 1
+            df_view = df_view[df_view["Mes"] == mes_num]
+        except Exception:
+            # fallback: if mes_sel was numeric-like, compare directly
+            try:
+                df_view = df_view[df_view["Mes"] == int(mes_sel)]
+            except Exception:
+                pass
     if proceso_sel != "Todos" and "Proceso" in df_view.columns:
         df_view = df_view[df_view["Proceso"] == proceso_sel]
     if estado_sel != "Todos" and "Estado" in df_view.columns:

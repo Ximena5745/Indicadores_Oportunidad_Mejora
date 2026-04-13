@@ -375,8 +375,16 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
 
     # Expand objective nodes more to make outer text more visible (multiply nodes with a parent)
     try:
+        sus_key = _norm_key('Sostenibilidad')
         for i, p in enumerate(all_parents):
             if p and i < len(all_values):
+                # avoid expanding children of Sostenibilidad to keep it smaller
+                try:
+                    parent_nk = _norm_key(p)
+                    if parent_nk == sus_key:
+                        continue
+                except Exception:
+                    pass
                 # Increase outer ring (objetivos) so labels fit better
                 all_values[i] = max(1, int(all_values[i] * 2.5))
     except Exception:
