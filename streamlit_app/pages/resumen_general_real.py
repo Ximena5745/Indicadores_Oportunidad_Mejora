@@ -301,18 +301,39 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         insidetextfont=dict(size=16, color="#08306B", family='Arial')
     ))
 
-    # Improve readability: uniform text sizing and placement
-    # Some Plotly versions raise when using update_traces with selector dict in certain envs (Streamlit Cloud).
-    # Apply updates per-trace to be robust.
+    # Improve readability: set explicit templates for outer and inner sunburst traces
+    try:
+        # Outer trace (labels)
+        if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
+            fig.data[0].update(
+                uniformtext=dict(minsize=9, mode='hide'),
+                textfont=dict(family='Arial', size=11, color='#0b1946'),
+                insidetextfont=dict(family='Arial', size=11, color='white'),
+                texttemplate='%{text}',
+                hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>"
+            )
+
+        # Inner trace (percentages) — más grande y con otro tono
+        if len(fig.data) >= 2 and getattr(fig.data[1], 'type', None) == 'sunburst':
+            fig.data[1].update(
+                uniformtext=dict(minsize=12, mode='hide'),
+                textfont=dict(family='Arial', size=14, color='#08306B'),
+                insidetextfont=dict(family='Arial', size=18, color='#08306B'),
+                texttemplate='%{customdata[0]:.1f}%',
+                hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>"
+            )
+    except Exception:
+        # no queremos romper la renderización por problemas de versionado de plotly
+        pass
+
+    # As a final safety, ensure any remaining sunburst traces get a minimal uniformtext update
     for trace in fig.data:
         try:
-            if getattr(trace, 'type', None) == 'sunburst':
-                trace.update(uniformtext=dict(minsize=10, mode='hide'))
-                # ensure text font defaults
-                trace.update(textfont=dict(family='Arial', size=12))
+            if getattr(trace, 'type', None) == 'sunburst' and not getattr(trace, 'uniformtext', None):
+                trace.update(uniformtext=dict(minsize=9, mode='hide'))
         except Exception:
-            # ignore per-trace update failures to avoid breaking the app
             pass
+
     fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=720)
     return fig
 

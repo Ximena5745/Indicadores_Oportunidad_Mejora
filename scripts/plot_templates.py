@@ -108,11 +108,22 @@ def waterfall_chart(df: pd.DataFrame, x: str, y: str, color_map: dict | None = N
         fig = go.Figure(go.Waterfall(x=list(x_clean), y=list(y_clean), marker=dict(color=colors, line=dict(color="#ffffff", width=1))))
         fig.update_layout(title=title, height=420, template=DEFAULT_TEMPLATE)
         fig.update_traces(hovertemplate="%{x}<br>%{y:.1f}%<extra></extra>")
+        # mark as waterfall
+        fig.layout.meta = {"waterfall_used": True}
         return fig
     except Exception:
-        # Fallback: bar chart if Waterfall fails
+        # Fallback: bar chart if Waterfall fails, but include diagnostic info
+        import traceback
+        err = traceback.format_exc()
         fig = go.Figure(go.Bar(x=list(x_clean), y=list(y_clean), marker_color=colors))
+        msg = f"Waterfall rendering failed; fallback to Bar. Error: {str(err).splitlines()[-1]}"
         fig.update_layout(title=(title or 'Waterfall fallback: Bar'), height=420, template=DEFAULT_TEMPLATE)
+        # add a visible annotation with brief message and store full traceback in meta
+        try:
+            fig.add_annotation(text=msg, xref='paper', yref='paper', x=0.5, y=1.05, showarrow=False, font=dict(size=11, color='darkred'))
+        except Exception:
+            pass
+        fig.layout.meta = {"waterfall_used": False, "fallback_error": err}
         return fig
 
 
