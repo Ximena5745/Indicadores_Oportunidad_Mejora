@@ -211,21 +211,34 @@ def set_global_palette(palette: dict | None = None):
             'primary': '#0B5FFF', 'success': '#16A34A', 'alert': '#F59E0B',
             'danger': '#DC2626', 'bg': '#F5F7FA', 'panel': '#FFFFFF', 'text': '#0F1724'
         }
-    css = f"""
-    <style>
-    :root {{
-      --color-primary: {palette['primary']};
-      --success: {palette['success']};
-      --alert: {palette['alert']};
-      --danger: {palette['danger']};
-      --bg: {palette['bg']};
-      --panel: {palette['panel']};
-      --text: {palette['text']};
-    }}
-    .stApp {{ background: {palette['bg']} !important; }}
-    </style>
-    """
-    components.html(css, height=0)
+        css = f"""
+        <style>
+        :root {{
+            --color-primary: {palette['primary']};
+            --success: {palette['success']};
+            --alert: {palette['alert']};
+            --danger: {palette['danger']};
+            --bg: {palette['bg']};
+            --panel: {palette['panel']};
+            --text: {palette['text']};
+        }}
+        /* Layout compacting: reduce default container padding and card spacing */
+        [data-testid="stAppViewContainer"] .main .block-container {{
+            padding: 8px 12px !important;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        /* Sidebar padding */
+        [data-testid="stSidebar"] {{ padding: 8px !important; }}
+        /* Reduce expander and caption spacing */
+        .streamlit-expanderHeader, .st-expander {{ padding: 6px 8px !important; margin-bottom:6px !important; }}
+        .stCaption {{ margin-top:4px !important; margin-bottom:6px !important; }}
+        /* Global background */
+        :root, body {{ background: {palette['bg']} !important; color: {palette['text']} !important; }}
+        </style>
+        """
+        components.html(css, height=0)
 
 
 def render_kawak_caption(total_indicadores: int, total_reportados: int | None = None):

@@ -1,0 +1,38 @@
+<style>
+  :root{ --card:#fff; --muted:#6B7280; --primary:#0F385A }
+  .charts-row{display:flex;gap:16px;flex-wrap:wrap}
+  .chart-card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 1px 2px rgba(2,6,23,0.06);min-width:260px}
+  .chart-card h4{margin:0 0 8px 0;color:#374151}
+</style>
+
+<div class="charts-row">
+  <div class="chart-card" style="flex:1">
+    <h4>Distribución por Vicerrectoría</h4>
+    <canvas id="donutV"></canvas>
+  </div>
+  <div class="chart-card" style="flex:2">
+    <h4>Cumplimiento por Proceso</h4>
+    <canvas id="barP"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function(){
+    const data = __DATA__ || {};
+    try{
+      const donutCfg = data.donutData || { labels:[], datasets:[{data:[], backgroundColor: ['#0F385A']}] };
+      const donutCtx = document.getElementById('donutV').getContext('2d');
+      new Chart(donutCtx, {type:'doughnut', data: donutCfg, options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+
+      const barLabels = (data.barData && data.barData.labels) || [];
+      const barValues = (data.barData && data.barData.values) || [];
+      const barCtx = document.getElementById('barP').getContext('2d');
+      new Chart(barCtx, {
+        type:'bar',
+        data:{ labels: barLabels, datasets:[{ data: barValues, backgroundColor: '#0F385A', borderRadius: 8 }] },
+        options:{ indexAxis:'y', responsive:true, plugins:{ tooltip:{enabled:true} }, scales:{ x:{ max:100 } }, interaction:{intersect:false,mode:'nearest'} }
+      });
+    }catch(e){console.error(e)}
+  })();
+</script>

@@ -1,0 +1,31 @@
+<style>
+  :root{ --card:#fff; --muted:#6B7280; --primary:#0F385A; --fucsia:#EC0677 }
+  .ins-card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 1px 2px rgba(2,6,23,0.06);min-width:260px}
+  .ins-card h4{margin:0 0 8px 0;color:#374151}
+  .ins-text{color:#4b5563;font-size:14px;margin-bottom:8px}
+  .rec-list{margin:0;padding-left:18px;color:#374151}
+</style>
+
+<div class="ins-card">
+  <h4>Insights de IA</h4>
+  <div id="insight_text" class="ins-text">Sin insights disponibles</div>
+  <div id="recos">
+    <h5 style="margin:6px 0;color:#374151;font-size:13px">Recomendaciones</h5>
+    <ul id="rec-list" class="rec-list"></ul>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const data = __DATA__ || {};
+    try{
+      const insight = data.process_insight || data.insight || 'Sin insights disponibles';
+      document.getElementById('insight_text').innerText = insight;
+      const recs = data.process_recommendations || [];
+      const ul = document.getElementById('rec-list');
+      ul.innerHTML = '';
+      if(recs.length===0) { const li = document.createElement('li'); li.style.color='#6b7280'; li.innerText = 'No hay recomendaciones automáticas.'; ul.appendChild(li); }
+      else { recs.forEach(r=>{ const li=document.createElement('li'); li.innerText = r; ul.appendChild(li); }); }
+    }catch(e){console.error(e)}
+  })();
+</script>

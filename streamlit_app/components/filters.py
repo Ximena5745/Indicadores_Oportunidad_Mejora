@@ -1,7 +1,7 @@
 import streamlit as st
 
 
-def render_filters(data, config, key_prefix="filter", columns_per_row=3, collapsible: bool = False, collapsed_by_default: bool = True):
+def render_filters(data, config, key_prefix="filter", columns_per_row=3, collapsible: bool = False, collapsed_by_default: bool = True, compact: bool = True):
     """Renderiza filtros reutilizables.
 
     Args:
@@ -28,16 +28,27 @@ def render_filters(data, config, key_prefix="filter", columns_per_row=3, collaps
         cols = st.columns(len(primary))
         for col, (key, conf) in zip(cols, primary):
             with col:
-                selections[key] = _render_single_filter(conf, key_prefix, key)
+                selections[key] = _render_single_filter(conf, key_prefix, key, compact=compact)
 
         # Render secondary inside expander
-        with st.expander("🔎 Filtros avanzados", expanded=not collapsed_by_default):
+        # Persistir preferencia de colapso en st.session_state
+        persist_key = f"{key_prefix}_filters_collapsed"
+        if persist_key not in st.session_state:
+            st.session_state[persist_key] = collapsed_by_default
+
+        # Checkbox para que el usuario fije la preferencia (visible siempre)
+        c1, c2 = st.columns([1, 9])
+        with c1:
+            st.checkbox("Mantener filtros cerrados", value=st.session_state[persist_key], key=persist_key)
+
+        expanded = not st.session_state[persist_key]
+        with st.expander("🔎 Filtros avanzados", expanded=expanded):
             for start in range(0, len(secondary), columns_per_row):
                 row_items = secondary[start:start + columns_per_row]
                 cols = st.columns(min(columns_per_row, len(row_items)))
                 for col, (key, conf) in zip(cols, row_items):
                     with col:
-                        selections[key] = _render_single_filter(conf, key_prefix, key)
+                        selections[key] = _render_single_filter(conf, key_prefix, key, compact=compact)
 
     else:
         # Render all inline in rows
@@ -47,20 +58,24 @@ def render_filters(data, config, key_prefix="filter", columns_per_row=3, collaps
 
             for col, (key, conf) in zip(cols, row_items):
                 with col:
-                    selections[key] = _render_single_filter(conf, key_prefix, key)
+                    selections[key] = _render_single_filter(conf, key_prefix, key, compact=compact)
 
     return selections
 
 
-def _render_single_filter(conf: dict, key_prefix: str, key: str):
+def _render_single_filter(conf: dict, key_prefix: str, key: str, compact: bool = True):
     """Helper: renderiza un solo filtro y devuelve el valor seleccionado."""
     raw_options = list(conf.get("options", []))
     include_all = conf.get("include_all", True)
     all_label = conf.get("all_label", "Todos")
     options = ([all_label] if include_all else []) + raw_options
 
+    label = conf.get("label", key)
+    if compact and conf.get("short_label"):
+        label = conf.get("short_label")
+
     if not options:
-        st.selectbox(conf["label"], ["Sin opciones"], disabled=True, key=f"{key_prefix}_{key}")
+        st.selectbox(label, ["Sin opciones"], disabled=True, key=f"{key_prefix}_{key}")
         return None
 
     default_value = conf.get("default", options[0])
@@ -68,7 +83,7 @@ def _render_single_filter(conf: dict, key_prefix: str, key: str):
         default_value = options[0]
 
     return st.selectbox(
-        conf["label"],
+        label,
         options,
         index=options.index(default_value),
         key=f"{key_prefix}_{key}",

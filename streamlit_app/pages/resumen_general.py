@@ -825,7 +825,7 @@ def _aplicar_filtros(df, txt_id, txt_nom, sel_vicerr, sel_proc, sel_sub, sel_niv
 
 
 def _filtros_ui(df_opciones, prefix):
-    with st.expander("🔍 Filtros", expanded=True):
+    with st.expander("🔍 Filtros", expanded=False):
         r1c1, r1c2 = st.columns(2)
         with r1c1:
             txt_id = st.text_input("ID", key=f"{prefix}_id", placeholder="Buscar ID...")
@@ -1283,7 +1283,7 @@ def render():
             )
 
         # Mostrar leyenda pequeña con total de indicadores para evitar confusión
-        render_kawak_caption(total_indicadores, total_reportados)
+        # (se muestra una sola vez, arriba)
 
     # Caption de tendencia general
     if not df_prev.empty:

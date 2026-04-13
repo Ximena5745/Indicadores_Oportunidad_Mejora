@@ -1,0 +1,53 @@
+<style>
+  :root{ --card:#fff; --muted:#6B7280; --fucsia:#EC0677 }
+  .table-card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 1px 2px rgba(2,6,23,0.06)}
+  .table-card table{width:100%;border-collapse:collapse;font-size:13px}
+  .table-card thead{color:var(--muted);text-align:left}
+  .table-card tbody tr{transition:background .12s ease;cursor:pointer}
+  .table-card tbody tr:hover{background:rgba(2,6,23,0.03)}
+  .badge{padding:4px 8px;border-radius:6px;color:#fff;font-weight:600}
+  .badge-high{background:#EF4444}
+  .badge-med{background:#D4AF37}
+  .badge-low{background:#10B981}
+  .highlight-fucsia{background:linear-gradient(90deg,var(--fucsia),#FF7AB6);color:#fff;padding:4px 8px;border-radius:6px}
+</style>
+
+<div class="table-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <h4 style="margin:0;color:#374151">Procesos con mayor incremento de Peligro</h4>
+    <div><input id="searchTbl" placeholder="Buscar..." style="padding:6px;border-radius:6px;border:1px solid #e5e7eb"/></div>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr><th style="padding:8px">Proceso</th><th style="padding:8px">Dirección</th><th style="padding:8px">Incremento</th><th style="padding:8px">Nivel</th></tr>
+      </thead>
+      <tbody id="tblBody"></tbody>
+    </table>
+  </div>
+  <div id="tblPager" style="margin-top:8px;display:flex;justify-content:space-between"></div>
+</div>
+
+<script>
+  (function(){
+    const data = __DATA__ || {};
+    const pageSize = 4; let page = 1;
+    const rows = data.tableData || [];
+    const tbody = document.getElementById('tblBody');
+    function render(){
+      const start=(page-1)*pageSize; const end=start+pageSize; const slice=rows.slice(start,end);
+      tbody.innerHTML='';
+      slice.forEach(r=>{
+        const tr=document.createElement('tr');
+        const isEsc = r.direccion && String(r.direccion).toLowerCase().includes('escuela');
+        tr.innerHTML = `<td style="padding:8px">${isEsc? `<span class='highlight-fucsia'>${r.proceso}</span>`: r.proceso}</td><td style="padding:8px">${r.direccion||''}</td><td style="padding:8px">${r.incremento||''}</td><td style="padding:8px"><span class='badge ${r.nivel==='Alto'?'badge-high': r.nivel==='Medio'?'badge-med':'badge-low'}'>${r.nivel||''}</span></td>`;
+        tbody.appendChild(tr);
+      });
+      const pager=document.getElementById('tblPager'); pager.innerHTML=`<div>Mostrando ${rows.length? start+1:0} - ${Math.min(rows.length,end)} de ${rows.length}</div><div>${Array.from({length:Math.max(1,Math.ceil(rows.length/pageSize))},(_,i)=>`<button onclick="(function(){page=${i+1};render();})()" style="margin-left:4px;padding:6px;border-radius:6px">${i+1}</button>`).join('')}</div>`;
+    }
+    document.getElementById('searchTbl').addEventListener('input', function(e){ const q = e.target.value.toLowerCase(); page=1; const filtered = rows.filter(r=> (r.proceso||'').toLowerCase().includes(q) || (r.direccion||'').toLowerCase().includes(q)); window._tbl_filtered = filtered; window._tbl_rows = filtered; renderFiltered(); });
+    function renderFiltered(){ const src = window._tbl_rows || rows; const start=(page-1)*pageSize; const end=start+pageSize; const slice=src.slice(start,end); tbody.innerHTML=''; slice.forEach(r=>{ const isEsc = r.direccion && String(r.direccion).toLowerCase().includes('escuela'); const tr=document.createElement('tr'); tr.innerHTML = `<td style="padding:8px">${isEsc? `<span class='highlight-fucsia'>${r.proceso}</span>`: r.proceso}</td><td style="padding:8px">${r.direccion||''}</td><td style="padding:8px">${r.incremento||''}</td><td style="padding:8px"><span class='badge ${r.nivel==='Alto'?'badge-high': r.nivel==='Medio'?'badge-med':'badge-low'}'>${r.nivel||''}</span></td>`; tbody.appendChild(tr); }); const pager=document.getElementById('tblPager'); pager.innerHTML=`<div>Mostrando ${src.length? start+1:0} - ${Math.min(src.length,end)} de ${src.length}</div><div>${Array.from({length:Math.max(1,Math.ceil(src.length/pageSize))},(_,i)=>`<button onclick="(function(){page=${i+1};renderFiltered();})()" style="margin-left:4px;padding:6px;border-radius:6px">${i+1}</button>`).join('')}</div>`; }
+    window.renderTable = function(){ render(); };
+    render();
+  })();
+</script>

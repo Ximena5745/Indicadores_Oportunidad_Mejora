@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Cumplimiento Institucional</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#0F385A',
+              fucsia: '#EC0677'
+            },
+            fontFamily: {
+              inter: ['Inter', 'sans-serif']
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background-color: #F8FAFC; }
+      .card { background: #ffffff; border-radius: 0.5rem; box-shadow: 0 1px 2px rgba(2,6,23,0.06); }
+      .sidebar { background: #0F385A; }
+      .kpi-value { font-weight: 700; font-size: 1.25rem; }
+      .trend-up { color: #16A34A; }
+      .trend-down { color: #DC2626; }
+      .badge-low { background:#10B981; color:white; }
+      .badge-med { background:#D4AF37; color:white; }
+      .badge-high { background:#EF4444; color:white; }
+      .highlight-fucsia { background: linear-gradient(90deg,#EC0677,#FF7AB6); color:white; }
+    </style>
+  </head>
+  <body>
+    <div class="min-h-screen flex">
+      <!-- Sidebar -->
+      <aside class="w-64 p-6 text-white sidebar hidden md:block">
+        <div class="mb-8">
+          <h2 class="text-xl font-semibold">Institucional</h2>
+        </div>
+        <nav class="space-y-4">
+          <a class="flex items-center gap-3 opacity-90 hover:opacity-100" href="#">
+            <svg width="20" height="20" fill="none" stroke="currentColor" class="text-white"><path d="M3 7h14"></path></svg>
+            <span>Resumen</span>
+          </a>
+          <a class="flex items-center gap-3 opacity-80 hover:opacity-100" href="#">
+            <svg width="20" height="20" fill="none" stroke="currentColor" class="text-white"><path d="M3 7h14"></path></svg>
+            <span>Procesos</span>
+          </a>
+        </nav>
+      </aside>
+
+      <main class="flex-1 p-6">
+        <!-- Header filtros -->
+        <header class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-4">
+            <select class="px-3 py-2 rounded card text-sm">
+              <option>Año 2026</option>
+              <option>Año 2025</option>
+            </select>
+            <select class="px-3 py-2 rounded card text-sm">
+              <option>Mes: Abril</option>
+              <option>Mes: Marzo</option>
+            </select>
+            <select class="px-3 py-2 rounded card text-sm">
+              <option>Modalidad: On-Campus</option>
+              <option>Modalidad: Virtual</option>
+            </select>
+          </div>
+          <div>
+            <button class="px-4 py-2 rounded card">Exportar</button>
+          </div>
+        </header>
+
+        <!-- Grid principal: 3 filas -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <!-- KPIs (span 2 col on large) -->
+          <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- 7 tarjetas -->
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Cumplimiento Global</div>
+              <div class="kpi-value">85% <span class="text-xs trend-up">↑ 3%</span></div>
+            </div>
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Incidentes</div>
+              <div class="kpi-value">12 <span class="text-xs trend-down">↓ 1</span></div>
+            </div>
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Procesos Activos</div>
+              <div class="kpi-value">142</div>
+            </div>
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Riesgo Alto</div>
+              <div class="kpi-value">8 <span class="text-xs trend-up">↑ 2</span></div>
+            </div>
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Riesgo Medio</div>
+              <div class="kpi-value">24</div>
+            </div>
+            <div class="card p-4">
+              <div class="text-sm text-gray-500">Riesgo Bajo</div>
+              <div class="kpi-value">110</div>
+            </div>
+            <div class="card p-4 col-span-2 md:col-span-4">
+              <div class="text-sm text-gray-500">Alertas Recientes</div>
+              <div class="kpi-value">3</div>
+            </div>
+          </div>
+
+          <!-- Insights IA -->
+          <aside class="card p-4">
+            <h3 class="font-semibold">Insights de IA</h3>
+            <p class="text-sm text-gray-600 mt-2">Este mes, el proceso de Gestión Académica presenta un retraso del 15%, impactando el cumplimiento global en 2 puntos porcentuales.</p>
+          </aside>
+        </section>
+
+        <!-- Segunda fila: charts -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div class="card p-4 lg:col-span-1">
+            <h4 class="text-sm text-gray-600 mb-3">Distribución por Vicerrectoría</h4>
+            <canvas id="donutVicerrectoria"></canvas>
+          </div>
+
+          <div class="card p-4 lg:col-span-2">
+            <h4 class="text-sm text-gray-600 mb-3">Cumplimiento por Proceso</h4>
+            <canvas id="barProcesos"></canvas>
+          </div>
+        </section>
+
+        <!-- Tercera fila: tabla -->
+        <section class="card p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h4 class="text-sm text-gray-600">Procesos con mayor incremento de Peligro</h4>
+            <div>
+              <input id="search" class="px-3 py-2 rounded card text-sm" placeholder="Buscar proceso" />
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-left">
+              <thead class="text-xs text-gray-500 uppercase">
+                <tr>
+                  <th class="p-2">Proceso</th>
+                  <th class="p-2">Dirección</th>
+                  <th class="p-2">Incremento</th>
+                  <th class="p-2">Nivel</th>
+                </tr>
+              </thead>
+              <tbody id="table-body" class="text-sm text-gray-700"></tbody>
+            </table>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between">
+            <div id="pagination" class="flex gap-2"></div>
+            <div class="text-sm text-gray-500">Mostrando <span id="range"></span></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      // Data injected from Streamlit
+      const INITIAL_DATA = __DATA__;
+
+      const donutData = INITIAL_DATA && INITIAL_DATA.donutData ? INITIAL_DATA.donutData : {
+        labels: ['Vicerrectoría A','Vicerrectoría B','Vicerrectoría C','Vicerrectoría D'],
+        datasets: [{ data: [45,25,20,10], backgroundColor:['#0F385A','#1E90FF','#F59E0B','#EC0677'] }]
+      }
+
+      const donutCtx = document.getElementById('donutVicerrectoria').getContext('2d')
+      new Chart(donutCtx, { type: 'doughnut', data: donutData, options: { responsive: true, plugins: { legend: { position: 'bottom' } } } })
+
+      // Horizontal bar chart (use injected barData)
+      const barLabels = (INITIAL_DATA && INITIAL_DATA.barData && INITIAL_DATA.barData.labels) ? INITIAL_DATA.barData.labels : ['Gestión Académica','Admisiones','Finanzas','RRHH','Infraestructura']
+      const barValues = (INITIAL_DATA && INITIAL_DATA.barData && INITIAL_DATA.barData.values) ? INITIAL_DATA.barData.values : [70,85,60,78,82]
+
+      const barCtx = document.getElementById('barProcesos').getContext('2d')
+      new Chart(barCtx, {
+        type: 'bar',
+        data: { labels: barLabels, datasets: [{ data: barValues, backgroundColor: '#0F385A', borderRadius: 8 }] },
+        options: {
+          indexAxis: 'y', responsive: true,
+          plugins: { tooltip: { enabled: true, callbacks: { label: (ctx) => `Cumplimiento: ${ctx.parsed.x}%` } } },
+          scales: { x: { max: 100 } }
+        }
+      })
+
+      // Table data and pagination
+      const tableData = (INITIAL_DATA && INITIAL_DATA.tableData) ? INITIAL_DATA.tableData : []
+
+      const pageSize = 4
+      let currentPage = 1
+
+      function renderTable() {
+        const start = (currentPage-1)*pageSize
+        const end = start + pageSize
+        const page = tableData.slice(start,end)
+        const tbody = document.getElementById('table-body')
+        tbody.innerHTML = ''
+        page.forEach(r => {
+          const tr = document.createElement('tr')
+          tr.className = 'border-t'
+          const isEscuela = r.direccion && r.direccion.includes('Escuela')
+          tr.innerHTML = `
+            <td class="p-2 py-4">${isEscuela ? `<span class="px-2 py-1 rounded highlight-fucsia">${r.proceso}</span>` : (r.proceso||'')}</td>
+            <td class="p-2">${r.direccion||''}</td>
+            <td class="p-2">${r.incremento||''}</td>
+            <td class="p-2"><span class="px-2 py-1 rounded ${r.nivel==='Alto'?'badge-high': r.nivel==='Medio'?'badge-med':'badge-low'}">${r.nivel||''}</span></td>
+          `
+          tbody.appendChild(tr)
+        })
+        document.getElementById('range').innerText = `${tableData.length? start+1:0} - ${Math.min(end, tableData.length)} de ${tableData.length}`
+        renderPagination()
+      }
+
+      function renderPagination() {
+        const pages = Math.ceil(tableData.length / pageSize) || 1
+        const container = document.getElementById('pagination')
+        container.innerHTML = ''
+        for (let i=1;i<=pages;i++){
+          const btn = document.createElement('button')
+          btn.className = `px-3 py-1 rounded ${i===currentPage? 'bg-primary text-white':'card'}`
+          btn.innerText = i
+          btn.onclick = ()=>{ currentPage=i; renderTable() }
+          container.appendChild(btn)
+        }
+      }
+
+      renderTable()
+    </script>
+  </body>
+</html>
