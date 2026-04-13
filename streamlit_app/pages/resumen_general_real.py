@@ -383,6 +383,27 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             pct = (cd[0] if cd and cd[0] is not None else 0)
             all_text.append(f"{lab}\n{pct:.0f}%")
 
+    # Final enforcement: ensure parent nodes have values >= sum(children)
+    try:
+        label_to_index = {lbl: idx for idx, lbl in enumerate(all_labels)}
+        children_sum = {lbl: 0 for lbl in all_labels}
+        for idx, parent in enumerate(all_parents):
+            if parent and parent in label_to_index and idx < len(all_values):
+                children_sum[parent] += int(all_values[idx])
+        for parent, s in children_sum.items():
+            if s <= 0:
+                continue
+            pidx = label_to_index.get(parent)
+            if pidx is None or pidx >= len(all_values):
+                continue
+            try:
+                if int(all_values[pidx]) < s:
+                    all_values[pidx] = int(s)
+            except Exception:
+                all_values[pidx] = int(s)
+    except Exception:
+        pass
+
     # Customize Sostenibilidad text to be slightly larger and bold
     # Keep Sostenibilidad styling consistent with other labels; centering applied above
 
