@@ -326,13 +326,19 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     all_custom = customdata
     all_text = text
 
-    # Increase visual size of 'Educación para toda la vida' slightly so its text fits
+    # Adjust sizes: amplify 'Educación para toda la vida' and reduce 'Sostenibilidad'
     try:
         edu_key = _norm_key('Educación para toda la vida')
+        sus_key = _norm_key('Sostenibilidad')
         for i, lab in enumerate(all_labels):
             try:
-                if _norm_key(lab) == edu_key:
-                    all_values[i] = int(all_values[i] * 1.5)
+                nk = _norm_key(lab)
+                if nk == edu_key:
+                    # make Educación noticeably larger so its text fits (user requested ×2.5)
+                    all_values[i] = int(all_values[i] * 2.5)
+                if nk == sus_key:
+                    # reduce Sostenibilidad to balance the chart
+                    all_values[i] = max(1, int(all_values[i] * 0.6))
             except Exception:
                 continue
     except Exception:
