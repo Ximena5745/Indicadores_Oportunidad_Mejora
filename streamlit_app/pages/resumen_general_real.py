@@ -382,35 +382,12 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     except Exception:
         pass
 
-        # Prepare display labels (wrapped) and percentage text separately
-        display_labels = []
-        pct_texts = []
-        display_texts = []
-        if not all_text or len(all_text) != len(all_labels):
-            for lab, cd, parent in zip(all_labels, all_custom, all_parents):
-                pct = (cd[0] if cd and cd[0] is not None else 0)
-                # choose wrap width based on level
-                if not parent:
-                    wrapped = wrap_label(lab, width=12)
-                else:
-                    wrapped = wrap_label(lab, width=26)
-                # replace underscores with spaces for better display
-                wrapped = str(wrapped).replace('_', ' ')
-                # force a line-break in inner (Linea) labels to avoid overflow
-                if not parent:
-                    words = wrapped.split()
-                    if len(words) > 2:
-                        mid = max(1, len(words) // 2)
-                        wrapped = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
-                display_labels.append(wrapped)
-                pct_texts.append(f"{pct:.0f}%")
-                # combined display text (label + pct) to guarantee proper alignment with ids
-                display_texts.append(f"{wrapped}\n{pct:.0f}%")
-        else:
-            # fallback
-            display_labels = [str(l).replace('_', ' ') for l in all_labels]
-            pct_texts = [f"{(cd[0] if cd and cd[0] is not None else 0):.0f}%" for cd in all_custom]
-            display_texts = [f"{lab}\n{pct}" for lab, pct in zip(display_labels, pct_texts)]
+    # Prepare per-label text using newlines (Plotly respects '\n' inside sectors)
+    if not all_text or len(all_text) != len(all_labels):
+        all_text = []
+        for lab, cd in zip(all_labels, all_custom):
+            pct = (cd[0] if cd and cd[0] is not None else 0)
+            all_text.append(f"{lab}\n{pct:.0f}%")
 
     # Final enforcement: ensure parent nodes have values >= sum(children)
     try:
@@ -459,25 +436,22 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
 
     # Do not uppercase labels; instead make label text bold using HTML when building `all_text`.
 
-        # use stable ids matching original labels for hierarchy
-        ids = list(all_labels)
-        fig.add_trace(go.Sunburst(
-            ids=ids,
-            labels=all_labels,
-            parents=all_parents,
-            values=all_values,
-            branchvalues="total",
-            marker=dict(colors=all_colors, line=dict(color="#ffffff", width=0)),
-            customdata=all_custom,
-            text=display_texts,
-            textinfo='text',
-            texttemplate='%{text}',
-            insidetextorientation="radial",
-            hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.0f}%<extra></extra>",
-            domain=dict(x=[0,1], y=[0,1]),
-            maxdepth=2,
-            sort=False
-        ))
+    fig.add_trace(go.Sunburst(
+        labels=all_labels,
+        parents=all_parents,
+        values=all_values,
+        branchvalues="total",
+        marker=dict(colors=all_colors, line=dict(color="#ffffff", width=1)),
+        customdata=all_custom,
+        text=all_text,
+        textinfo='text',
+        texttemplate='%{text}',
+        insidetextorientation="horizontal",
+        hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.0f}%<extra></extra>",
+        domain=dict(x=[0,1], y=[0,1]),
+        maxdepth=2,
+        sort=False
+    ))
 
     # Improve readability: set explicit templates for the sunburst trace
     try:
@@ -488,11 +462,11 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 uniformtext=dict(minsize=8, mode='hide'),
                 textfont=dict(family='Inter, sans-serif', size=14, color='#062A4F'),
                 insidetextfont=dict(family='Inter, sans-serif', size=20, color='#0B5FFF'),
-                marker=dict(line=dict(color='#FFFFFF', width=0)),
+                marker=dict(line=dict(color='#FFFFFF', width=1)),
                 branchvalues='total',
                 separation=0,
                 # use raw text (with newlines) and let Plotly render it
-                texttemplate='%{label}\n%{text}',
+                texttemplate='%{text}',
                 hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
                 insidetextorientation='radial',
                 constraintext='hide'
