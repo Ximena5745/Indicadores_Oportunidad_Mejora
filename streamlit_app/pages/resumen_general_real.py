@@ -133,39 +133,37 @@ def _latest_month_for_year(df: pd.DataFrame, year: int) -> int | None:
 
 
 def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
-    if pdi_df.empty:
-        return go.Figure()
     df = pdi_df.copy()
     df["Linea"] = df["Linea"].fillna("Sin línea")
     df["Objetivo"] = df["Objetivo"].fillna("Sin objetivo")
     df = df[df["cumplimiento_pct"].notna()]
+    # Si no hay datos válidos, crear un nodo dummy con 0%
     if df.empty:
-        return go.Figure()
-
-    grouped = (
-        df.groupby(["Linea", "Objetivo"], dropna=False)
-          .agg(cumplimiento_pct=("cumplimiento_pct", "mean"))
-          .reset_index()
-    )
-
-    labels = []
-    parents = []
-    values = []
-    colors = []
-
-    lines = grouped.groupby("Linea").agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
-    for _, line in lines.iterrows():
-        labels.append(line["Linea"])
-        parents.append("")
-        values.append(line["cumplimiento_pct"])
-        colors.append(LINEA_COLORS.get(line["Linea"], "#6B728E"))
-
-    for _, row in grouped.iterrows():
-        labels.append(row["Objetivo"])
-        parents.append(row["Linea"])
-        values.append(row["cumplimiento_pct"])
-        colors.append(LINEA_COLORS.get(row["Linea"], "#6B728E"))
-
+        labels = ["Sin datos"]
+        parents = [""]
+        values = [0]
+        colors = ["#6B728E"]
+    else:
+        grouped = (
+            df.groupby(["Linea", "Objetivo"], dropna=False)
+              .agg(cumplimiento_pct=("cumplimiento_pct", "mean"))
+              .reset_index()
+        )
+        labels = []
+        parents = []
+        values = []
+        colors = []
+        lines = grouped.groupby("Linea").agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
+        for _, line in lines.iterrows():
+            labels.append(line["Linea"])
+            parents.append("")
+            values.append(line["cumplimiento_pct"] if pd.notna(line["cumplimiento_pct"]) else 0)
+            colors.append(LINEA_COLORS.get(line["Linea"], "#6B728E"))
+        for _, row in grouped.iterrows():
+            labels.append(row["Objetivo"])
+            parents.append(row["Linea"])
+            values.append(row["cumplimiento_pct"] if pd.notna(row["cumplimiento_pct"]) else 0)
+            colors.append(LINEA_COLORS.get(row["Linea"], "#6B728E"))
     fig = go.Figure(go.Sunburst(
         labels=labels,
         parents=parents,
