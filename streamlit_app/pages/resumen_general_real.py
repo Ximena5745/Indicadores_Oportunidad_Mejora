@@ -241,24 +241,50 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
 
         # Wrap long labels to multiple lines so they fit inside sectors
         def wrap_label(s: str, width: int = 18) -> str:
-            parts = []
-            cur = []
-            for word in str(s).split():
-                if sum(len(w) for w in cur) + len(cur) + len(word) <= width:
-                    cur.append(word)
-                else:
-                    parts.append(" ".join(cur))
-                    cur = [word]
-            if cur:
-                parts.append(" ".join(cur))
-            # center each line and join with newline
-            return "\n".join(part.strip() for part in parts)
+            import re
+            text = str(s or "").strip()
+            if not text:
+                return ""
+            # First try logical separators to produce natural splits
+            separators = [",", " / ", " - ", " y ", ";"]
+            segments = [text]
+            for sep in separators:
+                if any(sep in seg for seg in segments):
+                    new_segs = []
+                    for seg in segments:
+                        if sep in seg:
+                            parts = [p.strip() for p in seg.split(sep) if p.strip()]
+                            new_segs.extend(parts)
+                        else:
+                            new_segs.append(seg)
+                    segments = new_segs
+            # Now for each segment, apply word-wrap to the given width
+            wrapped_lines = []
+            for seg in segments:
+                words = seg.split()
+                cur = []
+                for w in words:
+                    if sum(len(x) for x in cur) + len(cur) + len(w) <= width:
+                        cur.append(w)
+                    else:
+                        if cur:
+                            wrapped_lines.append(" ".join(cur))
+                        cur = [w]
+                if cur:
+                    wrapped_lines.append(" ".join(cur))
+            # clean and return joined lines
+            cleaned = [re.sub(r"\s+", " ", ln).strip() for ln in wrapped_lines]
+            return "\n".join(cleaned)
 
         # Build wrapped text lines; include percentage on its own line for both inner and outer
         text = []
         for lab, cd, parent in zip(labels, customdata, parents):
             pct = (cd[0] if cd and cd[0] is not None else 0)
-            wrapped = wrap_label(lab, width=14)
+            # inner (Linea) should be tighter, outer (Objetivo) wider
+            if parent == "":
+                wrapped = wrap_label(lab, width=12)
+            else:
+                wrapped = wrap_label(lab, width=26)
             # show label and percentage (no decimals) centered via newline
             text.append(f"{wrapped}\n{pct:.0f}%")
 
