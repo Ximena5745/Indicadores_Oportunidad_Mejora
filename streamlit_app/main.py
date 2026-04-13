@@ -3,17 +3,6 @@ from pathlib import Path
 import streamlit as st
 from streamlit_option_menu import option_menu
 
-from streamlit_app.pages import (
-    cmi_estrategico,
-    gestion_om,
-    plan_mejoramiento,
-    resumen_general,
-    resumen_por_proceso,
-    seguimiento_reportes,
-    tablero_operativo,
-    pdi_acreditacion,
-)
-
 st.set_page_config(page_title="Sistema de Indicadores", layout="wide")
 
 
@@ -65,6 +54,18 @@ def _get_git_commit_short():
 
 def main():
     _inject_styles()
+
+    # Importar páginas bajo demanda para evitar circular imports durante la carga
+    from streamlit_app.pages import (
+        cmi_estrategico,
+        gestion_om,
+        plan_mejoramiento,
+        resumen_general,
+        resumen_por_proceso,
+        seguimiento_reportes,
+        tablero_operativo,
+        pdi_acreditacion,
+    )
 
     # Configuración del sidebar
     with st.sidebar:
