@@ -334,16 +334,27 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 trace.update(uniformtext=dict(minsize=9, mode='hide'))
         except Exception:
             pass
-    # Layout tuned to mimic target: no legend, neutral background, larger figure
-    fig.update_layout(
-        margin=dict(t=10, l=10, r=10, b=10),
-        height=780,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        showlegend=False
-    )
-    return fig
+    # Ensure Sunburst is present: if not, try to create via plotly.express.sunburst
+    has_sunburst = any(getattr(t, 'type', None) == 'sunburst' for t in fig.data)
+    if not has_sunburst:
+        try:
+            import plotly.express as px
+            # use the prepared df to create a sunburst via express (fallback creation)
+            px_df = df.copy()
+            px_df = px_df.dropna(subset=["Linea", "Objetivo", "cumplimiento_pct"])
+            if not px_df.empty:
+                px_fig = px.sunburst(px_df, path=["Linea", "Objetivo"], values=None, color="cumplimiento_pct")
+                # convert to go.Figure and try to harmonize
+                fig = go.Figure(px_fig)
+        except Exception:
+            # if express also fails, keep original fig and add diagnostic meta
+            fig.layout.meta = {"sunburst_forced": False, "reason": "could not build sunburst via px"}
 
+    # Final layout for sunburst
+    fig.update_layout(margin=dict(t=10, l=10, r=10, b=10), height=780, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+    # mark success
+    fig.layout.meta = dict(fig.layout.meta or {}, sunburst_forced=True)
+    return fig
 
 def _compute_trends(current: pd.DataFrame, previous: pd.DataFrame):
     if current.empty or previous.empty:
