@@ -700,23 +700,36 @@ def render():
                     text_color = "#1A1A1A"
                     secondary_text = "#666666"
 
-                    if pd.isna(delta):
-                        delta_html = "<span style='color:#FFC107;font-weight:700;font-size:11px;'>N/D</span>"
+                    # Determinar color del porcentaje según nivel de cumplimiento
+                    if pct is None:
+                        pct_color_dynamic = "#999999"
+                        delta_html = "<span style='color:#FFC107;font-weight:700;font-size:12px;'>N/D</span>"
                     else:
-                        color = '#22C55E' if delta >= 0 else '#EF4444'
-                        sign = '+' if delta >= 0 else ''
-                        delta_html = f"<span style='color:{color};font-weight:800;font-size:11px;'>{sign}{delta:.1f}%</span>"
+                        if pct >= 105:
+                            pct_color_dynamic = "#0B5FFF"  # Sobrecumplimiento: azul
+                        elif pct >= 100:
+                            pct_color_dynamic = "#22C55E"  # Cumplimiento: verde
+                        elif pct >= 80:
+                            pct_color_dynamic = "#FBBF24"  # Alerta: amarillo
+                        else:
+                            pct_color_dynamic = "#EF4444"  # Peligro: rojo
+                        
+                        if pd.isna(delta):
+                            delta_html = "<span style='color:#FFC107;font-weight:700;font-size:12px;'>N/D</span>"
+                        else:
+                            color = '#22C55E' if delta >= 0 else '#EF4444'
+                            sign = '+' if delta >= 0 else ''
+                            delta_html = f"<span style='color:{color};font-weight:800;font-size:12px;'>{sign}{delta:.1f}%</span>"
+                    
                     pct_disp = f"{pct:.1f}%" if pct is not None else 'N/D'
                     c.markdown(
-                        f"<div style='background:{bg_color};border:1px solid {border_color};border-top:4px solid {border_color};border-radius:10px;padding:14px;text-align:left;box-shadow:0 1px 4px rgba(0,0,0,0.06);'>"
-                        f"<div style='display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;'>"
-                        f"<div style='font-size:32px;line-height:1;'>{icon}</div>"
-                        f"<div style='text-align:right;flex:1;margin-left:12px;'>"
-                        f"<div style='font-size:28px;font-weight:800;color:{pct_color};line-height:1;'>{pct_disp}</div>"
-                        f"<div style='font-size:10px;color:{secondary_text};margin-top:4px;'>Var: {delta_html}</div>"
-                        f"</div></div>"
-                        f"<div style='font-size:12px;color:{line_name_color};font-weight:700;margin-bottom:8px;line-height:1.3;'>{name}</div>"
-                        f"<div style='font-size:11px;color:{secondary_text};'>📊 <b>{nind}</b> indicador{'es' if nind != 1 else ''}</div>"
+                        f"<div style='background:{bg_color};border:1px solid {border_color};border-top:4px solid {border_color};border-radius:10px;padding:18px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.08);'>"
+                        f"<div style='font-size:40px;line-height:1.1;margin-bottom:12px;'>{icon}</div>"
+                        f"<div style='font-size:48px;font-weight:900;color:{pct_color_dynamic};line-height:1;margin-bottom:6px;'>{pct_disp}</div>"
+                        f"<div style='font-size:13px;color:{secondary_text};margin-bottom:12px;'>Var: {delta_html}</div>"
+                        f"<div style='border-top:1px solid #E5E7EB;padding-top:10px;margin-bottom:10px;'></div>"
+                        f"<div style='font-size:15px;color:{line_name_color};font-weight:700;margin-bottom:8px;line-height:1.3;'>{name}</div>"
+                        f"<div style='font-size:13px;color:{secondary_text};font-weight:500;'>📊 <b>{nind}</b> indicador{'es' if nind != 1 else ''}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
                     )
