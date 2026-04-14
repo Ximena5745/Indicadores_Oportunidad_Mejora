@@ -318,16 +318,41 @@ def render():
             "subproceso": {"label": "Subproceso", "options": sorted(map_df["Subproceso"].dropna().unique().tolist())}
         }
 
+        # OPCION 1: Mostrar todos los filtros en línea (sin expander, columns_per_row=6)
+        # selections = render_filters(
+        #     df if not df.empty else map_df,
+        #     filter_config,
+        #     key_prefix="resumen_proceso",
+        #     columns_per_row=6,  # Todos en una fila
+        #     collapsible=False,
+        # )
+
+        # OPCION 2: Filtros principales (Año, Mes, Proceso) en línea, resto en expander
         selections = render_filters(
             df if not df.empty else map_df,
             filter_config,
             key_prefix="resumen_proceso",
             columns_per_row=3,
             collapsible=True,
+            collapsed_by_default=False,  # Expander abierto por defecto
         )
 
-        # Opción para mostrar subprocesos (por defecto ocultos)
-        show_subprocs = st.checkbox("Mostrar subprocesos", value=False, key="resumen_show_subprocs")
+        # OPCION 3: Usar selectores manuales independientes (sin render_filters)
+        # with st.expander("🔎 Filtros", expanded=True):
+        #     c1, c2, c3 = st.columns(3)
+        #     with c1:
+        #         anio = st.selectbox("Año", anios_disponibles, index=len(anios_disponibles)-1)
+        #     with c2:
+        #         mes = st.selectbox("Mes", MESES_OPCIONES, index=len(MESES_OPCIONES)-1)
+        #     with c3:
+        #         tipo_proceso = st.selectbox("Tipo de proceso", ["Todos"] + sorted(map_df["Tipo de proceso"].dropna().unique().tolist()))
+        #     c4, c5, c6 = st.columns(3)
+        #     with c4:
+        #         unidad = st.selectbox("Unidad", ["Todos"] + sorted(map_df["Unidad"].dropna().unique().tolist()))
+        #     with c5:
+        #         proceso = st.selectbox("Proceso", ["Todos"] + sorted(map_df["Proceso"].dropna().unique().tolist()))
+        #     with c6:
+        #         subproceso = st.selectbox("Subproceso", ["Todos"] + sorted(map_df["Subproceso"].dropna().unique().tolist()))
 
         anio = selections.get("anio")
         mes = selections.get("mes")
@@ -335,6 +360,22 @@ def render():
         unidad = selections.get("unidad", "Todos")
         proceso = selections.get("proceso", "Todos")
         subproceso = selections.get("subproceso", "Todos")
+
+        # Alternativas para Mostrar subprocesos - Tipos de lista desplegable:
+        # Opción 1: Selectbox (dropdown tradicional)
+        # show_subprocs = st.selectbox("Mostrar subprocesos", ["No", "Sí"], index=0) == "Sí"
+        
+        # Opción 2: Multiselect (permite múltiples)
+        # show_subprocs = len(st.multiselect("Mostrar subprocesos", ["Sí"], default=[], key="resumen_show_subprocs")) > 0
+        
+        # Opción 3: Pills (chips modernos) - Requiere Streamlit 1.37+
+        # show_subprocs = st.pills("Mostrarsubprocesos", ["Sí", "No"], default="No", key="resumen_show_subprocs") == "Sí"
+        
+        # Opción 4: Segmented Control (botones) - Requiere Streamlit 1.37+
+        # show_subprocs = st.segmented_control("Mostrar subprocesos", ["Sí", "No"], default="No", key="resumen_show_subprocs") == "Sí"
+        
+        # Opción 5: Radio buttons (alterna con flechas)
+        show_subprocs = st.radio("Mostrar subprocesos", ["No", "Sí"], index=0, horizontal=True, key="resumen_show_subprocs") == "Sí"
 
     _activos = []
     if anio:
@@ -413,8 +454,20 @@ def render():
     with tabs[0]:
         st.markdown(f"### Resumen general — {selected_process}")
         st.caption(f"Corte consultado: {periodo_info}")
+        
+        # Debug info
+        st.caption(f"Debug: df rows={len(df)}, proc_df rows={len(proc_df)}, anio={anio}, mes={mes}")
+        
         if proc_df.empty:
             st.info("No hay datos disponibles para el período seleccionado.")
+            
+            # Mostrar años disponibles en df
+            if not df.empty and "Año" in df.columns:
+                anios_df = sorted(df["Año"].unique())
+                st.caption(f"Años disponibles en datos: {anios_df}")
+            if not df.empty and "Mes" in df.columns:
+                meses_df = sorted(df["Mes"].unique())
+                st.caption(f"Meses disponibles en datos: {meses_df}")
         else:
             # Métricas generales
             total = len(proc_df)
@@ -428,58 +481,85 @@ def render():
             c3.metric("Pendientes", pendiente, delta=f"{round(pendiente/total*100,1)}%" if total else None)
             c4.metric("No aplica", no_aplica)
 
-            # Pie: distribución por Estado (si existe)
-            if "Estado" in proc_df.columns:
+            # Pie: distribución por Estado
+            if "Estado" in proc_df.columns and not proc_df.empty:
                 estado_counts = proc_df["Estado"].value_counts().reset_index()
                 estado_counts.columns = ["Estado", "count"]
-                fig_pie = px.pie(estado_counts, names="Estado", values="count", title="Distribución por Estado")
-                st.plotly_chart(fig_pie, use_container_width=True)
+                if not estado_counts.empty:
+                    fig_pie = px.pie(estado_counts, names="Estado", values="count", title="Distribución por Estado")
+                    st.plotly_chart(fig_pie, use_container_width=True)
 
-            # Barra: top Unidades por cantidad de reportados (colores por vicerrectoría)
-            if "Unidad" in proc_df.columns:
-                unidad_counts = proc_df[proc_df.get("Estado") == "Reportado"].groupby("Unidad")["Id"].nunique().reset_index(name="reportados") if "Id" in proc_df.columns else proc_df[proc_df.get("Estado") == "Reportado"].groupby("Unidad").size().reset_index(name="reportados")
-                unidad_counts = unidad_counts.sort_values("reportados", ascending=False)
-                if not unidad_counts.empty:
-                    # Construir mapa de colores: usar mapeo fijo y una paleta para los restantes
-                    # Paleta institucional como fallback
-                    palette = [
-                        COLORES.get("primario"),
-                        COLORES.get("secundario"),
-                        COLORES.get("cumplimiento"),
-                        COLORES.get("alerta"),
-                        COLORES.get("peligro"),
-                        COLORES.get("sin_dato"),
-                    ]
-                    unique_unidades = unidad_counts["Unidad"].tolist()
-                    color_map = {}
-                    idx = 0
-                    for u in unique_unidades:
-                        if u in VICERRECTORIA_COLORS:
-                            color_map[u] = VICERRECTORIA_COLORS[u]
-                        else:
-                            color_map[u] = palette[idx % len(palette)] or "#7d8be3"
-                            idx += 1
+            # Barra: top Unidades por cantidad de reportados
+            if "Unidad" in proc_df.columns and not proc_df.empty:
+                # Obtener columna de ID
+                id_col = "Id" if "Id" in proc_df.columns else proc_df.columns[0]
+                
+                # Filtrar por reportados
+                try:
+                    reportado_mask = proc_df["Estado"].str.lower() == "reportado"
+                except:
+                    reportado_mask = proc_df.get("Estado") == "Reportado"
+                
+                if reportado_mask.any():
+                    try:
+                        unidad_counts = proc_df[reportado_mask].groupby("Unidad")[id_col].nunique().reset_index(name="reportados")
+                    except:
+                        unidad_counts = proc_df[reportado_mask].groupby("Unidad").size().reset_index(name="reportados")
+                    
+                    unidad_counts = unidad_counts.sort_values("reportados", ascending=False)
+                    if not unidad_counts.empty:
+                        # Construir mapa de colores
+                        palette = [
+                            COLORES.get("primario"),
+                            COLORES.get("secundario"),
+                            COLORES.get("cumplimiento"),
+                            COLORES.get("alerta"),
+                            COLORES.get("peligro"),
+                            COLORES.get("sin_dato"),
+                        ]
+                        unique_unidades = unidad_counts["Unidad"].tolist()
+                        color_map = {}
+                        idx = 0
+                        for u in unique_unidades:
+                            if u in VICERRECTORIA_COLORS:
+                                color_map[u] = VICERRECTORIA_COLORS[u]
+                            else:
+                                color_map[u] = palette[idx % len(palette)] or "#7d8be3"
+                                idx += 1
 
-                    fig_un = px.bar(
-                        unidad_counts,
-                        x="reportados",
-                        y="Unidad",
-                        orientation="h",
-                        title="Reportados por Unidad",
-                        color="Unidad",
-                        color_discrete_map=color_map,
-                    )
-                    st.plotly_chart(fig_un, use_container_width=True)
+                        fig_un = px.bar(
+                            unidad_counts,
+                            x="reportados",
+                            y="Unidad",
+                            orientation="h",
+                            title="Reportados por Unidad",
+                            color="Unidad",
+                            color_discrete_map=color_map,
+                        )
+                        st.plotly_chart(fig_un, use_container_width=True)
+                    else:
+                        st.caption("No hay indicadores reportados para mostrar.")
 
             # Barra: top Procesos por reportados
             if "Proceso" in proc_df.columns:
-                # Preferir Proceso_final cuando exista
                 proc_key = "Proceso_final" if "Proceso_final" in proc_df.columns else "Proceso"
-                proc_counts = proc_df[proc_df.get("Estado") == "Reportado"].groupby(proc_key)["Id"].nunique().reset_index(name="reportados") if "Id" in proc_df.columns else proc_df[proc_df.get("Estado") == "Reportado"].groupby(proc_key).size().reset_index(name="reportados")
-                proc_counts = proc_counts.sort_values("reportados", ascending=False).head(25)
-                if not proc_counts.empty:
-                    fig_proc = px.bar(proc_counts, x="reportados", y=proc_key, orientation="h", title="Top procesos por reportados")
-                    st.plotly_chart(fig_proc, use_container_width=True)
+                id_col = "Id" if "Id" in proc_df.columns else proc_df.columns[0]
+                
+                try:
+                    reportado_mask = proc_df["Estado"].str.lower() == "reportado"
+                except:
+                    reportado_mask = proc_df.get("Estado") == "Reportado"
+                
+                if reportado_mask.any():
+                    try:
+                        proc_counts = proc_df[reportado_mask].groupby(proc_key)[id_col].nunique().reset_index(name="reportados")
+                    except:
+                        proc_counts = proc_df[reportado_mask].groupby(proc_key).size().reset_index(name="reportados")
+                    
+                    proc_counts = proc_counts.sort_values("reportados", ascending=False).head(25)
+                    if not proc_counts.empty:
+                        fig_proc = px.bar(proc_counts, x="reportados", y=proc_key, orientation="h", title="Top procesos por reportados")
+                        st.plotly_chart(fig_proc, use_container_width=True)
 
             # Cumplimiento: si existe columna Cumplimiento o Nivel, mostrar distribución
             if "Cumplimiento" in proc_df.columns or "Nivel de cumplimiento" in proc_df.columns:
