@@ -32,7 +32,7 @@ def _guardar_kpi_diag(con_ia: bool, elapsed: float) -> None:
 
 from components.charts import exportar_excel
 from core.config import CACHE_TTL
-from core.db_manager import guardar_registro_om, leer_registros_om
+from core.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
 from services.ai_analysis import analizar_texto_indicador
 from services.data_loader import cargar_acciones_mejora, cargar_dataset
 
@@ -388,7 +388,7 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
 
 
 def render():
-    st.title("Gestion de Oportunidades de Mejora")
+    st.title("Gestión OM")
     st.caption("Registro y seguimiento de OMs sobre indicadores en alerta y peligro.")
 
     _init_diag_metrics()
@@ -609,3 +609,194 @@ def render():
         )
     else:
         st.info("No hay registros OM para el ano seleccionado.")
+
+
+def _mes_a_nombre(mes) -> str:
+    if pd.isna(mes):
+        return ""
+    if isinstance(mes, (int, float)) and not isinstance(mes, bool):
+        try:
+            idx = int(mes)
+            return _meses_disponibles()[idx - 1] if 1 <= idx <= 12 else str(mes)
+        except Exception:
+            return str(mes)
+
+    texto = str(mes).strip().lower()
+    meses_map = {
+        "enero": "Enero",
+        "febrero": "Febrero",
+        "marzo": "Marzo",
+        "abril": "Abril",
+        "mayo": "Mayo",
+        "junio": "Junio",
+        "julio": "Julio",
+        "agosto": "Agosto",
+        "septiembre": "Septiembre",
+        "octubre": "Octubre",
+        "noviembre": "Noviembre",
+        "diciembre": "Diciembre",
+        "ene": "Enero",
+        "feb": "Febrero",
+        "mar": "Marzo",
+        "abr": "Abril",
+        "may": "Mayo",
+        "jun": "Junio",
+        "jul": "Julio",
+        "ago": "Agosto",
+        "sep": "Septiembre",
+        "oct": "Octubre",
+        "nov": "Noviembre",
+        "dic": "Diciembre",
+    }
+    return meses_map.get(texto, texto.capitalize())
+
+
+def _construir_tabla_peligro(
+    df_riesgo: pd.DataFrame,
+    registros_om: dict,
+    mes: str,
+    anio: str | int,
+    proceso: str,
+    subproceso: str,
+) -> pd.DataFrame:
+    if df_riesgo.empty:
+        return pd.DataFrame()
+
+    df = df_riesgo.copy()
+    if "Categoria" in df.columns:
+        df = df[df["Categoria"].astype(str).str.lower() == "peligro"].copy()
+
+    if "Mes" in df.columns:
+        df["Mes"] = df["Mes"].apply(_mes_a_nombre)
+    else:
+        df["Mes"] = ""
+
+    if mes and mes != "Todos":
+        df = df[df["Mes"] == mes]
+
+    if anio and anio != "Todos":
+        df["Anio"] = pd.to_numeric(df.get("Anio", pd.Series(dtype=float)), errors="coerce")
+        df = df[df["Anio"] == int(anio)]
+
+    if proceso and proceso != "Todos" and "Proceso" in df.columns:
+        df = df[df["Proceso"] == proceso]
+
+    if subproceso and subproceso != "Todos" and "Subproceso" in df.columns:
+        df = df[df["Subproceso"] == subproceso]
+
+    registros = pd.DataFrame.from_dict(registros_om, orient="index").rename_axis("Id").reset_index()
+    if not registros.empty:
+        registros["Id"] = registros["Id"].astype(str)
+    df["Id"] = df["Id"].astype(str)
+    df = df.merge(
+        registros[["Id", "tiene_om", "numero_om", "comentario"]],
+        on="Id",
+        how="left",
+    )
+
+    df["tiene_om"] = pd.to_numeric(df.get("tiene_om", 0), errors="coerce").fillna(0).astype(int)
+    df["Estado OM"] = df["tiene_om"].apply(lambda v: "Abierta" if v == 1 else "Pendiente")
+    df["OM"] = df.get("numero_om", "").fillna("").astype(str)
+    df["Observación"] = df.get("comentario", "").fillna("").astype(str)
+
+    columnas = [
+        c for c in ["Id", "Indicador", "Proceso", "Subproceso", "Estado OM", "OM", "Observación"]
+        if c in df.columns
+    ]
+    return df[columnas].reset_index(drop=True)
+
+
+def _build_option_label(row: pd.Series) -> str:
+    return f"{row['Id']} - {row.get('Indicador','')}" if pd.notna(row.get('Id')) else str(row.get('Indicador',''))
+
+
+def render():
+    st.title("Gestión OM")
+    st.caption("Filtrado por mes, año, proceso y subproceso. Registra OM abiertas o pendientes sobre indicadores en Peligro.")
+
+    df_riesgo = _cargar_indicadores_riesgo()
+    if df_riesgo.empty:
+        st.warning("No hay indicadores en riesgo para mostrar.")
+        return
+
+    if "Mes" in df_riesgo.columns:
+        df_riesgo["Mes"] = df_riesgo["Mes"].apply(_mes_a_nombre)
+    else:
+        df_riesgo["Mes"] = ""
+
+    meses = ["Todos"] + sorted(df_riesgo["Mes"].dropna().astype(str).unique().tolist())
+    anios = ["Todos"] + sorted(
+        df_riesgo["Anio"].dropna().astype(int).astype(str).unique().tolist(),
+        key=lambda x: int(x),
+    )
+    procesos = ["Todos"] + sorted(df_riesgo["Proceso"].dropna().astype(str).unique().tolist())
+    subprocesos = ["Todos"] + sorted(df_riesgo["Subproceso"].dropna().astype(str).unique().tolist())
+
+    with st.expander("Filtros", expanded=True):
+        fm, fa, fp, fs = st.columns(4)
+        with fm:
+            mes_sel = st.selectbox("Mes", meses, index=meses.index("Todos"))
+        with fa:
+            anio_sel = st.selectbox("Año", anios, index=anios.index(str(date.today().year)) if str(date.today().year) in anios else 0)
+        with fp:
+            proc_sel = st.selectbox("Proceso", procesos, index=0)
+        with fs:
+            sub_sel = st.selectbox("Subproceso", subprocesos, index=0)
+
+    registros_om = registros_om_como_dict(anio=None if anio_sel == "Todos" else int(anio_sel))
+    df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel)
+
+    if df_tabla.empty:
+        st.info("No hay indicadores en Peligro con los filtros seleccionados.")
+        return
+
+    st.markdown("### Indicadores en Peligro")
+    st.dataframe(df_tabla, use_container_width=True, height=420)
+
+    opciones = df_tabla.apply(_build_option_label, axis=1).tolist()
+    indicador_seleccionado = st.selectbox("Seleccionar indicador para nueva OM", opciones)
+    selected_id = indicador_seleccionado.split(" - ")[0] if indicador_seleccionado else ""
+
+    if st.button("Asociar nueva OM", use_container_width=True):
+        if not selected_id:
+            st.warning("Selecciona primero un indicador para asociar la OM.")
+        else:
+            st.session_state["om_modal_open"] = True
+            st.session_state["om_modal_indicator"] = selected_id
+
+    if st.session_state.get("om_modal_open"):
+        indicador = st.session_state.get("om_modal_indicator", selected_id)
+        row = df_tabla[df_tabla["Id"] == indicador]
+        nombre_ind = row.iloc[0]["Indicador"] if not row.empty else ""
+
+        with st.modal("Asociar nueva OM"):
+            st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
+            with st.form("om_modal_form", clear_on_submit=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    modal_anio = st.selectbox("Año OM", anios, index=anios.index(anio_sel) if anio_sel in anios else 0)
+                with col2:
+                    modal_mes = st.selectbox("Mes OM", meses, index=meses.index(mes_sel) if mes_sel in meses else 0)
+
+                estado_om = st.radio("Estado OM", ["Abierta", "Pendiente"], horizontal=True)
+                numero_om = st.text_input("Número OM", value="" if estado_om == "Pendiente" else "")
+                observacion = st.text_area("Observación", placeholder="Describe la situación o justificación para la OM.")
+
+                submitted = st.form_submit_button("Guardar OM", use_container_width=True)
+
+            if submitted:
+                payload = {
+                    "id_indicador": str(indicador),
+                    "nombre_indicador": str(nombre_ind),
+                    "proceso": str(row.iloc[0].get("Proceso", "")) if not row.empty else "",
+                    "periodo": str(modal_mes),
+                    "anio": int(modal_anio) if modal_anio != "Todos" else int(date.today().year),
+                    "tiene_om": 1 if estado_om == "Abierta" else 0,
+                    "numero_om": str(numero_om).strip() if estado_om == "Abierta" else "",
+                    "comentario": str(observacion).strip(),
+                }
+                if guardar_registro_om(payload):
+                    st.success("OM asociada y guardada correctamente.")
+                    st.session_state["om_modal_open"] = False
+                else:
+                    st.error("No fue posible guardar la OM. Intenta nuevamente.")
