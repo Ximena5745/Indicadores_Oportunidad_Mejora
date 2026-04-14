@@ -67,6 +67,63 @@ def _meses_disponibles() -> list[str]:
     ]
 
 
+def _mes_a_nombre(mes) -> str:
+    if pd.isna(mes):
+        return ""
+    if isinstance(mes, (int, float)) and not isinstance(mes, bool):
+        try:
+            idx = int(mes)
+            return _meses_disponibles()[idx - 1] if 1 <= idx <= 12 else str(mes)
+        except Exception:
+            return str(mes)
+
+    texto = str(mes).strip()
+    if not texto:
+        return ""
+
+    texto_lower = texto.lower()
+    meses_map = {
+        "ene": "Enero",
+        "ene.": "Enero",
+        "enero": "Enero",
+        "feb": "Febrero",
+        "feb.": "Febrero",
+        "febrero": "Febrero",
+        "mar": "Marzo",
+        "mar.": "Marzo",
+        "marzo": "Marzo",
+        "abr": "Abril",
+        "abr.": "Abril",
+        "abril": "Abril",
+        "may": "Mayo",
+        "mayo": "Mayo",
+        "jun": "Junio",
+        "jun.": "Junio",
+        "junio": "Junio",
+        "jul": "Julio",
+        "jul.": "Julio",
+        "julio": "Julio",
+        "ago": "Agosto",
+        "ago.": "Agosto",
+        "agosto": "Agosto",
+        "sep": "Septiembre",
+        "sep.": "Septiembre",
+        "sept": "Septiembre",
+        "sept.": "Septiembre",
+        "septiembre": "Septiembre",
+        "oct": "Octubre",
+        "oct.": "Octubre",
+        "octubre": "Octubre",
+        "nov": "Noviembre",
+        "nov.": "Noviembre",
+        "noviembre": "Noviembre",
+        "dic": "Diciembre",
+        "dic.": "Diciembre",
+        "diciembre": "Diciembre",
+    }
+    return meses_map.get(texto_lower, texto.capitalize())
+
+
 def _normalizar_periodicidad(periodicidad: str) -> str:
     p = str(periodicidad or "").strip().lower()
     p = p.replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
