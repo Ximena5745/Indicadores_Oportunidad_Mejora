@@ -349,17 +349,14 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 wrapped = wrap_label(lab, width=26)
             # convert wrapped newlines to HTML breaks for reliable rendering
             html_label = str(wrapped).replace('\n', '<br>')
-            # wrap label in bold; special color for Educación label
-            try:
-                if is_edu:
-                    label_font_size = 'font-size:28px;'  # Larger font for Educación label
-                    html_label = f"<b><span style='color:#FFFFFF;{label_font_size}'>{html_label}</span></b>"
-                else:
-                    html_label = f"<b>{html_label}</b>"
-            except Exception:
+            # Educación para toda la vida: mayor fonte
+            if is_edu:
+                label_font_size = 'font-size:26px;'
+                html_label = f"<b><span style='color:#FFFFFF;{label_font_size}'>{html_label}</span></b>"
+            else:
                 html_label = f"<b>{html_label}</b>"
-            # percentage line: blue - increase font size for all percentages
-            pct_html = f"<br><span style='color:#0B5FFF;font-size:32px;font-weight:700'>{pct:.0f}%</span>"
+            # percentage line: blue - mismo tamano para todos
+            pct_html = f"<br><span style='color:#0B5FFF;font-size:20px;font-weight:700'>{pct:.0f}%</span>"
             text.append(f"{html_label}{pct_html}")
 
     # Split inner (Linea) and outer (Objetivo) for independent styling
@@ -528,8 +525,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
         if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
             fig.data[0].update(
                 uniformtext=dict(minsize=10, mode='hide'),
-                textfont=dict(family='Inter, sans-serif', size=16, color='#062A4F'),
-                insidetextfont=dict(family='Inter, sans-serif', size=28, color='#0B5FFF'),
+                textfont=dict(family='Inter, sans-serif', size=14, color='#062A4F'),
+                insidetextfont=dict(family='Inter, sans-serif', size=18, color='#0B5FFF'),
                 marker=dict(line=dict(color='#FFFFFF', width=1)),
                 branchvalues='total',
                 separation=0,
@@ -538,8 +535,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 insidetextorientation='radial',
                 constraintext='hide'
             )
-            fig.data[0].textfont = dict(family='Inter, sans-serif', size=28, color='#062A4F')
-            fig.data[0].insidetextfont = dict(family='Inter, sans-serif', size=32, color='#0B5FFF')
+            fig.data[0].textfont = dict(family='Inter, sans-serif', size=18, color='#062A4F')
+            fig.data[0].insidetextfont = dict(family='Inter, sans-serif', size=20, color='#0B5FFF')
     except Exception:
         pass
 
