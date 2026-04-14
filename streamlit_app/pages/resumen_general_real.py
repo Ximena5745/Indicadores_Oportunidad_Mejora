@@ -342,7 +342,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             # Educación para toda la vida: force 3 lines with smaller width
             if parent == "":
                 if is_edu:
-                    wrapped = wrap_label(lab, width=7)  # Force 3 lines
+                    wrapped = wrap_label(lab, width=6)  # Force 3 lines
                 else:
                     wrapped = wrap_label(lab, width=12)
             else:
@@ -351,12 +351,11 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             html_label = str(wrapped).replace('\n', '<br>')
             # Educación para toda la vida: mayor fonte
             if is_edu:
-                label_font_size = 'font-size:26px;'
-                html_label = f"<b><span style='color:#FFFFFF;{label_font_size}'>{html_label}</span></b>"
+                html_label = f"<b><span style='color:#FFFFFF;font-size:32px;'>{html_label}</span></b>"
             else:
                 html_label = f"<b>{html_label}</b>"
-            # percentage line: blue - mismo tamano para todos
-            pct_html = f"<br><span style='color:#0B5FFF;font-size:20px;font-weight:700'>{pct:.0f}%</span>"
+            # percentage line: blue - mayor tamano
+            pct_html = f"<br><span style='color:#0B5FFF;font-size:28px;font-weight:700'>{pct:.0f}%</span>"
             text.append(f"{html_label}{pct_html}")
 
     # Split inner (Linea) and outer (Objetivo) for independent styling
@@ -449,12 +448,7 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     except Exception:
         pass
 
-    # Prepare per-label text using newlines (Plotly respects '\n' inside sectors)
-    if not all_text or len(all_text) != len(all_labels):
-        all_text = []
-        for lab, cd in zip(all_labels, all_custom):
-            pct = (cd[0] if cd and cd[0] is not None else 0)
-            all_text.append(f"{lab}\n{pct:.0f}%")
+    # NO sobrescribir all_text - ya tiene el formato HTML personalizado
 
     # Final enforcement: ensure parent nodes have values >= sum(children)
     try:
@@ -524,9 +518,9 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     try:
         if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
             fig.data[0].update(
-                uniformtext=dict(minsize=10, mode='hide'),
-                textfont=dict(family='Inter, sans-serif', size=14, color='#062A4F'),
-                insidetextfont=dict(family='Inter, sans-serif', size=18, color='#0B5FFF'),
+                uniformtext=dict(minsize=8, mode='hide'),
+                textfont=dict(family='Inter, sans-serif', size=16, color='#062A4F'),
+                insidetextfont=dict(family='Inter, sans-serif', size=26, color='#0B5FFF'),
                 marker=dict(line=dict(color='#FFFFFF', width=1)),
                 branchvalues='total',
                 separation=0,
@@ -535,8 +529,8 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
                 insidetextorientation='radial',
                 constraintext='hide'
             )
-            fig.data[0].textfont = dict(family='Inter, sans-serif', size=18, color='#062A4F')
-            fig.data[0].insidetextfont = dict(family='Inter, sans-serif', size=20, color='#0B5FFF')
+            fig.data[0].textfont = dict(family='Inter, sans-serif', size=26, color='#062A4F')
+            fig.data[0].insidetextfont = dict(family='Inter, sans-serif', size=28, color='#0B5FFF')
     except Exception:
         pass
 
