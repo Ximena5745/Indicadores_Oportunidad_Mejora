@@ -444,6 +444,57 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     return m.sort_values(["accion_creada", "tipo_mitigacion", "Id"], ascending=[True, True, True]).reset_index(drop=True)
 
 
+def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_sel: str, anio_sel: str, proc_sel: str, sub_sel: str) -> pd.DataFrame:
+    """Construye la tabla de indicadores en peligro aplicando filtros."""
+    if df_riesgo.empty:
+        return pd.DataFrame()
+
+    # Aplicar filtros
+    df_filtrado = df_riesgo.copy()
+
+    if mes_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado.get("Mes", "").astype(str) == mes_sel]
+
+    if anio_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado.get("Anio", "").astype(str) == anio_sel]
+
+    if proc_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado.get("Proceso", "").astype(str) == proc_sel]
+
+    if sub_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado.get("Subproceso", "").astype(str) == sub_sel]
+
+    if df_filtrado.empty:
+        return pd.DataFrame()
+
+    # Convertir registros_om dict a DataFrame esperado por _resumen_om_por_id
+    if registros_om:
+        df_reg = pd.DataFrame([
+            {
+                "id_indicador": k,
+                "tiene_om": v.get("tiene_om", False),
+                "numero_om": v.get("numero_om", ""),
+                "periodo": v.get("periodo", ""),
+                "anio": v.get("anio", ""),
+            }
+            for k, v in registros_om.items()
+        ])
+    else:
+        df_reg = pd.DataFrame()
+
+    df_acc = pd.DataFrame()  # Por ahora vacío, se puede implementar si hay acciones
+
+    # Usar la función existente para construir la matriz
+    return _matriz_mitigacion_peligro(df_filtrado, df_reg, df_acc)
+
+
+def _build_option_label(row) -> str:
+    """Construye la etiqueta para las opciones del selectbox de indicadores."""
+    indicador_id = row.get("Id", "")
+    indicador_nombre = row.get("Indicador", "")
+    return f"{indicador_id} - {indicador_nombre}"
+
+
 def render():
     st.title("Gestión OM")
     st.caption("Filtrado por mes, año, proceso y subproceso. Registra OM abiertas o pendientes sobre indicadores en Peligro.")
