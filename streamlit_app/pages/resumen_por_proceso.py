@@ -373,38 +373,45 @@ def render():
 
     if df.empty:
         proc_df = pd.DataFrame()
+        st.error("El dataframe df está vacío")
     else:
         proc_df = df.copy()
+        
+        # Debug: mostrar info de las columnas y tipos
+        st.caption(f"Debug: df tiene {len(proc_df)} filas")
+        if "Año" in proc_df.columns:
+            st.caption(f"Años únicos: {sorted(proc_df['Año'].unique())}")
+            st.caption(f"Tipo columna Año: {proc_df['Año'].dtype}")
+        if "Mes" in proc_df.columns:
+            st.caption(f"Meses únicos: {sorted(proc_df['Mes'].unique())}")
         
         # Filtrar por fecha si se seleccionaron año y mes
         if anio and mes:
             mes_num = MESES_OPCIONES.index(mes) + 1
+            st.caption(f"Filtrando por Año={anio}, Mes={mes_num}")
             if "Año" in proc_df.columns and "Mes" in proc_df.columns:
-                proc_df = proc_df[(proc_df["Año"] == anio) & (proc_df["Mes"] == mes_num)]
+                # Convertir a comparación con tipos correctos
+                try:
+                    anio_int = int(anio)
+                    mes_int = int(mes_num)
+                    proc_df = proc_df[(proc_df["Año"] == anio_int) & (proc_df["Mes"] == mes_int)]
+                    st.caption(f"Después de filtro fecha: {len(proc_df)} filas")
+                except Exception as e:
+                    st.caption(f"Error en filtro: {e}")
         
-        if "Proceso" in map_df.columns:
+        st.caption(f"Antes de merge: {len(proc_df)} filas")
+        
+        if "Proceso" in map_df.columns and len(proc_df) > 0:
             proc_df = proc_df.merge(
                 map_df[["Unidad", "Proceso", "Subproceso", "Tipo de proceso"]],
                 on="Proceso",
                 how="left",
             )
-
-        # Normalizar Proceso: algunos inputs guardan Subproceso en la columna 'Proceso'
-        try:
-            sub_map = {}
-            for _, r in map_df.dropna(subset=["Subproceso", "Proceso"]).iterrows():
-                sub_map[_normalize_text(r["Subproceso"]) ] = r["Proceso"]
-
-            def _map_proc_global(val):
-                if pd.isna(val):
-                    return val
-                key = _normalize_text(val)
-                return sub_map.get(key, val)
-
-            proc_df["Proceso_final"] = proc_df.get("Proceso", pd.Series()).apply(_map_proc_global)
-        except Exception:
-            proc_df["Proceso_final"] = proc_df.get("Proceso", pd.Series())
-
+            st.caption(f"Después de merge: {len(proc_df)} filas")
+        else:
+            st.caption("No se hizo merge (map_df no tiene Proceso o proc_df vacío)")
+        
+        # Aplicar filtros adicionales
         if tipo_proceso != "Todos" and "Tipo de proceso" in proc_df.columns:
             proc_df = proc_df[proc_df["Tipo de proceso"] == tipo_proceso]
         if unidad != "Todos" and "Unidad" in proc_df.columns:
@@ -413,6 +420,8 @@ def render():
             proc_df = proc_df[proc_df["Proceso"] == proceso]
         if subproceso != "Todos" and "Subproceso" in proc_df.columns:
             proc_df = proc_df[proc_df["Subproceso"] == subproceso]
+        
+        st.caption(f"Después de todos los filtros: {len(proc_df)} filas")
 
     selected_process = (
         proceso
