@@ -526,26 +526,21 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
     # Improve readability: set explicit templates for the sunburst trace
     try:
         if len(fig.data) >= 1 and getattr(fig.data[0], 'type', None) == 'sunburst':
-            # stronger styling to match reference: larger inner text, thin separators, radial labels
-            # Increase sizes and emphasize the percentage in blue via texttemplate
-                fig.data[0].update(
+            fig.data[0].update(
                 uniformtext=dict(minsize=8, mode='hide'),
                 textfont=dict(family='Inter, sans-serif', size=14, color='#062A4F'),
                 insidetextfont=dict(family='Inter, sans-serif', size=20, color='#0B5FFF'),
                 marker=dict(line=dict(color='#FFFFFF', width=1)),
                 branchvalues='total',
                 separation=0,
-                # use raw text (with newlines) and let Plotly render it
                 texttemplate='%{text}',
                 hovertemplate="<b>%{label}</b><br>Promedio cumplimiento: %{customdata[0]:.1f}%<extra></extra>",
                 insidetextorientation='radial',
                 constraintext='hide'
             )
-            # Increase percentage font size to match other labels
             fig.data[0].textfont = dict(family='Inter, sans-serif', size=24, color='#062A4F')
             fig.data[0].insidetextfont = dict(family='Inter, sans-serif', size=24, color='#0B5FFF')
     except Exception:
-        # no queremos romper la renderización por problemas de versionado de plotly
         pass
 
     # As a final safety, ensure any remaining sunburst traces get a minimal uniformtext update
