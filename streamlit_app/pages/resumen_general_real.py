@@ -194,31 +194,54 @@ def _available_years(df: pd.DataFrame) -> list[int]:
 
 def _filter_consolidado_by_year_month(df: pd.DataFrame, year: int | None, month: int | None) -> pd.DataFrame:
     df = df.copy()
-    # detect a plausible year column (Año, A�o, A\x1fo, Anio, etc.)
+    
+    # Simple debug to file
+    import os
+    debug_file = "debug_filter.log"
+    with open(debug_file, "w") as f:
+        f.write(f"Input rows: {len(df)}\n")
+    
+    # detect year column
     year_col = None
     for c in df.columns:
-        if isinstance(c, str) and ('A' in c and ('o' in c or '\xe1' in c or '\x1f' in c)):
+        if isinstance(c, str) and 'A' in c and 'o' in c and ('ñ' in c.lower() or c == 'Anio'):
             year_col = c
             break
+    if year_col is None and 'Anio' in df.columns:
+        year_col = 'Anio'
+    if year_col is None and 'Año' in df.columns:
+        year_col = 'Año'
+        
+    with open(debug_file, "a") as f:
+        f.write(f"year_col: {year_col}\n")
+        
     if year_col is not None and year_col in df.columns:
         df['_year'] = pd.to_numeric(df[year_col], errors='coerce')
     elif 'Periodo' in df.columns:
-        # extract year from 'Periodo' like '2026-1'
         df['_year'] = df['Periodo'].astype(str).str.split('-').str[0].apply(lambda x: pd.to_numeric(x, errors='coerce'))
     else:
         df['_year'] = pd.NA
 
+    # detect month column
     if 'Mes_num' in df.columns:
         df['_month'] = pd.to_numeric(df['Mes_num'], errors='coerce')
     elif 'Mes' in df.columns:
-        df['_month'] = df['Mes'].apply(_parse_month)
+        df['_month'] = pd.to_numeric(df['Mes'], errors='coerce')
     else:
         df['_month'] = pd.NA
+    
+    with open(debug_file, "a") as f:
+        f.write(f"year filter: {year}, month filter: {month}\n")
+        f.write(f"_year values: {sorted(df['_year'].dropna().unique())}\n")
+        f.write(f"_month values: {sorted(df['_month'].dropna().unique())}\n")
 
     if year is not None:
         df = df[df['_year'] == int(year)]
     if month:
         df = df[df['_month'] == int(month)]
+    
+    with open(debug_file, "a") as f:
+        f.write(f"Output rows: {len(df)}\n")
 
     # drop helper cols
     df = df.drop(columns=[c for c in ['_year', '_month'] if c in df.columns])
