@@ -9,28 +9,37 @@ body {
 
 .main .block-container {
     max-width: 100vw !important;
+    width: 100% !important;
     padding-top: 0.8rem !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
+    margin-top: 0 !important;
 }
 
-/* Eliminar espaciado extra a los lados */
+/* Eliminar espaciado extra a los lados - forzar ancho completo */
 .main {
     padding-left: 0 !important;
     padding-right: 0 !important;
+    max-width: 100% !important;
 }
 
 section[data-testid="stMain"] {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }
 
-/* Fix para evitar márgenes adicionales */
 div.block-container {
-    margin-left: auto !important;
-    margin-right: auto !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    max-width: 100% !important;
+}
+
+/* Asegurar que el contenido ocupe todo el ancho */
+div[data-testid="stVerticalBlock"] {
+    width: 100% !important;
+    max-width: 100% !important;
 }
 
 /* Sidebar oscuro con degradado */

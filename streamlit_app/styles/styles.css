@@ -59,11 +59,11 @@ h1, h2, h3, h4, h5 {
 
 main .block-container,
 [data-testid="stAppViewContainer"] .main .block-container {
-    max-width: 1440px !important;
+    max-width: 100% !important;
     width: 100% !important;
     margin: 0 auto !important;
-    padding-left: 32px !important;
-    padding-right: 32px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
 }
 
 [data-testid="stAppViewContainer"] .css-18e3th9 {

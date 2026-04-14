@@ -13,12 +13,15 @@ def load_css(file_path):
 
 def _inject_styles():
     """Inyecta estilos locales con ruta robusta para local y cloud."""
-    css_path = Path(__file__).resolve().parent / "styles" / "main.css"
-    if not css_path.exists():
-        css_path = Path("streamlit_app/styles/main.css")
-    if css_path.exists():
-        styles = load_css(str(css_path))
-        st.markdown(f"<style>{styles}</style>", unsafe_allow_html=True)
+    base = Path(__file__).resolve().parent / "styles"
+    css_files = ["styles.css", "main.css"]
+    for css_name in css_files:
+        css_path = base / css_name
+        if not css_path.exists():
+            css_path = Path(f"streamlit_app/styles/{css_name}")
+        if css_path.exists():
+            styles = load_css(str(css_path))
+            st.markdown(f"<style>{styles}</style>", unsafe_allow_html=True)
 
 
 def _load_sidebar_logo_html():

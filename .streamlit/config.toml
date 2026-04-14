@@ -10,3 +10,10 @@ backgroundColor = "#F4F6F9"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#212121"
 font = "sans serif"
+
+[browser]
+serverAddress = "localhost"
+gatherUsageStats = false
+
+[runner]
+magicEnabled = true
