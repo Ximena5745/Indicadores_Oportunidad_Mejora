@@ -332,23 +332,28 @@ def _build_sunburst(pdi_df: pd.DataFrame) -> go.Figure:
             cleaned = [re.sub(r"\s+", " ", ln).strip() for ln in wrapped_lines]
             return "\n".join(cleaned)
 
-        # Build wrapped text lines; include percentage on its own HTML line for styling
+        # Build wrapped text lines; include percentage
         text = []
         edu_key = _norm_key('Educación para toda la vida')
         for lab, cd, parent in zip(labels, customdata, parents):
             pct = (cd[0] if cd and cd[0] is not None else 0)
             is_edu = _norm_key(lab) == edu_key
-            # inner (Linea) should be tighter, outer (Objetivo) wider
+            # Educación para toda la vida: wrap más pequeño para 3 líneas
             if parent == "":
-                wrapped = wrap_label(lab, width=12)
+                if is_edu:
+                    wrapped = wrap_label(lab, width=8)
+                else:
+                    wrapped = wrap_label(lab, width=12)
             else:
                 wrapped = wrap_label(lab, width=26)
-            # convert wrapped newlines to HTML breaks for reliable rendering
             html_label = str(wrapped).replace('\n', '<br>')
-            # wrap label in bold
-            html_label = f"<b>{html_label}</b>"
-            # percentage line: blue
-            pct_html = f"<br><span style='color:#0B5FFF'>{pct:.0f}%</span>"
+            # Educación: mayor fonte
+            if is_edu:
+                html_label = f"<b><span style='font-size:22px'>{html_label}</span></b>"
+            else:
+                html_label = f"<b>{html_label}</b>"
+            # percentage en azul
+            pct_html = f"<br><span style='color:#0B5FFF;font-size:18px'>{pct:.0f}%</span>"
             text.append(f"{html_label}{pct_html}")
 
     # Split inner (Linea) and outer (Objetivo) for independent styling
