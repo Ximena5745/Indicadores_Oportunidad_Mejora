@@ -92,7 +92,7 @@ def _cargar_indicadores_riesgo() -> pd.DataFrame:
 
     cols = [
         c
-        for c in ["Id", "Indicador", "Proceso", "Categoria", "Cumplimiento", "Periodicidad", "Anio", "Mes"]
+        for c in ["Id", "Indicador", "Proceso", "Categoria", "Cumplimiento", "Cumplimiento_pct", "Periodicidad", "Anio", "Mes", "Meta", "Ejecucion"]
         if c in df.columns
     ]
     return df[cols].reset_index(drop=True)
@@ -486,6 +486,7 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     cols = [
         "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
         "tiene_om", "numero_om", "tipo_accion", "identificador", "avance_om", "tipo_mitigacion", "Cumplimiento_pct",
+        "Meta", "Ejecucion",
     ]
     cols = [c for c in cols if c in m.columns]
     m = m[cols]
@@ -650,12 +651,12 @@ def render():
         subprocesos += sorted(df_riesgo["Subproceso"].dropna().astype(str).unique().tolist())
 
     with st.expander("Filtros", expanded=True):
-        fm, fa, fp, fs = st.columns(4)
+        fa, fm, fp, fs = st.columns(4)
+        with fa:
+            anio_sel = st.segmented_control("Año", options=anios, default="2025")
         with fm:
             default_mes = meses.index("Diciembre")
             mes_sel = st.selectbox("Mes", meses, index=default_mes)
-        with fa:
-            anio_sel = st.segmented_control("Año", options=anios, default="2025")
         with fp:
             proc_sel = st.selectbox("Proceso", procesos, index=0)
         with fs:
@@ -689,23 +690,41 @@ def render():
         nombre_ind = row.iloc[0]["Indicador"] if not row.empty else ""
         ind_anio = str(row.iloc[0].get("Anio", "")) if not row.empty else ""
         ind_mes = row.iloc[0].get("Mes", "") if not row.empty else ""
+        
+        meta_val = row.iloc[0].get("Meta", "") if not row.empty else ""
+        ejec_val = row.iloc[0].get("Ejecucion", "") if not row.empty else ""
+        cumpl_val = row.iloc[0].get("Cumplimiento_pct", "") if not row.empty else ""
 
         with st.expander("Asociar Oportunidad de mejora", expanded=True):
-            st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
+            st.markdown(f"**Indicador:** `{indicador}` - {nombre_ind}")
+            st.markdown(f"**Período:** {ind_mes} {ind_anio}")
+            
+            if meta_val or ejec_val or cumpl_val:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Meta", meta_val if meta_val else "-")
+                with c2:
+                    st.metric("Ejecución", ejec_val if ejec_val else "-")
+                with c3:
+                    st.metric("Cumplimiento", f"{cumpl_val}%" if cumpl_val else "-")
+            
+            st.markdown("---")
             with st.form("om_modal_form", clear_on_submit=True):
-                tipo_accion = st.selectbox("Tipo de Acción", ["OM Kawak", "Reto Plan Anual", "Proyecto Institucional", "Otro"], index=0)
-                
-                placeholders = {
-                    "OM Kawak": "Ingrese numero de OM en Kawak",
-                    "Reto Plan Anual": "Indique el nombre del reto asociado",
-                    "Proyecto Institucional": "Indique el nombre del proyecto",
-                    "Otro": "Indique que acción se va a realizar",
-                }
-                numero_om = st.text_input("Identificador", placeholder=placeholders.get(tipo_accion, ""))
+                col1, col2 = st.columns(2)
+                with col1:
+                    tipo_accion = st.selectbox("Tipo de Acción", ["OM Kawak", "Reto Plan Anual", "Proyecto Institucional", "Otro"], index=0)
+                with col2:
+                    placeholders = {
+                        "OM Kawak": "N° OM Kawak",
+                        "Reto Plan Anual": "Nombre del reto",
+                        "Proyecto Institucional": "Nombre del proyecto",
+                        "Otro": "Descripción de la acción",
+                    }
+                    numero_om = st.text_input("Identificador", placeholder=placeholders.get(tipo_accion, ""))
                 
                 observacion = st.text_area("Observación", placeholder="Describe la situación o justificación para la acción.")
                 
-                submitted = st.form_submit_button("Guardar", use_container_width=True)
+                submitted = st.form_submit_button("💾 Guardar Oportunidad de Mejora", use_container_width=True)
 
                 if submitted:
                     payload = {
@@ -719,8 +738,8 @@ def render():
                         "comentario": str(observacion).strip(),
                     }
                     if guardar_registro_om(payload):
-                        st.success("Oportunidad de mejora associada correctamente.")
+                        st.success("✅ Oportunidad de mejora asociada correctamente.")
                         st.session_state["om_modal_open"] = False
                         st.rerun()
                     else:
-                        st.error("No fue posible guardar la acción. Intenta nuevamente.")
+                        st.error("❌ No fue posible guardar la acción. Intenta nuevamente.")

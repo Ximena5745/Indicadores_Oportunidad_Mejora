@@ -273,6 +273,21 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
         "INDICADOR",
         "INDICADORES",
         "CUMPLIMIENTO",
+        "DESEMPENO",
+        "DESEMPEÑO",
+        "MEDICION",
+        "MEDICIÓN",
+        "METRICA",
+        "MÉTRICA",
+        "KPI",
+        "OBJETIVO",
+        "OBJETIVOS",
+        "LINEA BASE",
+        "LÍNEA BASE",
+        "VARIACION",
+        "VARIACIÓN",
+        "TENDENCIA",
+        "BRECHA",
         "META",
         "EJECUCION",
         "EJECUCIÓN",
@@ -280,7 +295,14 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
         "AVANCE",
         "HALLAZGO",
         "RIESGO",
+        "CONTROL",
+        "VERIFICACION",
+        "VERIFICACIÓN",
+        "EVIDENCIA",
+        "SEGUIMIENTO",
+        "PLAN DE MEJORAMIENTO",
     ]
+    indicator_keys_norm = {_norm_text(k) for k in indicator_keys}
 
     def _split_sentences(text: str) -> list[str]:
         text = re.sub(r"\s+", " ", str(text or "")).strip()
@@ -290,7 +312,11 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
         return [p.strip() for p in parts if p and len(p.strip()) > 20]
 
     def _contains_indicator_context(text_norm: str) -> bool:
-        return any(k in text_norm for k in indicator_keys)
+        return any(k in text_norm for k in indicator_keys_norm)
+
+    def _extract_detected_terms(text_norm: str) -> list[str]:
+        found = [k for k in indicator_keys_norm if k in text_norm]
+        return sorted(found)
 
     def _redact_summary(proc: str, fragments: list[str]) -> str:
         if not fragments:
@@ -372,10 +398,13 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
                         "Fuente": pdf_path.name,
                         "Paginas": set(),
                         "Fragmentos": [],
+                        "Terminos": set(),
                     }
 
                 collected[key]["Paginas"].add(page_num)
                 collected[key]["Fragmentos"].extend(matched_fragments)
+                for frag in matched_fragments:
+                    collected[key]["Terminos"].update(_extract_detected_terms(_norm_text(frag)))
 
     if not collected:
         return pd.DataFrame(), "No se encontraron menciones directas de procesos en los PDFs de auditoría."
@@ -391,6 +420,7 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
                 "Fuente": source_name,
                 "Coincidencias": len(fragments),
                 "Paginas": ", ".join(str(p) for p in paginas),
+                "Terminos detectados": ", ".join(sorted(payload.get("Terminos", set()))[:12]),
                 "Resumen IA": summary,
             }
         )
