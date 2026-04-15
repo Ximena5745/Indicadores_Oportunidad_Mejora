@@ -52,7 +52,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-from ..services.strategic_indicators import preparar_pdi_con_cierre
+from services.strategic_indicators import preparar_pdi_con_cierre
 
 DATA_ROOT = Path(__file__).resolve().parents[2]
 PATH_CONSOLIDADO = DATA_ROOT / "data" / "output" / "Resultados Consolidados.xlsx"

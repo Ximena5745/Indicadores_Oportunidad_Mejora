@@ -10,6 +10,9 @@ if "cache_cleared" not in st.session_state:
     st.cache_resource.clear()
     st.session_state.cache_cleared = True
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+
 from components import ui_components
 
 st.set_page_config(page_title="Dashboard Cumplimiento", layout="wide")

@@ -90,6 +90,73 @@ body {
     font-weight: 700;
 }
 
+/* ─── SELECTORES Y CONTROLES (Streamlit widgets) ────────────────────────────────── */
+
+/* Selectbox - estilo claro y visible */
+[data-testid="stSelectbox"] {
+    margin-bottom: 1rem;
+}
+
+[data-testid="stSelectbox"] > label {
+    color: #1f2937 !important;
+    font-weight: 500 !important;
+    font-size: 0.95rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Select element (dropdown) */
+select, [data-testid="stSelectbox"] select {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    border: 1.5px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 10px 12px !important;
+    font-size: 0.95rem !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+select:hover, [data-testid="stSelectbox"] select:hover {
+    border-color: #64748b !important;
+    box-shadow: 0 0 0 3px rgba(51, 65, 85, 0.08) !important;
+}
+
+select:focus, [data-testid="stSelectbox"] select:focus {
+    outline: none !important;
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12) !important;
+}
+
+/* Input fields */
+input[type="text"], input[type="number"], input[type="date"], 
+[data-testid="stTextInput"] input {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    border: 1.5px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 10px 12px !important;
+    font-size: 0.95rem !important;
+    transition: all 0.2s ease !important;
+}
+
+input:hover, [data-testid="stTextInput"] input:hover {
+    border-color: #64748b !important;
+}
+
+input:focus, [data-testid="stTextInput"] input:focus {
+    outline: none !important;
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12) !important;
+}
+
+/* Filtros - Contenedor principal */
+.stContainer, [data-testid="stContainer"] {
+    background-color: #f8fafc !important;
+    border-radius: 8px !important;
+    padding: 1rem !important;
+    margin-bottom: 1rem !important;
+}
+
 /* ─── CONTENEDORES ────────────────────────────────────────────────────────────── */
 
 .section-panel, .topbar-card {
