@@ -52,6 +52,29 @@ def _cargar_registros_om() -> dict:
     return registros_om_como_dict(anio=None)
 
 
+def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
+    """Extrae el tipo de acción y el identificador del campo numero_om."""
+    if not numero_om:
+        return ("Sin acción", "")
+    for tipo in ["OM Kawak", "Reto Plan Anual", "Proyecto Institucional", "Otro"]:
+        if numero_om.startswith(tipo + ":"):
+            identificador = numero_om[len(tipo) + 1:].strip()
+            return (tipo, identificador)
+    return ("Otro", numero_om)
+
+
+def _color_tipo_accion(tipo: str) -> str:
+    """Retorna el color para cada tipo de acción."""
+    colores = {
+        "OM Kawak": "#3B82F6",
+        "Reto Plan Anual": "#F59E0B",
+        "Proyecto Institucional": "#8B5CF6",
+        "Otro": "#6B7280",
+        "Sin acción": "#9CA3AF",
+    }
+    return colores.get(tipo, "#6B7280")
+
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def _cargar_indicadores_riesgo() -> pd.DataFrame:
     df = cargar_dataset()
@@ -328,13 +351,13 @@ def _build_consolidado_por_periodo(df_reg: pd.DataFrame) -> pd.DataFrame:
 
 def _resumen_om_por_id(df_reg: pd.DataFrame) -> pd.DataFrame:
     if df_reg.empty:
-        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om", "avance_om"])
+        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om", "avance_om", "tipo_accion", "identificador"])
 
     df = df_reg.copy()
     df["Id"] = df.get("id_indicador", "").apply(_id_str)
     df = df[df["Id"] != ""].copy()
     if df.empty:
-        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om", "avance_om"])
+        return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om", "avance_om", "tipo_accion", "identificador"])
 
     if "fecha_registro" in df.columns:
         df = df.sort_values("fecha_registro", ascending=False)
@@ -351,6 +374,11 @@ def _resumen_om_por_id(df_reg: pd.DataFrame) -> pd.DataFrame:
     )
     out["tiene_om"] = pd.to_numeric(out["tiene_om"], errors="coerce").fillna(0).astype(int)
     out["avance_om"] = out["avance_om"].apply(lambda x: 100 if x == 1 else 0)
+    
+    tipo_ident = out["numero_om"].apply(lambda x: _extraer_tipo_y_identificador(x))
+    out["tipo_accion"] = tipo_ident.apply(lambda x: x[0])
+    out["identificador"] = tipo_ident.apply(lambda x: x[1])
+    
     return out
 
 
@@ -450,10 +478,14 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     # Asegurar que numero_om exista (viene de la tabla registros_om)
     if "numero_om" not in m.columns:
         m["numero_om"] = ""
+    if "tipo_accion" not in m.columns:
+        m["tipo_accion"] = "Sin acción"
+    if "identificador" not in m.columns:
+        m["identificador"] = ""
 
     cols = [
         "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
-        "tiene_om", "numero_om", "avance_om", "tipo_mitigacion", "Cumplimiento_pct",
+        "tiene_om", "numero_om", "tipo_accion", "identificador", "avance_om", "tipo_mitigacion", "Cumplimiento_pct",
     ]
     cols = [c for c in cols if c in m.columns]
     m = m[cols]
@@ -509,6 +541,87 @@ def _build_option_label(row) -> str:
     indicador_id = row.get("Id", "")
     indicador_nombre = row.get("Indicador", "")
     return f"{indicador_id} - {indicador_nombre}"
+
+
+def _generar_tabla_html(df: pd.DataFrame) -> str:
+    """Genera una tabla HTML con estilos y colores según nivel de cumplimiento."""
+    if df.empty:
+        return ""
+
+    def _icono_cumplimiento(val):
+        if pd.isna(val):
+            return "⚪"
+        if val >= 105:
+            return "🔵"
+        elif val >= 100:
+            return "🟢"
+        elif val >= 80:
+            return "🟡"
+        else:
+            return "🔴"
+
+    def _color_tipo_accion_html(tipo: str) -> str:
+        colores = {
+            "OM Kawak": "#3B82F6",
+            "Reto Plan Anual": "#F59E0B",
+            "Proyecto Institucional": "#8B5CF6",
+            "Otro": "#6B7280",
+            "Sin acción": "#9CA3AF",
+        }
+        return colores.get(tipo, "#6B7280")
+
+    cols = list(df.columns)
+    cols_excluir = {"accion_creada", "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct"}
+    cols = [c for c in cols if c not in cols_excluir]
+    renamed_cols = [
+        c.replace("Cumplimiento_pct", "Cumplimiento")
+         .replace("tipo_mitigacion", "Tipo Mitigación")
+         .replace("numero_om", "N° OM")
+         .replace("avance_om", "Avance OM")
+         .replace("tiene_om", "Tiene OM")
+         .replace("tipo_accion", "Tipo de Acción")
+         .replace("identificador", "Identificador")
+        for c in cols
+    ]
+    
+    html = """
+    <style>
+    .om-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    .om-table th { background: #1f2937; color: white; padding: 10px; text-align: left; }
+    .om-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+    .om-table tr:hover { background: #f3f4f6; }
+    </style>
+    <table class="om-table">
+    <thead><tr>
+    """
+    for c in renamed_cols:
+        html += f"<th>{c}</th>"
+    html += "</tr></thead><tbody>"
+
+    for _, row in df.iterrows():
+        html += "<tr>"
+        for col in cols:
+            val = row.get(col)
+            if col == "Cumplimiento_pct":
+                icono = _icono_cumplimiento(val)
+                html += f"<td>{icono} {val}%</td>"
+            elif col == "tipo_accion":
+                color = _color_tipo_accion_html(val)
+                html += f"<td style='color: {color}; font-weight: bold;'>{val}</td>"
+            elif col == "identificador":
+                html += f"<td>{val}</td>"
+            elif col == "tipo_mitigacion":
+                color = _color_tipo_accion_html(val)
+                html += f"<td style='color: {color}; font-weight: bold;'>{val}</td>"
+            elif col == "tiene_om":
+                html += f"<td>{'✅' if val == 1 else '❌'}</td>"
+            elif col == "avance_om":
+                html += f"<td>{val}%</td>"
+            else:
+                html += f"<td>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
 
 
 def render():
@@ -582,37 +695,37 @@ def render():
         ind_anio = str(row.iloc[0].get("Anio", "")) if not row.empty else ""
         ind_mes = row.iloc[0].get("Mes", "") if not row.empty else ""
 
-        with st.expander("Asociar nueva OM", expanded=True):
+        with st.expander("Asociar Oportunidad de mejora", expanded=True):
             st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
             with st.form("om_modal_form", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    default_idx_anio = anios.index(ind_anio) if ind_anio in anios else (anios.index("2025") if "2025" in anios else 1)
-                    modal_anio = st.selectbox("Año OM", anios, index=default_idx_anio)
-                with col2:
-                    default_idx_mes = meses.index(ind_mes) if ind_mes in meses else (meses.index("Diciembre") if "Diciembre" in meses else 1)
-                    modal_mes = st.selectbox("Mes OM", meses, index=default_idx_mes)
-
-                estado_om = st.selectbox("Estado OM", ["Abierta", "Pendiente"], index=0)
-                numero_om = st.text_input("Número OM", value="" if estado_om == "Pendiente" else "")
-                observacion = st.text_area("Observación", placeholder="Describe la situación o justificación para la OM.")
-
-                submitted = st.form_submit_button("Guardar OM", use_container_width=True)
+                tipo_accion = st.selectbox("Tipo de Acción", ["OM Kawak", "Reto Plan Anual", "Proyecto Institucional", "Otro"], index=0)
+                
+                placeholders = {
+                    "OM Kawak": "Ingrese numero de OM en Kawak",
+                    "Reto Plan Anual": "Indique el nombre del reto asociado",
+                    "Proyecto Institucional": "Indique el nombre del proyecto",
+                    "Otro": "Indique que acción se va a realizar",
+                }
+                numero_om = st.text_input("Identificador", placeholder=placeholders.get(tipo_accion, ""))
+                
+                observacion = st.text_area("Observación", placeholder="Describe la situación o justificación para la acción.")
+                
+                submitted = st.form_submit_button("Guardar", use_container_width=True)
 
                 if submitted:
                     payload = {
                         "id_indicador": str(indicador),
                         "nombre_indicador": str(nombre_ind),
                         "proceso": str(row.iloc[0].get("Proceso", "")) if not row.empty else "",
-                        "periodo": str(modal_mes),
-                        "anio": int(modal_anio) if modal_anio != "Todos" else int(date.today().year),
-                        "tiene_om": 1 if estado_om == "Abierta" else 0,
-                        "numero_om": str(numero_om).strip() if estado_om == "Abierta" else "",
+                        "periodo": str(ind_mes),
+                        "anio": int(ind_anio) if ind_anio.isdigit() else int(date.today().year),
+                        "tiene_om": 1,
+                        "numero_om": f"{tipo_accion}: {numero_om}".strip(),
                         "comentario": str(observacion).strip(),
                     }
                     if guardar_registro_om(payload):
-                        st.success("OM asociada y guardada correctamente.")
+                        st.success("Oportunidad de mejora associada correctamente.")
                         st.session_state["om_modal_open"] = False
                         st.rerun()
                     else:
-                        st.error("No fue posible guardar la OM. Intenta nuevamente.")
+                        st.error("No fue posible guardar la acción. Intenta nuevamente.")
