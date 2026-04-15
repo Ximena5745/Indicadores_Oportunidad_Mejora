@@ -870,26 +870,27 @@ def _inject_dashboard_styles():
             font-weight: 600;
         }
         .rg-ia {
-            background: radial-gradient(circle at 90% 85%, rgba(35, 185, 255, 0.22), rgba(4, 12, 32, 0.96) 58%);
-            border: 1px solid #304A71;
+            background: linear-gradient(135deg, #050E1F 0%, #0A1B3A 55%, #102A50 100%);
+            border: 1px solid #2D4D79;
             border-radius: 14px;
             padding: 0.9rem;
-            color: #E8F1FF;
+            color: #F2F8FF;
             min-height: 220px;
+            box-shadow: inset 0 0 0 1px rgba(110, 174, 255, 0.12);
         }
         .rg-ia h4 {
             margin: 0 0 0.6rem 0;
             font-size: 1rem;
-            color: #D9ECFF;
+            color: #E8F3FF;
         }
         .rg-bubble {
-            border: 1px solid rgba(102, 209, 255, 0.6);
+            border: 1px solid rgba(120, 192, 255, 0.55);
             border-radius: 14px;
             padding: 0.55rem 0.7rem;
             margin-bottom: 0.5rem;
-            background: rgba(113, 197, 255, 0.12);
+            background: rgba(63, 121, 198, 0.22);
             font-size: 0.8rem;
-            color: #EAF5FF;
+            color: #F3F9FF;
         }
         .rg-ia-table {
             width: 100%;

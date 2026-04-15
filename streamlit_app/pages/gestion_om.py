@@ -668,7 +668,7 @@ def render():
 
         with st.expander("Asociar nueva OM", expanded=True):
             st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
-            with st.form("om_modal_form", clear_on_submit=False):
+            with st.form("om_modal_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 with col1:
                     modal_anio = st.selectbox("Año OM", anios, index=anios.index(anio_sel) if anio_sel in anios else 0)
@@ -681,20 +681,20 @@ def render():
 
                 submitted = st.form_submit_button("Guardar OM", use_container_width=True)
 
-            if submitted:
-                payload = {
-                    "id_indicador": str(indicador),
-                    "nombre_indicador": str(nombre_ind),
-                    "proceso": str(row.iloc[0].get("Proceso", "")) if not row.empty else "",
-                    "periodo": str(modal_mes),
-                    "anio": int(modal_anio) if modal_anio != "Todos" else int(date.today().year),
-                    "tiene_om": 1 if estado_om == "Abierta" else 0,
-                    "numero_om": str(numero_om).strip() if estado_om == "Abierta" else "",
-                    "comentario": str(observacion).strip(),
-                }
-                if guardar_registro_om(payload):
-                    st.success("OM asociada y guardada correctamente.")
-                    st.session_state["om_modal_open"] = False
-                    st.rerun()
-                else:
-                    st.error("No fue posible guardar la OM. Intenta nuevamente.")
+                if submitted:
+                    payload = {
+                        "id_indicador": str(indicador),
+                        "nombre_indicador": str(nombre_ind),
+                        "proceso": str(row.iloc[0].get("Proceso", "")) if not row.empty else "",
+                        "periodo": str(modal_mes),
+                        "anio": int(modal_anio) if modal_anio != "Todos" else int(date.today().year),
+                        "tiene_om": 1 if estado_om == "Abierta" else 0,
+                        "numero_om": str(numero_om).strip() if estado_om == "Abierta" else "",
+                        "comentario": str(observacion).strip(),
+                    }
+                    if guardar_registro_om(payload):
+                        st.success("OM asociada y guardada correctamente.")
+                        st.session_state["om_modal_open"] = False
+                        st.rerun()
+                    else:
+                        st.error("No fue posible guardar la OM. Intenta nuevamente.")
