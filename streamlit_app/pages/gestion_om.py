@@ -35,7 +35,7 @@ try:
     from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
     from services.data_loader import cargar_acciones_mejora, cargar_dataset
     from core.config import CACHE_TTL
-    from core.db_manager import registros_om_como_dict
+    from core.db_manager import registros_om_como_dict, guardar_registro_om
 except (ImportError, ModuleNotFoundError):
     # Fallback: Sistema está siendo ejecutado como script, no como paquete
     import sys
@@ -45,7 +45,55 @@ except (ImportError, ModuleNotFoundError):
     from ai_analysis import analizar_texto_indicador as _analizar_texto_puro
     from data_loader import cargar_acciones_mejora, cargar_dataset
     from core.config import CACHE_TTL
-    from core.db_manager import registros_om_como_dict
+    from core.db_manager import registros_om_como_dict, guardar_registro_om
+
+
+def _generar_tabla_html(df: pd.DataFrame) -> str:
+    """Genera una tabla HTML con estilos y colores según nivel de cumplimiento."""
+    if df.empty:
+        return ""
+
+    def _icono_cumplimiento(val):
+        if pd.isna(val):
+            return "⚪"
+        if val >= 105:
+            return "🔵"  # Sobrecumplimiento
+        elif val >= 100:
+            return "🟢"  # Cumplimiento
+        elif val >= 80:
+            return "🟡"  # Alerta
+        else:
+            return "🔴"  # Peligro
+
+    cols = list(df.columns)
+    renamed_cols = [c.replace("Cumplimiento_pct", "Cumplimiento") for c in cols]
+    
+    html = """
+    <style>
+    .om-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    .om-table th { background: #1f2937; color: white; padding: 10px; text-align: left; }
+    .om-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+    .om-table tr:hover { background: #f3f4f6; }
+    </style>
+    <table class="om-table">
+    <thead><tr>
+    """
+    for c in renamed_cols:
+        html += f"<th>{c}</th>"
+    html += "</tr></thead><tbody>"
+
+    for _, row in df.iterrows():
+        html += "<tr>"
+        for col in cols:
+            val = row.get(col)
+            if col == "Cumplimiento_pct":
+                icono = _icono_cumplimiento(val)
+                html += f"<td>{icono} {val}</td>"
+            else:
+                html += f"<td>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -568,7 +616,7 @@ def render():
         return
 
     st.markdown("### Indicadores en Peligro")
-    st.dataframe(df_tabla, use_container_width=True, height=420)
+    st.markdown(_generar_tabla_html(df_tabla), unsafe_allow_html=True)
 
     opciones = df_tabla.apply(_build_option_label, axis=1).tolist()
     indicador_seleccionado = st.selectbox("Seleccionar indicador para nueva OM", opciones)

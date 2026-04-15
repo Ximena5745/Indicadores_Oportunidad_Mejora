@@ -687,9 +687,311 @@ def _format_insights(items: list[dict], positive: bool = True):
     return [f"- **{item['name']}** empeora {item['change']:.1f}% respecto al año anterior." for item in items]
 
 
+def _norm_key(value: str) -> str:
+    import unicodedata
+    import re
+
+    txt = str(value or "").strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    txt = re.sub(r"[^0-9a-z]+", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _inject_dashboard_styles():
+    st.markdown(
+        """
+        <style>
+        .rg-nav {
+            background: linear-gradient(90deg, #0D2746 0%, #153B67 50%, #1D4E89 100%);
+            border-radius: 12px;
+            padding: 0.7rem 1rem;
+            margin-bottom: 1rem;
+            color: #EAF2FF;
+            font-size: 0.92rem;
+            display: flex;
+            gap: 1.2rem;
+            align-items: center;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+        .rg-nav .active {
+            background: rgba(255,255,255,0.18);
+            padding: 0.35rem 0.7rem;
+            border-radius: 8px;
+            font-weight: 700;
+        }
+        .rg-panel {
+            background: linear-gradient(180deg, #F9FBFF 0%, #EEF4FB 100%);
+            border: 1px solid #D9E3F1;
+            border-radius: 16px;
+            padding: 1rem;
+            box-shadow: 0 8px 20px rgba(8, 34, 75, 0.08);
+            margin-bottom: 1rem;
+        }
+        .rg-title {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0E2A4D;
+            margin: 0;
+        }
+        .rg-subtitle {
+            color: #406080;
+            margin-top: 0.2rem;
+            margin-bottom: 0.2rem;
+            font-size: 0.88rem;
+        }
+        .rg-btn {
+            display: inline-block;
+            background: #0E2A4D;
+            color: #FFFFFF;
+            border-radius: 8px;
+            padding: 0.5rem 0.8rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid #1F3D65;
+        }
+        .rg-card {
+            border-radius: 14px;
+            border: 1px solid #D6E2F0;
+            background: #FFFFFF;
+            padding: 0.9rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.07);
+            min-height: 165px;
+        }
+        .rg-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.6rem;
+        }
+        .rg-icon {
+            font-size: 1.6rem;
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.7);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+        .rg-card-title {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #2A425D;
+            font-weight: 700;
+        }
+        .rg-main-value {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .rg-meta {
+            color: #546D88;
+            font-size: 0.78rem;
+            margin-top: 0.2rem;
+        }
+        .rg-chip {
+            border-radius: 10px;
+            background: #FFFFFF;
+            border: 1px solid #D6E2F0;
+            padding: 0.8rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .rg-chip-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1;
+        }
+        .rg-chip-label {
+            margin: 0.2rem 0 0;
+            color: #4F6781;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .rg-ia {
+            background: radial-gradient(circle at 90% 85%, rgba(35, 185, 255, 0.22), rgba(4, 12, 32, 0.96) 58%);
+            border: 1px solid #304A71;
+            border-radius: 14px;
+            padding: 0.9rem;
+            color: #E8F1FF;
+            min-height: 220px;
+        }
+        .rg-ia h4 {
+            margin: 0 0 0.6rem 0;
+            font-size: 1rem;
+            color: #D9ECFF;
+        }
+        .rg-bubble {
+            border: 1px solid rgba(102, 209, 255, 0.6);
+            border-radius: 14px;
+            padding: 0.55rem 0.7rem;
+            margin-bottom: 0.5rem;
+            background: rgba(113, 197, 255, 0.12);
+            font-size: 0.8rem;
+            color: #EAF5FF;
+        }
+        .rg-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+        }
+        .rg-table th, .rg-table td {
+            border-bottom: 1px solid #DEE7F4;
+            padding: 0.45rem;
+            text-align: left;
+        }
+        .rg-table th {
+            color: #2A425D;
+            font-weight: 700;
+            font-size: 0.8rem;
+            background: #F5F9FF;
+        }
+        .rg-process-card {
+            border-radius: 12px;
+            background: #FFFFFF;
+            border: 1px solid #DAE4F1;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+            padding: 0.75rem;
+            min-height: 140px;
+        }
+        .rg-process-name {
+            font-size: 0.84rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        .rg-variation {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin: 0.3rem 0 0;
+            line-height: 1.1;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _sparkline_svg(color: str, up: bool = True) -> str:
+    if up:
+        path = "M2,24 C10,20 16,18 22,15 C28,12 34,18 40,14 C46,10 52,7 58,5"
+    else:
+        path = "M2,7 C10,10 16,12 22,15 C28,18 34,13 40,17 C46,21 52,24 58,26"
+    return (
+        "<svg width='62' height='30' viewBox='0 0 62 30' xmlns='http://www.w3.org/2000/svg'>"
+        f"<path d='{path}' fill='none' stroke='{color}' stroke-width='2.3' stroke-linecap='round'/></svg>"
+    )
+
+
+def _render_strategy_card(title: str, indicators: int, cumplimiento: float, color: str, icon: str):
+    spark = _sparkline_svg(color, up=True)
+    st.markdown(
+        f"""
+        <div class='rg-card' style='border-left: 4px solid {color}; background: linear-gradient(140deg, #FFFFFF 0%, {color}1E 100%);'>
+            <div class='rg-card-head'>
+                <div class='rg-icon' style='color:{color};'>{icon}</div>
+                <div style='text-align:right;'>
+                    <p class='rg-main-value' style='color:{color};'>{cumplimiento:.1f}%</p>
+                    <p class='rg-meta'>{indicators} indicadores</p>
+                </div>
+            </div>
+            <p class='rg-card-title'>{title}</p>
+            <div style='display:flex;justify-content:flex-end;margin-top:0.3rem;'>{spark}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_chip(value: int, label: str, color: str):
+    st.markdown(
+        f"""
+        <div class='rg-chip'>
+            <p class='rg-chip-value' style='color:{color};'>{value}</p>
+            <p class='rg-chip-label'>{label}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_process_card(name: str, indicadores: int, variation: float, color: str):
+    up = variation >= 0
+    variation_color = "#16A34A" if variation >= 0 else "#D32F2F"
+    arrow = "↑" if up else "↓"
+    spark = _sparkline_svg("#2A6BB0", up=up)
+    st.markdown(
+        f"""
+        <div class='rg-process-card' style='border-top:4px solid {color};'>
+            <p class='rg-process-name' style='color:{color};'>{name}</p>
+            <p class='rg-meta'>{indicadores} indicadores</p>
+            <p class='rg-variation' style='color:{variation_color};'>{abs(variation):.1f}% {arrow}</p>
+            <p class='rg-meta'>Variacion</p>
+            <div style='display:flex;justify-content:flex-end;margin-top:0.2rem;'>{spark}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_variation_table(title: str, rows: list[dict], positive: bool):
+    if not rows:
+        st.info("No hay comparativas disponibles.")
+        return
+
+    items_html = ""
+    for row in rows:
+        change = float(row.get("change", 0.0))
+        sign = "+" if change >= 0 else ""
+        color = "#16A34A" if (change >= 0) else "#D32F2F"
+        icon = "↗" if (positive and change >= 0) else ("↘" if change < 0 else "↗")
+        items_html += (
+            "<tr>"
+            f"<td>{row.get('name', '')}</td>"
+            f"<td style='color:{color};font-weight:700;'>{icon} {sign}{change:.1f}%</td>"
+            "</tr>"
+        )
+
+    st.markdown(
+        f"""
+        <div class='rg-panel'>
+            <h4 style='margin:0 0 0.5rem 0; color:#173A62;'>{title}</h4>
+            <table class='rg-table'>
+                <thead><tr><th>Indicador</th><th>Variacion</th></tr></thead>
+                <tbody>{items_html}</tbody>
+            </table>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render():
-    st.title("Resumen General")
-    st.markdown("#### Fuente real: Consolidado Cierres — Resultados Consolidados.xlsx")
+    _inject_dashboard_styles()
+
+    st.markdown(
+        """
+        <div class='rg-nav'>
+            <span><strong>Sistema de Indicadores</strong></span>
+            <span class='active'>Vision Estrategica</span>
+            <span>Vision Por Procesos</span>
+            <span>Operaciones</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    top_l, top_r = st.columns([5, 1])
+    with top_l:
+        st.markdown("<h1 class='rg-title'>CMI ESTRATEGICO - Vision General</h1>", unsafe_allow_html=True)
+        st.markdown("<div class='rg-subtitle'>Fuente real: Consolidado Cierres — Resultados Consolidados.xlsx</div>", unsafe_allow_html=True)
+    with top_r:
+        st.markdown("<div style='margin-top:1.1rem; text-align:right;'><span class='rg-btn'>Descargar app</span></div>", unsafe_allow_html=True)
     
     consolidado = _load_consolidado_cierres()
     if consolidado.empty:
@@ -707,14 +1009,8 @@ def render():
         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
     ]
     
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 1: CMI ESTRATÉG ICO - Visión General
-    # ═══════════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    st.header("📊 CMI ESTRATÉGICO - Visión General")
-    st.caption("Fuente real: Consolidado Cierres — Resultados Consolidados.xlsx")
-    
-    # Filtros independientes para CMI Estratégico
+    # Seccion 1: CMI Estrategico
+    st.markdown("<div class='rg-panel'>", unsafe_allow_html=True)
     st.markdown("##### Filtros")
     col_year_e, col_month_e, col_linea = st.columns(3)
     
@@ -763,63 +1059,91 @@ def render():
     if linea_seleccionada != "Todas" and not pdi_estrategico.empty:
         pdi_estrategico = pdi_estrategico[pdi_estrategico["Linea"] == linea_seleccionada]
     
-    # Mostrar tarjetas KPI para CMI Estratégico
+    # Mostrar tarjetas KPI para CMI Estrategico
     if not pdi_estrategico.empty:
-        st.markdown("##### Métricas Clave de Negocio")
-        
-        # Agrupar por línea y calcular métricas
+        st.markdown("##### Metricas Clave de Negocio")
+
+        # Agrupar por linea y calcular metricas
         if "Linea" in pdi_estrategico.columns:
             lineas_resumen = pdi_estrategico.groupby("Linea").agg({
                 "Indicador": "count",
                 "cumplimiento_pct": "mean"
             }).reset_index()
             lineas_resumen.columns = ["Linea", "N_Indicadores", "Cumpl_Promedio"]
-            
-            # Mostrar tarjetas por línea (máximo 3 por fila)
-            for i in range(0, len(lineas_resumen), 3):
-                cols = st.columns(3)
-                for idx, (_, row) in enumerate(lineas_resumen.iloc[i:i+3].iterrows()):
-                    linea = row["Linea"]
-                    n_ind = int(row["N_Indicadores"])
-                    cumpl = row["Cumpl_Promedio"]
-                    
-                    # Obtener color de la línea
-                    import unicodedata, re
-                    def _norm_key(s):
-                        t = str(s).strip().lower()
-                        t = unicodedata.normalize("NFD", t)
-                        t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
-                        t = re.sub(r"[^0-9a-z]+", " ", t)
-                        return re.sub(r"\s+", " ", t).strip()
-                    normalized_color_map = { _norm_key(k): v for k, v in LINEA_COLORS.items() }
-                    linea_color = normalized_color_map.get(_norm_key(linea), "#6B728E")
-                    
-                    with cols[idx]:
-                        st.markdown(
-                            f"""<div style='background: white; padding: 1.5rem; border-radius: 12px; 
-                            border-left: 4px solid {linea_color}; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
-                            <div style='background: {linea_color}20; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;'>
-                                <h5 style='margin: 0; color: {linea_color}; font-weight: 600;'>{linea}</h5>
-                            </div>
-                            <div style='margin-bottom: 0.75rem;'>
-                                <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>Indicadores</div>
-                                <div style='font-size: 1.5rem; font-weight: 700; color: #1A1A1A;'>{n_ind}</div>
-                            </div>
-                            <div>
-                                <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>% Cumplimiento</div>
-                                <div style='font-size: 2rem; font-weight: 700; color: {linea_color};'>{cumpl:.1f}%</div>
-                            </div>
-                            </div>""",
-                            unsafe_allow_html=True
-                        )
-        
-        # Sunburst de alineación de objetivos estratégicos
-        st.markdown("##### Alineación de Objetivos Estratégicos")
-        sunburst = _build_sunburst(pdi_estrategico)
-        st.plotly_chart(sunburst, use_container_width=True)
-        
-        # Métricas globales KPI
-        st.markdown("##### Métricas Clave de Negocio")
+
+            strategic_defs = [
+                {"key": "calidad", "label": "Calidad", "icon": "🏅", "color": "#E31C8D"},
+                {"key": "educacion para toda la vida", "label": "Educacion_para_toda_la_vida", "icon": "🎓", "color": "#0066CC"},
+                {"key": "experiencia", "label": "Experiencia", "icon": "💡", "color": "#A4C639"},
+                {"key": "sostenibilidad", "label": "Sustentabilidad", "icon": "📘", "color": "#FF9900"},
+            ]
+
+            norm_to_row = {}
+            for _, row in lineas_resumen.iterrows():
+                norm_to_row[_norm_key(str(row["Linea"]))] = row
+
+            visual_left, visual_right = st.columns([2, 1])
+            with visual_left:
+                for i in range(0, len(strategic_defs), 2):
+                    row_cols = st.columns(2)
+                    for idx, card_def in enumerate(strategic_defs[i:i+2]):
+                        row = norm_to_row.get(card_def["key"])
+                        if row is None:
+                            matched = [k for k in norm_to_row.keys() if card_def["key"] in k]
+                            row = norm_to_row.get(matched[0]) if matched else None
+
+                        n_ind = int(row["N_Indicadores"]) if row is not None else 0
+                        cumpl = float(row["Cumpl_Promedio"]) if row is not None else 0.0
+                        with row_cols[idx]:
+                            _render_strategy_card(
+                                title=card_def["label"],
+                                indicators=n_ind,
+                                cumplimiento=cumpl,
+                                color=card_def["color"],
+                                icon=card_def["icon"],
+                            )
+
+            with visual_right:
+                st.markdown("##### Alineacion de Objetivos Estrategicos")
+                sunburst = _build_sunburst(pdi_estrategico)
+                st.plotly_chart(sunburst, use_container_width=True)
+
+                # Insights IA en panel oscuro
+                prev_year_e = year_estrategico - 1
+                prev_month_e = _latest_month_for_year(consolidado, prev_year_e)
+                best_improvements_e = []
+                worst_declines_e = []
+                if prev_month_e:
+                    prev_pdi_e = preparar_pdi_con_cierre(prev_year_e, prev_month_e)
+                    prev_pdi_e = filter_df_for_cmi_estrategico(prev_pdi_e, id_column="Id")
+                    best_improvements_e, worst_declines_e = _compute_trends(pdi_estrategico, prev_pdi_e)
+
+                count_total_e = len(pdi_estrategico)
+                counts_e = {
+                    "Sobrecumplimiento": int((pdi_estrategico["Nivel de cumplimiento"] == "Sobrecumplimiento").sum()),
+                    "Cumplimiento": int((pdi_estrategico["Nivel de cumplimiento"] == "Cumplimiento").sum()),
+                    "Alerta": int((pdi_estrategico["Nivel de cumplimiento"] == "Alerta").sum()),
+                    "Peligro": int((pdi_estrategico["Nivel de cumplimiento"] == "Peligro").sum()),
+                }
+                health_rate_e = round(((counts_e["Sobrecumplimiento"] + counts_e["Cumplimiento"]) / max(count_total_e, 1)) * 100, 1)
+                ia_bubbles = [
+                    f"{health_rate_e}% de los indicadores en niveles saludables.",
+                    f"{best_improvements_e[0]['name']} presenta la mayor mejora." if best_improvements_e else "Sin mejoras comparables en el periodo.",
+                    f"{worst_declines_e[0]['name']} requiere accion correctiva." if worst_declines_e else "No se detectaron desmejoras criticas.",
+                ]
+                bubbles_html = "".join([f"<div class='rg-bubble'>{b}</div>" for b in ia_bubbles])
+                st.markdown(
+                    f"""
+                    <div class='rg-ia'>
+                        <h4>Perspectivas IA Estrategicas</h4>
+                        {bubbles_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        # Metricas resumen en chips
+        st.markdown("##### Metricas Clave de Negocio")
         count_total_e = len(pdi_estrategico)
         counts_e = {
             "Sobrecumplimiento": int((pdi_estrategico["Nivel de cumplimiento"] == "Sobrecumplimiento").sum()),
@@ -827,75 +1151,42 @@ def render():
             "Alerta": int((pdi_estrategico["Nivel de cumplimiento"] == "Alerta").sum()),
             "Peligro": int((pdi_estrategico["Nivel de cumplimiento"] == "Peligro").sum()),
         }
-        
+
         kpi_cols = st.columns(5)
-        colors = ["#0B5FFF", "#1A3A5C", "#43A047", "#FBAF17", "#D32F2F"]
+        colors = ["#0B5FFF", "#173D66", "#16A34A", "#F59E0B", "#D32F2F"]
         values = [count_total_e, counts_e["Sobrecumplimiento"], counts_e["Cumplimiento"], counts_e["Alerta"], counts_e["Peligro"]]
-        labels = ["Total indicadores PDI", "Sobrecumplimiento", "Cumplimiento", "Alerta", "Peligro"]
+        labels = ["Total indicadores", "Metricas de negocio", "Cumplimiento", "Alerta", "Peligro"]
         for col, label, value, color in zip(kpi_cols, labels, values, colors):
-            col.metric(label, value)
-        
-        # === Análisis de mejora vs histórico ===
-        st.markdown("##### Indicadores con Mayor Mejora vs Histórico")
+            with col:
+                _render_chip(value, label, color)
+
+        # Analisis mejora/desmejora en tablas
         prev_year_e = year_estrategico - 1
         prev_month_e = _latest_month_for_year(consolidado, prev_year_e)
+        best_improvements_e = []
+        worst_declines_e = []
         if prev_month_e:
             prev_pdi_e = preparar_pdi_con_cierre(prev_year_e, prev_month_e)
             prev_pdi_e = filter_df_for_cmi_estrategico(prev_pdi_e, id_column="Id")
             best_improvements_e, worst_declines_e = _compute_trends(pdi_estrategico, prev_pdi_e)
-            
-            if best_improvements_e:
-                for item in best_improvements_e:
-                    st.markdown(f"- **{item['name']}** — +{item['change']:.1f}%")
-            else:
-                st.markdown("- No hay comparativas disponibles contra el año anterior.")
-        else:
-            st.markdown("- No hay datos del año anterior para comparar.")
-        
-        st.markdown("##### Indicadores con Mayor Desmejora vs Histórico")
-        if prev_month_e and worst_declines_e:
-            for item in worst_declines_e:
-                st.markdown(f"- **{item['name']}** — {item['change']:.1f}%")
-        else:
-            st.markdown("- No hay comparativas disponibles contra el año anterior.")
-        
-        # === Insights Estratégicos (IA) ===
-        st.markdown("##### Insights Estratégicos (IA)")
-        best_line = pdi_estrategico.groupby("Linea").agg(cumplimiento_pct=("cumplimiento_pct", "mean")).reset_index()
-        best_line = best_line.sort_values("cumplimiento_pct", ascending=False).head(1)
-        line_name = str(best_line.iloc[0]["Linea"]) if not best_line.empty else ""
-        line_avg = float(best_line.iloc[0]["cumplimiento_pct"]) if not best_line.empty else 0
-        health_rate_e = round(((counts_e["Sobrecumplimiento"] + counts_e["Cumplimiento"]) / max(count_total_e, 1)) * 100, 1)
-        
-        insights_e = []
-        if health_rate_e >= 70:
-            insights_e.append(f"✅ El {health_rate_e}% de los indicadores PDI están en niveles saludables.")
-        elif health_rate_e >= 50:
-            insights_e.append(f"⚠️ El {health_rate_e}% de los indicadores PDI están en cumplimiento, con riesgo en algunos objetivos.")
-        else:
-            insights_e.append(f"🚨 Solo el {health_rate_e}% de los indicadores PDI cumplen expectativas; se requiere acción prioritaria.")
-        
-        if line_name:
-            insights_e.append(f"🌟 La línea \"{line_name}\" lidera con {line_avg:.1f}% de cumplimiento promedio.")
-        
-        if prev_month_e and best_improvements_e:
-            insights_e.append(f"📈 Mejora destacada: \"{best_improvements_e[0]['name']}\" (+{best_improvements_e[0]['change']:.1f}%).")
-        
-        if prev_month_e and worst_declines_e:
-            insights_e.append(f"📉 Atención a \"{worst_declines_e[0]['name']}\" ({worst_declines_e[0]['change']:.1f}%).")
-        
-        for insight in insights_e:
-            st.markdown(f"- {insight}")
+
+        tcol1, tcol2 = st.columns(2)
+        with tcol1:
+            _render_variation_table("Indicadores con Mayor Mejora vs Historico", best_improvements_e, positive=True)
+        with tcol2:
+            _render_variation_table("Indicadores con Mayor Desmejora vs Historico", worst_declines_e, positive=False)
     else:
         st.warning("No hay indicadores de CMI Estratégico para el corte seleccionado.")
-    
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 2: CMI POR PROCESOS - Desempeño Operativo
-    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Seccion 2: CMI por Procesos
     st.markdown("---")
-    st.header("🔧 CMI POR PROCESOS - Desempeño Operativo")
+    st.header("CMI POR PROCESOS - Desempeño Operativo")
     st.caption("Fuente real: Consolidado Cierres — Resultados Consolidados.xlsx")
-    
+
+    st.markdown("<div class='rg-panel'>", unsafe_allow_html=True)
+
     # Filtros independientes para CMI por Procesos
     st.markdown("##### Filtros")
     col_year_p, col_month_p, col_tipo = st.columns(3)
@@ -953,118 +1244,77 @@ def render():
         # Mostrar tarjetas KPI para CMI por Procesos
         if not pdi_procesos.empty and "Tipo de proceso" in pdi_procesos.columns:
             st.markdown("##### Monitoreo de Procesos Clave")
-            
-            # Si "Todos" está seleccionado: mostrar tarjetas por tipo de proceso
-            if tipo_proceso_seleccionado == "Todos":
-                tipos_unicos = sorted([t for t in pdi_procesos["Tipo de proceso"].dropna().unique() if t in TIPOS_PROCESO])
-                
-                if tipos_unicos:
-                    cols = st.columns(min(4, len(tipos_unicos)))
-                    
-                    for idx, tipo in enumerate(tipos_unicos):
-                        df_tipo = pdi_procesos[pdi_procesos["Tipo de proceso"] == tipo]
-                        
-                        total_indicadores = len(df_tipo)
-                        n_subprocesos = df_tipo["Subproceso"].nunique() if "Subproceso" in df_tipo.columns else 0
-                        cumpl_promedio = (df_tipo["cumplimiento_pct"].mean()) if "cumplimiento_pct" in df_tipo.columns and not df_tipo["cumplimiento_pct"].isna().all() else 0
-                        
-                        with cols[idx % len(cols)]:
-                            tipo_color = get_tipo_color(tipo, light=False)
-                            tipo_color_light = get_tipo_color(tipo, light=True)
-                            
-                            st.markdown(
-                                f"""<div style='background: white; padding: 1.5rem; border-radius: 12px; 
-                                border-left: 4px solid {tipo_color}; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
-                                <div style='background: {tipo_color}20; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;'>
-                                    <h5 style='margin: 0; color: {tipo_color}; font-weight: 600;'>{tipo}</h5>
-                                </div>
-                                <div style='margin-bottom: 0.75rem;'>
-                                    <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>Subprocesos</div>
-                                    <div style='font-size: 1.5rem; font-weight: 700; color: #1A1A1A;'>{n_subprocesos}</div>
-                                </div>
-                                <div style='margin-bottom: 0.75rem;'>
-                                    <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>Indicadores</div>
-                                    <div style='font-size: 1.5rem; font-weight: 700; color: #1A1A1A;'>{total_indicadores}</div>
-                                </div>
-                                <div>
-                                    <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>% Cumplimiento</div>
-                                    <div style='font-size: 2rem; font-weight: 700; color: {tipo_color};'>{cumpl_promedio:.1f}%</div>
-                                </div>
-                                </div>""",
-                                unsafe_allow_html=True
-                            )
-            
-            # Si se seleccionó un tipo específico: mostrar tarjetas por subproceso
-            else:
-                subprocesos_del_tipo = sorted(pdi_procesos["Subproceso"].dropna().unique())
-                
-                if subprocesos_del_tipo:
-                    for i in range(0, len(subprocesos_del_tipo), 3):
-                        cols = st.columns(3)
-                        for idx, subproceso in enumerate(subprocesos_del_tipo[i:i+3]):
-                            df_subproceso = pdi_procesos[pdi_procesos["Subproceso"] == subproceso]
-                            
-                            total_ind = len(df_subproceso)
-                            cumpl_prom = (df_subproceso["cumplimiento_pct"].mean()) if "cumplimiento_pct" in df_subproceso.columns and not df_subproceso["cumplimiento_pct"].isna().all() else 0
-                            
-                            # Color según cumplimiento
-                            if cumpl_prom >= 100:
-                                color = "#22C55E"
-                            elif cumpl_prom >= 80:
-                                color = "#FBBF24"
-                            else:
-                                color = "#EF4444"
-                            
-                            with cols[idx]:
-                                st.markdown(
-                                    f"""<div style='background: white; padding: 1.5rem; border-radius: 12px; 
-                                    border-left: 4px solid {color}; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1rem;'>
-                                    <div style='background: {color}20; padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem;'>
-                                        <h5 style='margin: 0; color: {color}; font-size: 0.9rem; font-weight: 600;'>{subproceso}</h5>
-                                    </div>
-                                    <div style='margin-bottom: 0.75rem;'>
-                                        <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>Indicadores</div>
-                                        <div style='font-size: 1.5rem; font-weight: 700; color: #1A1A1A;'>{total_ind}</div>
-                                    </div>
-                                    <div>
-                                        <div style='font-size: 0.75rem; color: #64748B; margin-bottom: 0.25rem;'>% Cumplimiento</div>
-                                        <div style='font-size: 2rem; font-weight: 700; color: {color};'>{cumpl_prom:.1f}%</div>
-                                    </div>
-                                    </div>""",
-                                    unsafe_allow_html=True
-                                )
-                else:
-                    st.info(f"No hay subprocesos del tipo {tipo_proceso_seleccionado} con indicadores en este período.")
-            
-            # Indicadores con mayor mejora/desmejora vs histórico
-            st.markdown("##### Indicadores de Proceso con Mayor Mejora vs Histórico")
+
+            base_df = pdi_procesos.copy()
+            if tipo_proceso_seleccionado != "Todos":
+                base_df = base_df[base_df["Tipo de proceso"] == tipo_proceso_seleccionado]
+
             prev_year_p = year_procesos - 1
             prev_month_p = _latest_month_for_year(consolidado, prev_year_p)
+            process_variation_df = pd.DataFrame()
+
             if prev_month_p:
                 prev_pdi_procesos = preparar_pdi_con_cierre(prev_year_p, prev_month_p)
                 prev_pdi_procesos = filter_df_for_cmi_procesos(prev_pdi_procesos, id_column="Id")
-                
-                best_improvements, worst_declines = _compute_trends(pdi_procesos, prev_pdi_procesos)
-                
-                if best_improvements:
-                    for item in best_improvements[:3]:
-                        st.markdown(f"- **{item['name']}** mejora +{item['change']:.1f}% respecto al año anterior")
-                else:
-                    st.info("No hay comparación con el año anterior.")
+
+                if not map_df.empty and "Subproceso" in prev_pdi_procesos.columns:
+                    prev_pdi_procesos = prev_pdi_procesos.merge(
+                        map_df[["Subproceso", "Tipo de proceso"]].drop_duplicates(),
+                        on="Subproceso",
+                        how="left"
+                    )
+                    if tipo_proceso_seleccionado != "Todos":
+                        prev_pdi_procesos = prev_pdi_procesos[prev_pdi_procesos["Tipo de proceso"] == tipo_proceso_seleccionado]
+
+                curr_proc = (
+                    base_df.groupby("Subproceso", dropna=False)
+                    .agg(indicadores=("Indicador", "count"), actual=("cumplimiento_pct", "mean"))
+                    .reset_index()
+                )
+                prev_proc = (
+                    prev_pdi_procesos.groupby("Subproceso", dropna=False)
+                    .agg(prev=("cumplimiento_pct", "mean"))
+                    .reset_index()
+                )
+                process_variation_df = curr_proc.merge(prev_proc, on="Subproceso", how="left")
+                process_variation_df["change"] = process_variation_df["actual"] - process_variation_df["prev"]
+
+            if process_variation_df.empty:
+                process_variation_df = (
+                    base_df.groupby("Subproceso", dropna=False)
+                    .agg(indicadores=("Indicador", "count"), actual=("cumplimiento_pct", "mean"))
+                    .reset_index()
+                )
+                process_variation_df["change"] = 0.0
+
+            process_variation_df = process_variation_df.sort_values("indicadores", ascending=False).head(9)
+
+            if process_variation_df.empty:
+                st.info("No hay subprocesos para mostrar en este periodo.")
             else:
-                st.info("No hay datos del año anterior para comparar.")
-            
-            # === Gráfico de barras apiladas por tipo de proceso ===
-            st.markdown("##### Distribución de Niveles de Cumplimiento por Tipo de Proceso")
-            # Cargar consolidado filtrado para análisis por tipo
+                for i in range(0, len(process_variation_df), 3):
+                    pcols = st.columns(3)
+                    for idx, (_, prow) in enumerate(process_variation_df.iloc[i:i+3].iterrows()):
+                        with pcols[idx]:
+                            delta = float(prow.get("change", 0.0) or 0.0)
+                            card_color = "#E55039" if delta < -2 else ("#F39C12" if delta < 2 else "#2E9E55")
+                            _render_process_card(
+                                name=str(prow.get("Subproceso", "Sin subproceso")),
+                                indicadores=int(prow.get("indicadores", 0)),
+                                variation=delta,
+                                color=card_color,
+                            )
+
+            # Distribucion y tablas
+            st.markdown("##### Total Indicadores por Proceso")
             process_data = consolidado.copy()
             process_data["Año"] = pd.to_numeric(process_data.get("Año", process_data.get("Ao", pd.NA)), errors="coerce")
             process_data = process_data[process_data["Año"] == year_procesos]
-            
+
             # Filtrar por mes si está disponible
             if "Mes_num" in process_data.columns:
                 process_data = process_data[process_data["Mes_num"] == month_procesos]
-            
+
             # Merge con tipos de proceso
             if not process_data.empty and "Subproceso" in process_data.columns:
                 process_data = process_data.merge(
@@ -1073,105 +1323,68 @@ def render():
                     how="left"
                 )
                 
-                # Calcular counts por tipo y nivel
-                proc_counts = _process_counts(process_data, "Tipo de proceso")
-                
-                if not proc_counts.empty:
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(
-                        name='Sobrecumplimiento',
-                        x=proc_counts['Tipo de proceso'],
-                        y=proc_counts['Sobrecumplimiento'],
-                        marker_color='#1A3A5C'
+                if tipo_proceso_seleccionado != "Todos":
+                    process_data = process_data[process_data["Tipo de proceso"] == tipo_proceso_seleccionado]
+
+                bar_df = process_data.groupby("Subproceso", dropna=False)["Indicador"].count().reset_index(name="Total")
+                bar_df = bar_df.sort_values("Total", ascending=False).head(8)
+                if not bar_df.empty:
+                    fig = go.Figure(go.Bar(
+                        x=bar_df["Subproceso"],
+                        y=bar_df["Total"],
+                        marker_color=["#1E4C86", "#2A78C7", "#2EA75B", "#E7B339", "#F39C12", "#E31C8D", "#00BCD4", "#6C88B0"][:len(bar_df)]
                     ))
-                    fig.add_trace(go.Bar(
-                        name='Cumplimiento',
-                        x=proc_counts['Tipo de proceso'],
-                        y=proc_counts['Cumplimiento'],
-                        marker_color='#43A047'
-                    ))
-                    fig.add_trace(go.Bar(
-                        name='Alerta',
-                        x=proc_counts['Tipo de proceso'],
-                        y=proc_counts['Alerta'],
-                        marker_color='#FBAF17'
-                    ))
-                    fig.add_trace(go.Bar(
-                        name='Peligro',
-                        x=proc_counts['Tipo de proceso'],
-                        y=proc_counts['Peligro'],
-                        marker_color='#D32F2F'
-                    ))
-                    fig.update_layout(
-                        barmode='stack',
-                        xaxis_tickangle=-45,
-                        height=480,
-                        margin=dict(t=40, b=150),
-                        showlegend=True
-                    )
+                    fig.update_layout(height=360, margin=dict(t=20, b=120), xaxis_tickangle=-25, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("No hay información de niveles de cumplimiento por tipo de proceso.")
-            
-            # === Análisis comparativo con año anterior ===
-            if prev_month_p:
-                st.markdown("##### Procesos con Mayor Mejora vs Año Anterior")
-                previous_process_data = consolidado.copy()
-                previous_process_data["Año"] = pd.to_numeric(
-                    previous_process_data.get("Año", previous_process_data.get("Ao", pd.NA)),
-                    errors="coerce"
+                    st.info("No hay informacion para el grafico de procesos.")
+
+            best_proc_rows = []
+            worst_proc_rows = []
+            if not process_variation_df.empty:
+                tmp = process_variation_df.dropna(subset=["change"]).copy()
+                best_proc_rows = [
+                    {"name": str(r["Subproceso"]), "change": float(r["change"])}
+                    for _, r in tmp.sort_values("change", ascending=False).head(5).iterrows()
+                ]
+                worst_proc_rows = [
+                    {"name": str(r["Subproceso"]), "change": float(r["change"])}
+                    for _, r in tmp.sort_values("change", ascending=True).head(5).iterrows()
+                ]
+
+            proc_col_left, proc_col_right = st.columns([2, 1])
+            with proc_col_left:
+                _render_variation_table("Indicadores de Proceso con Mayor Mejora vs Historico", best_proc_rows, positive=True)
+                _render_variation_table("Indicadores de Proceso con Mayor Desmejora vs Historico", worst_proc_rows, positive=False)
+
+            with proc_col_right:
+                proc_counts = _process_counts(process_data, "Tipo de proceso") if not process_data.empty else pd.DataFrame()
+                total_process = len(process_data) if not process_data.empty else 0
+                health_process = 0
+                if not proc_counts.empty:
+                    health_process = proc_counts[["Sobrecumplimiento", "Cumplimiento"]].sum(axis=1).sum()
+                health_pct_p = round(health_process / max(total_process, 1) * 100, 1)
+                op_ia = [
+                    f"{health_pct_p}% de indicadores de proceso en niveles saludables.",
+                    f"Mayor mejora: {best_proc_rows[0]['name']}." if best_proc_rows else "Sin mejora destacada en el periodo.",
+                    f"Mayor riesgo: {worst_proc_rows[0]['name']}." if worst_proc_rows else "Sin desmejora critica en el periodo.",
+                ]
+                op_html = "".join([f"<div class='rg-bubble'>{b}</div>" for b in op_ia])
+                st.markdown(
+                    f"""
+                    <div class='rg-ia'>
+                        <h4>Perspectivas Operativas IA</h4>
+                        {op_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                previous_process_data = previous_process_data[previous_process_data["Año"] == prev_year_p]
-                
-                if "Mes_num" in previous_process_data.columns:
-                    previous_process_data = previous_process_data[previous_process_data["Mes_num"] == prev_month_p]
-                
-                # Merge con tipos
-                if not previous_process_data.empty and "Subproceso" in previous_process_data.columns:
-                    previous_process_data = previous_process_data.merge(
-                        map_df[["Subproceso", "Tipo de proceso"]].drop_duplicates(),
-                        on="Subproceso",
-                        how="left"
-                    )
-                    
-                    process_top, process_alert = _process_improvements(
-                        process_data, previous_process_data, "Tipo de proceso"
-                    )
-                    
-                    if process_top:
-                        for item in process_top:
-                            st.markdown(f"- **{item['name']}** — +{item['change']:.1f}%")
-                    else:
-                        st.markdown("- No hay comparación de procesos con el año anterior.")
-                    
-                    st.markdown("##### Procesos en Alerta con Empeoramiento")
-                    if process_alert:
-                        for item in process_alert:
-                            st.markdown(f"- **{item['name']}** — {item['change']:.1f}%")
-                    else:
-                        st.markdown("- No se detectaron procesos en alerta con empeoramiento.")
-                    
-                    # === Insights Operativos (IA) ===
-                    st.markdown("##### Insights Operativos (IA)")
-                    total_process = len(process_data) if not process_data.empty else 0
-                    health_process = 0
-                    if not proc_counts.empty:
-                        health_process = proc_counts[['Sobrecumplimiento', 'Cumplimiento']].sum(axis=1).sum()
-                    health_pct_p = round(health_process / max(total_process, 1) * 100, 1)
-                    
-                    insights_p = []
-                    if process_top:
-                        insights_p.append(f"🚀 {process_top[0]['name']} registra la mayor mejora respecto al año anterior.")
-                    if process_alert:
-                        insights_p.append(f"⚠️ {process_alert[0]['name']} está en alerta y empeoró respecto al año anterior.")
-                    insights_p.append(f"✅ El {health_pct_p}% de los indicadores por proceso están en niveles saludables.")
-                    
-                    for insight in insights_p:
-                        st.markdown(f"- {insight}")
         else:
             st.warning("No se pudo cargar información de tipos de proceso.")
     else:
         st.warning("No hay indicadores de CMI por Procesos para el corte seleccionado.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
