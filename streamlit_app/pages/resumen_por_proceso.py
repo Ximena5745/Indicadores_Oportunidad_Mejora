@@ -24,13 +24,30 @@ except (ImportError, ModuleNotFoundError):
 try:
     from core.calculos import simple_categoria_desde_porcentaje
     from core.config import CACHE_TTL, VICERRECTORIA_COLORS, COLORES
-    from components.charts import exportar_excel, panel_detalle_indicador
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from core.calculos import simple_categoria_desde_porcentaje
     from core.config import CACHE_TTL, VICERRECTORIA_COLORS, COLORES
+
+# Importar exportar_excel y panel_detalle_indicador con fallback robusto
+try:
     from components.charts import exportar_excel, panel_detalle_indicador
+except (ImportError, ModuleNotFoundError):
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from components.charts import exportar_excel, panel_detalle_indicador
+    except (ImportError, ModuleNotFoundError):
+        # Fallback: funciones stub si no se pueden importar
+        def exportar_excel(df: pd.DataFrame, nombre_hoja: str = "Datos") -> bytes:
+            """Stub - exportar a Excel no disponible"""
+            import io
+            return io.BytesIO(b"Exportar Excel no disponible")
+        
+        def panel_detalle_indicador(df_ind: pd.DataFrame, id_ind: str, df_full: pd.DataFrame):
+            """Stub - panel detalle no disponible"""
+            st.warning("Panel de detalle de indicador no disponible en este entorno")
 
 # Constantes y helpers replicados de Direccionamiento Estratégico
 _PROCESOS_DIR = {
