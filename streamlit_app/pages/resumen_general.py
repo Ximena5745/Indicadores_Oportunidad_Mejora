@@ -867,6 +867,12 @@ def render():
             
             st.markdown("---")
     
+    # Calcular variables necesarias para insights y análisis posteriores
+    prev_year = selected_year - 1
+    prev_month = _latest_month_for_year(consolidado, prev_year)
+    prev_pdi_df = preparar_pdi_con_cierre(prev_year, prev_month if prev_month else 12) if prev_month else pd.DataFrame()
+    best_improvements, worst_declines = _compute_trends(pdi_df, prev_pdi_df)
+    
     # Mantener el sunburst como referencia visual
     sunburst = _build_sunburst(pdi_df)
     st.plotly_chart(sunburst, use_container_width=True)
