@@ -706,7 +706,7 @@ def render():
 
     col_year, col_month, col_tipo = st.columns(3)
     with col_year:
-        selected_year = st.selectbox("Año de análisis", options=years, index=len(years)-1)
+        selected_year = st.segmented_control("Año de análisis", options=years, default=years[-1])
     with col_month:
         # Mostrar siempre los nombres completos de los meses; por defecto seleccionar
         # el último mes disponible para el año si existe, si no seleccionar Diciembre.
@@ -867,119 +867,6 @@ def render():
             
             st.markdown("---")
     
-
-    prev_year = selected_year - 1
-    prev_month = _latest_month_for_year(consolidado, prev_year)
-    prev_pdi_df = preparar_pdi_con_cierre(prev_year, prev_month if prev_month else 12) if prev_month else pd.DataFrame()
-
-    best_improvements, worst_declines = _compute_trends(pdi_df, prev_pdi_df)
-
-    # En lugar de la cascada (no aporta valor), mostramos tarjetas por Línea
-    # con: Línea, % Cumplimiento (promedio), N° Indicadores y Variación vs año anterior
-    try:
-        # Mapeo de iconos por línea
-        LINEA_ICONS = {
-            "Expansión": "📈",
-            "Educación para toda la vida": "🎓",
-            "Experiencia": "✨",
-            "Calidad": "⭐",
-            "Sostenibilidad": "🌱",
-            "Transformación organizacional": "🔄",
-        }
-
-        # aseguramos columnas clave
-        for col in ["Linea", "Indicador", "cumplimiento_pct"]:
-            if col not in pdi_df.columns:
-                pdi_df[col] = None
-
-        curr_lines = (
-            pdi_df.groupby('Linea', dropna=False)
-            .agg(Cumplimiento_pct=('cumplimiento_pct', 'mean'), N_Indicadores=('Indicador', 'nunique'))
-            .reset_index()
-        )
-        # preparar prev
-        if not prev_pdi_df.empty:
-            prev_lines = (
-                prev_pdi_df.groupby('Linea', dropna=False)
-                .agg(Cumplimiento_pct_prev=('cumplimiento_pct', 'mean'))
-                .reset_index()
-            )
-        else:
-            prev_lines = pd.DataFrame(columns=['Linea', 'Cumplimiento_pct_prev'])
-
-        merged_lines = curr_lines.merge(prev_lines, on='Linea', how='left')
-        merged_lines['Cumplimiento_pct'] = (merged_lines['Cumplimiento_pct'] * 1).round(1)
-        merged_lines['Cumplimiento_pct_prev'] = (merged_lines.get('Cumplimiento_pct_prev') * 1).round(1)
-        merged_lines['Delta_pct'] = (merged_lines['Cumplimiento_pct'] - merged_lines['Cumplimiento_pct_prev']).round(1)
-
-        # Render tarjetas: 3 por fila con estilos mejorados
-        if not merged_lines.empty:
-            cols_per_row = 3
-            for i in range(0, len(merged_lines), cols_per_row):
-                row = merged_lines.iloc[i:i+cols_per_row]
-                cols = st.columns(len(row))
-                for c, (_, r) in zip(cols, row.iterrows()):
-                    name = r['Linea'] or 'Sin línea'
-                    pct = r.get('Cumplimiento_pct') if pd.notna(r.get('Cumplimiento_pct')) else None
-                    nind = int(r.get('N_Indicadores') or 0)
-                    delta = r.get('Delta_pct')
-                    icon = LINEA_ICONS.get(name, "📊")
-                    # Obtener color de la línea (normalizar clave)
-                    import unicodedata, re
-                    def _norm_key(s):
-                        t = str(s).strip().lower()
-                        t = unicodedata.normalize("NFD", t)
-                        t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
-                        t = re.sub(r"[^0-9a-z]+", " ", t)
-                        return re.sub(r"\s+", " ", t).strip()
-                    normalized_color_map = { _norm_key(k): v for k, v in LINEA_COLORS.items() }
-                    primary_color = normalized_color_map.get(_norm_key(name), "#6B728E")
-                    
-                    # Usar fondo blanco/gris suave con borde de color y acento superior
-                    bg_color = "#FFFFFF"
-                    border_color = primary_color
-                    line_name_color = primary_color
-                    pct_color = "#0B5FFF"
-                    text_color = "#1A1A1A"
-                    secondary_text = "#666666"
-
-                    # Determinar color del porcentaje según nivel de cumplimiento
-                    if pct is None:
-                        pct_color_dynamic = "#999999"
-                        delta_html = "<span style='color:#FFC107;font-weight:700;font-size:12px;'>N/D</span>"
-                    else:
-                        if pct >= 105:
-                            pct_color_dynamic = "#0B5FFF"  # Sobrecumplimiento: azul
-                        elif pct >= 100:
-                            pct_color_dynamic = "#22C55E"  # Cumplimiento: verde
-                        elif pct >= 80:
-                            pct_color_dynamic = "#FBBF24"  # Alerta: amarillo
-                        else:
-                            pct_color_dynamic = "#EF4444"  # Peligro: rojo
-                        
-                        if pd.isna(delta):
-                            delta_html = "<span style='color:#FFC107;font-weight:700;font-size:12px;'>N/D</span>"
-                        else:
-                            color = '#22C55E' if delta >= 0 else '#EF4444'
-                            sign = '+' if delta >= 0 else ''
-                            delta_html = f"<span style='color:{color};font-weight:800;font-size:12px;'>{sign}{delta:.1f}%</span>"
-                    
-                    pct_disp = f"{pct:.1f}%" if pct is not None else 'N/D'
-                    c.markdown(
-                        f"<div style='background:{bg_color};border:1px solid {border_color};border-top:4px solid {border_color};border-radius:10px;padding:18px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.08);'>"
-                        f"<div style='font-size:40px;line-height:1.1;margin-bottom:12px;'>{icon}</div>"
-                        f"<div style='font-size:48px;font-weight:900;color:{pct_color_dynamic};line-height:1;margin-bottom:6px;'>{pct_disp}</div>"
-                        f"<div style='font-size:13px;color:{secondary_text};margin-bottom:12px;'>Var: {delta_html}</div>"
-                        f"<div style='border-top:1px solid #E5E7EB;padding-top:10px;margin-bottom:10px;'></div>"
-                        f"<div style='font-size:15px;color:{line_name_color};font-weight:700;margin-bottom:8px;line-height:1.3;'>{name}</div>"
-                        f"<div style='font-size:13px;color:{secondary_text};font-weight:500;'>📊 <b>{nind}</b> indicador{'es' if nind != 1 else ''}</div>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-    except Exception:
-        # en caso de error, no bloquear la vista
-        st.info("No fue posible generar el resumen por línea.")
-
     # Mantener el sunburst como referencia visual
     sunburst = _build_sunburst(pdi_df)
     st.plotly_chart(sunburst, use_container_width=True)
