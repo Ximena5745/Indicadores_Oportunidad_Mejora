@@ -31,13 +31,11 @@ def _guardar_kpi_diag(con_ia: bool, elapsed: float) -> None:
         pass  # No bloquear la UI si falla la escritura
 
 try:
-    # from ..components.charts import exportar_excel  # Función no implementada
     from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
     from services.data_loader import cargar_acciones_mejora, cargar_dataset
     from core.config import CACHE_TTL
     from core.db_manager import registros_om_como_dict, guardar_registro_om
 except (ImportError, ModuleNotFoundError):
-    # Fallback: Sistema está siendo ejecutado como script, no como paquete
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parents[2]))
@@ -48,94 +46,10 @@ except (ImportError, ModuleNotFoundError):
     from core.db_manager import registros_om_como_dict, guardar_registro_om
 
 
-def _generar_tabla_html(df: pd.DataFrame) -> str:
-    """Genera una tabla HTML con estilos y colores según nivel de cumplimiento."""
-    if df.empty:
-        return ""
-
-    def _icono_cumplimiento(val):
-        if pd.isna(val):
-            return "⚪"
-        if val >= 105:
-            return "🔵"
-        elif val >= 100:
-            return "🟢"
-        elif val >= 80:
-            return "🟡"
-        else:
-            return "🔴"
-
-    def _color_tipo_mitigacion(val):
-        if pd.isna(val) or val == "Sin accion":
-            return "#9CA3AF"
-        elif val == "OM":
-            return "#3B82F6"
-        elif val == "Accion de mejora":
-            return "#10B981"
-        elif val == "Reto":
-            return "#F59E0B"
-        elif val == "Proyecto":
-            return "#8B5CF6"
-        return "#6B7280"
-
-    cols = list(df.columns)
-    cols_excluir = {"accion_creada", "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct"}
-    cols = [c for c in cols if c not in cols_excluir]
-    renamed_cols = [
-        c.replace("Cumplimiento_pct", "Cumplimiento")
-         .replace("tipo_mitigacion", "Tipo Mitigación")
-         .replace("numero_om", "N° OM")
-         .replace("avance_om", "Avance OM")
-         .replace("tiene_om", "Tiene OM")
-        for c in cols
-    ]
-    
-    html = """
-    <style>
-    .om-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-    .om-table th { background: #1f2937; color: white; padding: 10px; text-align: left; }
-    .om-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
-    .om-table tr:hover { background: #f3f4f6; }
-    </style>
-    <table class="om-table">
-    <thead><tr>
-    """
-    for c in renamed_cols:
-        html += f"<th>{c}</th>"
-    html += "</tr></thead><tbody>"
-
-    for _, row in df.iterrows():
-        html += "<tr>"
-        for col in cols:
-            val = row.get(col)
-            if col == "Cumplimiento_pct":
-                icono = _icono_cumplimiento(val)
-                html += f"<td>{icono} {val}%</td>"
-            elif col == "tipo_mitigacion":
-                color = _color_tipo_mitigacion(val)
-                html += f"<td style='color: {color}; font-weight: bold;'>{val}</td>"
-            elif col == "tiene_om":
-                html += f"<td>{'✅' if val == 1 else '❌'}</td>"
-            elif col == "avance_om":
-                html += f"<td>{val}%</td>"
-            else:
-                html += f"<td>{val}</td>"
-        html += "</tr>"
-    html += "</tbody></table>"
-    return html
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def analizar_texto_indicador(
-    id_ind: str,
-    nombre: str,
-    proceso: str,
-    categoria: str,
-    cumplimiento: str,
-    texto_analisis: str,
-) -> str | None:
-    """Wrapper cacheado de services.ai_analysis — evita rellamar a Claude en la misma sesión."""
-    return _analizar_texto_puro(id_ind, nombre, proceso, categoria, cumplimiento, texto_analisis)
+@st.cache_data(ttl=10, show_spinner=False)
+def _cargar_registros_om() -> dict:
+    """Carga OM con cache corto para que se actualice frecuentemente."""
+    return registros_om_como_dict(anio=None)
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -640,7 +554,7 @@ def render():
         with fs:
             sub_sel = st.selectbox("Subproceso", subprocesos, index=0)
 
-    registros_om = registros_om_como_dict(anio=None if anio_sel == "Todos" else int(anio_sel))
+    registros_om = _cargar_registros_om()
     df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel)
 
     if df_tabla.empty:
@@ -665,15 +579,19 @@ def render():
         indicador = st.session_state.get("om_modal_indicator", selected_id)
         row = df_tabla[df_tabla["Id"] == indicador]
         nombre_ind = row.iloc[0]["Indicador"] if not row.empty else ""
+        ind_anio = str(row.iloc[0].get("Anio", "")) if not row.empty else ""
+        ind_mes = row.iloc[0].get("Mes", "") if not row.empty else ""
 
         with st.expander("Asociar nueva OM", expanded=True):
             st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
             with st.form("om_modal_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 with col1:
-                    modal_anio = st.selectbox("Año OM", anios, index=anios.index(anio_sel) if anio_sel in anios else 0)
+                    default_idx_anio = anios.index(ind_anio) if ind_anio in anios else (anios.index("2025") if "2025" in anios else 1)
+                    modal_anio = st.selectbox("Año OM", anios, index=default_idx_anio)
                 with col2:
-                    modal_mes = st.selectbox("Mes OM", meses, index=meses.index(mes_sel) if mes_sel in meses else 0)
+                    default_idx_mes = meses.index(ind_mes) if ind_mes in meses else (meses.index("Diciembre") if "Diciembre" in meses else 1)
+                    modal_mes = st.selectbox("Mes OM", meses, index=default_idx_mes)
 
                 estado_om = st.selectbox("Estado OM", ["Abierta", "Pendiente"], index=0)
                 numero_om = st.text_input("Número OM", value="" if estado_om == "Pendiente" else "")

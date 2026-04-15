@@ -90,7 +90,42 @@ def _cumplimiento_pct(df: pd.DataFrame) -> pd.Series:
         max_abs = vals.abs().max(skipna=True) if not vals.dropna().empty else 0
         return vals * 100 if max_abs <= 2 else vals
 
+    if {"Meta", "Ejecucion"}.issubset(df.columns):
+        meta = pd.to_numeric(df["Meta"].apply(_to_float), errors="coerce")
+        ejec = pd.to_numeric(df["Ejecucion"].apply(_to_float), errors="coerce")
+        ratio = (ejec / meta.replace({0: pd.NA})) * 100
+        return pd.to_numeric(ratio, errors="coerce")
+
     return pd.Series(index=df.index, dtype="float64")
+
+
+def _first_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    cols_norm = {_norm_text(c): c for c in df.columns}
+    for cand in candidates:
+        key = _norm_text(cand)
+        if key in cols_norm:
+            return cols_norm[key]
+    for cand in candidates:
+        key = _norm_text(cand)
+        for norm_col, real_col in cols_norm.items():
+            if key in norm_col:
+                return real_col
+    return None
+
+
+def _period_col_for_month(df: pd.DataFrame, month_num: int | None) -> str | None:
+    if month_num is None:
+        return None
+    col = _first_col(df, [f"Periodo {int(month_num)}", f"Periodo{int(month_num)}"])
+    if col is not None:
+        return col
+
+    period_cols = [c for c in df.columns if _norm_text(c).startswith("PERIODO")]
+    for c in period_cols:
+        digits = "".join(ch for ch in str(c) if ch.isdigit())
+        if digits and int(digits) == int(month_num):
+            return c
+    return None
 
 
 def _cumpl_icon(pct: float | None) -> str:
@@ -126,7 +161,7 @@ def _latest_per_indicator(df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def _prepare_tracking(df: pd.DataFrame, map_df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_tracking(df: pd.DataFrame, map_df: pd.DataFrame, month_num: int | None = None) -> pd.DataFrame:
     if df.empty:
         return df
 
@@ -158,6 +193,22 @@ def _prepare_tracking(df: pd.DataFrame, map_df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["Proceso_padre"] = out["Proceso"].astype(str)
         out["Subproceso_final"] = out["Proceso"].astype(str)
+
+    meta_col = _first_col(out, ["Meta", "Meta último periodo", "Meta ultimo periodo"])
+    if meta_col is not None:
+        out["Meta"] = out[meta_col].apply(_to_float)
+    else:
+        out["Meta"] = pd.NA
+
+    period_col = _period_col_for_month(out, month_num)
+    ejec_col = _first_col(out, ["Ejecución", "Ejecucion"])
+
+    if period_col is not None:
+        out["Ejecucion"] = out[period_col].apply(_to_float)
+    elif ejec_col is not None:
+        out["Ejecucion"] = out[ejec_col].apply(_to_float)
+    else:
+        out["Ejecucion"] = pd.Series(index=out.index, dtype="float64")
 
     out["Cumplimiento_pct"] = _cumplimiento_pct(out)
     return out
@@ -340,18 +391,24 @@ def render() -> None:
         st.warning("No se encontró el mapeo de procesos en data/raw/Subproceso-Proceso-Area.xlsx.")
         return
 
-    work_df = _prepare_tracking(tracking_df, map_df)
-
-    years = sorted([int(y) for y in pd.to_numeric(work_df.get("Año"), errors="coerce").dropna().unique().tolist()])
+    years = sorted([int(y) for y in pd.to_numeric(tracking_df.get("Año"), errors="coerce").dropna().unique().tolist()])
     default_month = "Diciembre"
+    default_month_num = MESES_OPCIONES.index(default_month) + 1
+    work_df = _prepare_tracking(tracking_df, map_df, month_num=default_month_num)
     procesos_all = sorted(work_df["Proceso_padre"].dropna().astype(str).unique().tolist())
 
     st.markdown("#### Filtros")
     c1, c2, c3 = st.columns(3)
     with c1:
-        anio = st.selectbox("Año", options=years, index=len(years) - 1 if years else None)
+        default_year = 2025 if 2025 in years else (years[-1] if years else None)
+        default_year_idx = years.index(default_year) if default_year in years else 0
+        anio = st.selectbox("Año", options=years, index=default_year_idx if years else None)
     with c2:
         mes = st.selectbox("Mes", options=MESES_OPCIONES, index=MESES_OPCIONES.index(default_month))
+
+    # Recalcular datos del corte según mes seleccionado para que Meta/Ejecución/Cumplimiento respondan al filtro
+    selected_month_num = MESES_OPCIONES.index(mes) + 1 if mes in MESES_OPCIONES else default_month_num
+    work_df = _prepare_tracking(tracking_df, map_df, month_num=selected_month_num)
     base_filtered = work_df.copy()
 
     if anio is not None and "Año" in base_filtered.columns:
