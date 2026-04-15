@@ -17,7 +17,7 @@ except (ImportError, ModuleNotFoundError):
 
 # Importes desde streamlit_app
 try:
-    from ..utils.formatting import id_limpio
+    from streamlit_app.utils.formatting import id_limpio
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))

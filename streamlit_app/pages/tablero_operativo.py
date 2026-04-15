@@ -31,7 +31,7 @@ except (ImportError, ModuleNotFoundError):
 
 # Importes desde streamlit_app
 try:
-    from ..utils.formatting import id_limpio as _id_limpio, to_num as _to_num
+    from streamlit_app.utils.formatting import id_limpio as _id_limpio, to_num as _to_num
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -366,7 +366,7 @@ def render() -> None:
         prom_c  = float(cum_s.mean() * 100) if not cum_s.empty else None
 
         try:
-            from ..components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+            from streamlit_app.components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
         except (ImportError, ModuleNotFoundError):
             import sys
             sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -407,7 +407,7 @@ def render() -> None:
 
         try:
             try:
-                from ..components.renderers import render_narrative_panel, render_alert_strip
+                from streamlit_app.components.renderers import render_narrative_panel, render_alert_strip
             except (ImportError, ModuleNotFoundError):
                 import sys
                 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -431,7 +431,7 @@ def render() -> None:
             st.markdown("#### Distribución por nivel")
             try:
                 try:
-                    from ..components.renderers import render_echarts
+                    from streamlit_app.components.renderers import render_echarts
                 except (ImportError, ModuleNotFoundError):
                     import sys
                     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -447,7 +447,7 @@ def render() -> None:
             st.markdown("#### Por proceso (top 16 críticos)")
             try:
                 try:
-                    from ..components.renderers import render_echarts
+                    from streamlit_app.components.renderers import render_echarts
                 except (ImportError, ModuleNotFoundError):
                     import sys
                     sys.path.insert(0, str(Path(__file__).parent.parent))

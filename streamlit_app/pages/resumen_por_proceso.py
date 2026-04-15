@@ -6,12 +6,12 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Importes desde streamlit_app (relativos)
+# Importes desde streamlit_app
 try:
-    from ..components import KPIRow
-    from ..components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
-    from ..services.data_service import DataService
-    from ..components.filters import render_filters
+    from streamlit_app.components import KPIRow
+    from streamlit_app.components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+    from streamlit_app.services.data_service import DataService
+    from streamlit_app.components.filters import render_filters
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
