@@ -702,22 +702,17 @@ def render():
     with col_year:
         selected_year = st.segmented_control("Año de análisis", options=years, default=years[-1])
     with col_month:
+        # Mostrar siempre los nombres completos de los meses; por defecto seleccionar
+        # el último mes disponible para el año si existe, si no seleccionar Diciembre.
         available_months = _available_months_for_year(consolidado, selected_year)
+        # default index: último disponible dentro de MESES_NOMBRES
         if available_months:
-            # map numeric months to names
-            month_options = [MESES_NOMBRES[m - 1] for m in available_months if 1 <= m <= 12]
-            if month_options:
-                selected_month_name = st.selectbox("Mes de análisis", options=month_options, index=len(month_options) - 1)
-                try:
-                    selected_month = MESES_NOMBRES.index(selected_month_name) + 1
-                except Exception:
-                    selected_month = available_months[-1]
-            else:
-                selected_month = None
-                st.selectbox("Mes de análisis", options=["Sin datos"], disabled=True)
+            last_avail = max([m for m in available_months if 1 <= m <= 12], default=12)
+            default_idx = last_avail - 1
         else:
-            selected_month = None
-            st.selectbox("Mes de análisis", options=["Sin datos"], disabled=True)
+            default_idx = 11
+        selected_month_name = st.selectbox("Mes de análisis", options=MESES_NOMBRES, index=default_idx)
+        selected_month = MESES_NOMBRES.index(selected_month_name) + 1
 
     month_label = MESES_NOMBRES[selected_month - 1] if selected_month and 1 <= selected_month <= 12 else "último disponible"
     st.caption(f"Corte seleccionado: {selected_year} — Mes {month_label}")
