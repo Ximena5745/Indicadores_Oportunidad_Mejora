@@ -31,8 +31,8 @@ except (ImportError, ModuleNotFoundError):
 
 # Importes desde streamlit_app
 try:
-    from streamlit_app.utils.formatting import id_limpio as _id_limpio, to_num as _to_num
-except (ImportError, ModuleNotFoundError):
+    from ..utils.formatting import id_limpio as _id_limpio, to_num as _to_num
+except ImportError:
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils.formatting import id_limpio as _id_limpio, to_num as _to_num
@@ -366,8 +366,8 @@ def render() -> None:
         prom_c  = float(cum_s.mean() * 100) if not cum_s.empty else None
 
         try:
-            from streamlit_app.components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
-        except (ImportError, ModuleNotFoundError):
+            from ..components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+        except ImportError:
             import sys
             sys.path.insert(0, str(Path(__file__).parent.parent))
             from components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
@@ -407,8 +407,8 @@ def render() -> None:
 
         try:
             try:
-                from streamlit_app.components.renderers import render_narrative_panel, render_alert_strip
-            except (ImportError, ModuleNotFoundError):
+                from ..components.renderers import render_narrative_panel, render_alert_strip
+            except ImportError:
                 import sys
                 sys.path.insert(0, str(Path(__file__).parent.parent))
                 from components.renderers import render_narrative_panel, render_alert_strip
@@ -431,8 +431,8 @@ def render() -> None:
             st.markdown("#### Distribución por nivel")
             try:
                 try:
-                    from streamlit_app.components.renderers import render_echarts
-                except (ImportError, ModuleNotFoundError):
+                    from ..components.renderers import render_echarts
+                except ImportError:
                     import sys
                     sys.path.insert(0, str(Path(__file__).parent.parent))
                     from components.renderers import render_echarts
@@ -447,8 +447,8 @@ def render() -> None:
             st.markdown("#### Por proceso (top 16 críticos)")
             try:
                 try:
-                    from streamlit_app.components.renderers import render_echarts
-                except (ImportError, ModuleNotFoundError):
+                    from ..components.renderers import render_echarts
+                except ImportError:
                     import sys
                     sys.path.insert(0, str(Path(__file__).parent.parent))
                     from components.renderers import render_echarts
