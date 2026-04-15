@@ -634,8 +634,7 @@ def render():
             default_mes = 1 if "Diciembre" in meses else 0
             mes_sel = st.selectbox("Mes", meses, index=default_mes)
         with fa:
-            default_anio = anios.index("2025") if "2025" in anios else (anios.index("2026") if "2026" in anios else 1)
-            anio_sel = st.segmented_control("Año", options=anios, index=default_anio)
+            anio_sel = st.selectbox("Año", anios, index=anios.index("2025") if "2025" in anios else (anios.index("2026") if "2026" in anios else 1))
         with fp:
             proc_sel = st.selectbox("Proceso", procesos, index=0)
         with fs:
