@@ -666,7 +666,7 @@ def render():
         row = df_tabla[df_tabla["Id"] == indicador]
         nombre_ind = row.iloc[0]["Indicador"] if not row.empty else ""
 
-        with st.modal("Asociar nueva OM"):
+        with st.expander("Asociar nueva OM", expanded=True):
             st.markdown(f"**Indicador:** {indicador} - {nombre_ind}")
             with st.form("om_modal_form", clear_on_submit=False):
                 col1, col2 = st.columns(2)
@@ -695,5 +695,6 @@ def render():
                 if guardar_registro_om(payload):
                     st.success("OM asociada y guardada correctamente.")
                     st.session_state["om_modal_open"] = False
+                    st.rerun()
                 else:
                     st.error("No fue posible guardar la OM. Intenta nuevamente.")
