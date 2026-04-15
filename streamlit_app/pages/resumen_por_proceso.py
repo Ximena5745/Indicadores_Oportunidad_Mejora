@@ -420,7 +420,6 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
                 "Fuente": source_name,
                 "Coincidencias": len(fragments),
                 "Paginas": ", ".join(str(p) for p in paginas),
-                "Terminos detectados": ", ".join(sorted(payload.get("Terminos", set()))[:12]),
                 "Resumen IA": summary,
             }
         )
