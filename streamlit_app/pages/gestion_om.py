@@ -35,6 +35,7 @@ try:
     from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
     from services.data_loader import cargar_acciones_mejora, cargar_dataset
     from core.config import CACHE_TTL
+    from core.db_manager import registros_om_como_dict
 except (ImportError, ModuleNotFoundError):
     # Fallback: Sistema está siendo ejecutado como script, no como paquete
     import sys
@@ -44,6 +45,7 @@ except (ImportError, ModuleNotFoundError):
     from ai_analysis import analizar_texto_indicador as _analizar_texto_puro
     from data_loader import cargar_acciones_mejora, cargar_dataset
     from core.config import CACHE_TTL
+    from core.db_manager import registros_om_como_dict
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
