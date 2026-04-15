@@ -73,38 +73,37 @@ def _cargar_mapa_proceso_padre() -> dict:
 
 
 
-@st.cache_data(ttl=300, show_spinner="Cargando datos principales...")
-def cargar_dataset() -> pd.DataFrame:
-    """
-    Carga el dataset principal desde Resultados Consolidados.xlsx (fuente oficial).
-    Enriquece con Clasificacion (Catálogo) y Subproceso/Linea (CMI).
-    El Sentido se toma SIEMPRE del Consolidado (calculado desde Kawak/API).
-    """
-    path = DATA_OUTPUT / "Resultados Consolidados.xlsx"
-    if not path.exists():
-        st.error(f"Archivo no encontrado: {path}")
-        return pd.DataFrame()
+# ─────────────────────────────────────────────────────────────────────────────
+# Funciones privadas de cargar_dataset (una sola responsabilidad cada una)
+# ─────────────────────────────────────────────────────────────────────────────
 
+def _leer_consolidado_semestral(path: Path) -> pd.DataFrame:
+    """Paso 1: Solo IO — leer hoja principal y normalizar columnas/IDs."""
     df = pd.read_excel(path, sheet_name="Consolidado Semestral", engine="openpyxl")
     df = _renombrar(df, _RENAME)
-
-    # Id como string limpio (antes de los joins)
     if "Id" in df.columns:
         df["Id"] = df["Id"].apply(_id_a_str)
+    return df
 
-    # ── Enriquecer con Clasificacion desde Catalogo Indicadores ──────────────
-    if "Clasificacion" not in df.columns:
-        try:
-            df_cat = pd.read_excel(path, sheet_name="Catalogo Indicadores", engine="openpyxl")
-            df_cat["Id"] = df_cat["Id"].apply(_id_a_str)
-            cols_cat = ["Id"] + [c for c in ["Clasificacion"] if c in df_cat.columns]
-            if len(cols_cat) > 1:
-                df = df.merge(df_cat[cols_cat].drop_duplicates("Id"), on="Id", how="left")
-        except Exception:
-            pass
 
-    # ── Enriquecer con Subproceso y Linea desde Indicadores por CMI ──────────
-    # (NO se toma Sentido del CMI — puede estar desactualizado respecto a Kawak)
+def _enriquecer_clasificacion(df: pd.DataFrame, path: Path) -> pd.DataFrame:
+    """Paso 2: Join con hoja Catalogo Indicadores para añadir Clasificacion."""
+    if "Clasificacion" in df.columns:
+        return df
+    try:
+        df_cat = pd.read_excel(path, sheet_name="Catalogo Indicadores", engine="openpyxl")
+        df_cat["Id"] = df_cat["Id"].apply(_id_a_str)
+        cols_cat = ["Id"] + [c for c in ["Clasificacion"] if c in df_cat.columns]
+        if len(cols_cat) > 1:
+            df = df.merge(df_cat[cols_cat].drop_duplicates("Id"), on="Id", how="left")
+    except Exception:
+        pass
+    return df
+
+
+def _enriquecer_cmi_y_procesos(df: pd.DataFrame) -> pd.DataFrame:
+    """Paso 3: Join con CMI (Subproceso/Linea/Objetivo) y mapeo Proceso padre."""
+    # CMI — NO se toma Sentido (puede estar desactualizado respecto a Kawak)
     try:
         df_cmi = pd.read_excel(
             DATA_RAW / "Indicadores por CMI.xlsx",
@@ -112,51 +111,59 @@ def cargar_dataset() -> pd.DataFrame:
         )
         df_cmi = _renombrar(df_cmi, _RENAME)
         df_cmi["Id"] = df_cmi["Id"].apply(_id_a_str)
-        cols_cmi = ["Id"] + [c for c in ["Subproceso", "Linea", "Objetivo"]
-                             if c in df_cmi.columns]
+        cols_cmi = ["Id"] + [c for c in ["Subproceso", "Linea", "Objetivo"] if c in df_cmi.columns]
         if len(cols_cmi) > 1:
             df = df.merge(df_cmi[cols_cmi].drop_duplicates("Id"), on="Id", how="left")
     except Exception:
         pass
 
-    # ── Enriquecer con Proceso desde Subproceso-Proceso-Area.xlsx ───────────
-    # (Usando Data Validation Skill para fuente oficial de procesos y subprocesos)
+    # Jerarquía de procesos oficial (Data Validation Skill)
     df = enrich_with_process_hierarchy(df, DATA_RAW / "Subproceso-Proceso-Area.xlsx")
 
-    # ── Enriquecer con Proceso padre desde Subproceso-Proceso-Area.xlsx ─────
+    # Proceso padre desde YAML
     if "Proceso" in df.columns:
         df["ProcesoPadre"] = df["Proceso"].apply(obtener_proceso_padre)
 
-    # ── Reconstruir columnas derivadas de fórmulas Excel ─────────────────────
-    # El xlsx tiene fórmulas (=YEAR(F), =IFERROR(...), etc.) que openpyxl guarda
-    # sin evaluar → pandas las lee como NaN. Se recalculan aquí desde columnas base.
+    return df
 
-    # Año, Mes, Periodo desde Fecha
-    if "Fecha" in df.columns:
-        _fecha = pd.to_datetime(df["Fecha"], errors="coerce")
-        _MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
-                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
-        if "Año" in df.columns:
-            df["Año"] = df["Año"].fillna(_fecha.dt.year)
-        if "Mes" in df.columns:
-            df["Mes"] = df["Mes"].where(df["Mes"].notna() & (df["Mes"] != ""),
-                                        _fecha.dt.month.map(_MESES_ES))
-        if "Periodo" in df.columns:
-            _periodo_calc = _fecha.dt.year.astype("Int64").astype(str) + "-" + \
-                            _fecha.dt.month.apply(lambda m: "1" if m <= 6 else "2")
-            df["Periodo"] = df["Periodo"].where(
-                df["Periodo"].notna() & (df["Periodo"] != ""), _periodo_calc)
 
-    # ── Detectar métricas (sin meta exigible → no se categoriza) ─────────────
-    _col_tipo_reg = next(
-        (c for c in ["TipoRegistro", "Tipo_Registro"] if c in df.columns),
-        None,
-    )
-    _col_ejec_signo = next(
-        (c for c in ["EjecS", "Ejecucion_Signo"] if c in df.columns),
-        None,
-    )
+def _reconstruir_columnas_formula(df: pd.DataFrame) -> pd.DataFrame:
+    """Paso 4a: Recalcula columnas derivadas de fórmulas Excel (Año/Mes/Periodo)."""
+    if "Fecha" not in df.columns:
+        return df
+    _fecha = pd.to_datetime(df["Fecha"], errors="coerce")
+    _MESES_ES = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+    if "Año" in df.columns:
+        df["Año"] = df["Año"].fillna(_fecha.dt.year)
+    if "Mes" in df.columns:
+        df["Mes"] = df["Mes"].where(
+            df["Mes"].notna() & (df["Mes"] != ""),
+            _fecha.dt.month.map(_MESES_ES),
+        )
+    if "Periodo" in df.columns:
+        _periodo_calc = (
+            _fecha.dt.year.astype("Int64").astype(str)
+            + "-"
+            + _fecha.dt.month.apply(lambda m: "1" if m <= 6 else "2")
+        )
+        df["Periodo"] = df["Periodo"].where(
+            df["Periodo"].notna() & (df["Periodo"] != ""), _periodo_calc
+        )
+    return df
 
+
+def _aplicar_calculos_cumplimiento(df: pd.DataFrame) -> pd.DataFrame:
+    """Paso 4b: Detectar métricas/sin-reporte, recalcular y categorizar cumplimiento."""
+    from core.config import IDS_PLAN_ANUAL
+
+    _col_tipo_reg = next((c for c in ["TipoRegistro", "Tipo_Registro"] if c in df.columns), None)
+    _col_ejec_signo = next((c for c in ["EjecS", "Ejecucion_Signo"] if c in df.columns), None)
+
+    # Detectar métricas
     if _col_tipo_reg:
         _mask_metrica = df[_col_tipo_reg].astype(str).str.strip().str.lower() == "metrica"
     elif "Indicador" in df.columns:
@@ -164,12 +171,11 @@ def cargar_dataset() -> pd.DataFrame:
     else:
         _mask_metrica = pd.Series(False, index=df.index)
 
-    # ── Detectar filas sin reporte / sin meta exigible ───────────────────────
-    if "Meta" in df.columns:
-        _meta_num = pd.to_numeric(df["Meta"], errors="coerce")
-        _mask_sin_meta = _meta_num.isna() | (_meta_num == 0)
-    else:
-        _mask_sin_meta = pd.Series(False, index=df.index)
+    # Detectar sin meta / No Aplica
+    _mask_sin_meta = (
+        pd.to_numeric(df["Meta"], errors="coerce").isna()
+        | (pd.to_numeric(df["Meta"], errors="coerce") == 0)
+    ) if "Meta" in df.columns else pd.Series(False, index=df.index)
 
     if _col_tipo_reg:
         _mask_no_aplica = df[_col_tipo_reg].astype(str).str.strip().str.lower().eq("no aplica")
@@ -180,15 +186,13 @@ def cargar_dataset() -> pd.DataFrame:
 
     _mask_sin_reporte = (~_mask_metrica) & (_mask_sin_meta | _mask_no_aplica)
 
-    # ── Cumplimiento desde Meta / Ejecucion / Sentido ────────────────────────
+    # Recalcular cumplimiento faltante
     if "Cumplimiento" in df.columns and "Meta" in df.columns and "Ejecucion" in df.columns:
-        from core.config import IDS_PLAN_ANUAL
         mask_nan = df["Cumplimiento"].isna() & ~_mask_metrica & ~_mask_sin_reporte
         if mask_nan.any():
-            def _recalc_cumpl(row):
+            def _recalc_cumpl(row: pd.Series) -> float:
                 try:
-                    m = float(row["Meta"])
-                    e = float(row["Ejecucion"])
+                    m, e = float(row["Meta"]), float(row["Ejecucion"])
                 except (TypeError, ValueError):
                     return float("nan")
                 if m == 0 or pd.isna(m) or pd.isna(e):
@@ -197,22 +201,19 @@ def cargar_dataset() -> pd.DataFrame:
                 raw = (e / m) if sentido == "Positivo" else (m / e if e != 0 else float("nan"))
                 if pd.isna(raw):
                     return float("nan")
-                # Plan Anual: tope 1.0;  resto: tope 1.3
                 tope = 1.0 if str(row.get("Id", "")).strip() in IDS_PLAN_ANUAL else 1.3
                 return min(max(raw, 0.0), tope)
             df.loc[mask_nan, "Cumplimiento"] = df[mask_nan].apply(_recalc_cumpl, axis=1)
 
-    # ── Normalizar cumplimiento ───────────────────────────────────────────────
-    if "Cumplimiento" in df.columns:
-        df["Cumplimiento_norm"] = df["Cumplimiento"].apply(normalizar_cumplimiento)
-    else:
-        df["Cumplimiento_norm"] = float("nan")
+    # Normalizar
+    df["Cumplimiento_norm"] = (
+        df["Cumplimiento"].apply(normalizar_cumplimiento)
+        if "Cumplimiento" in df.columns
+        else float("nan")
+    )
+    df.loc[_mask_metrica | _mask_sin_reporte, "Cumplimiento_norm"] = float("nan")
 
-    # ── Métricas: forzar Cumplimiento_norm = NaN → Categoria = "Sin dato" ────
-    df.loc[_mask_metrica, "Cumplimiento_norm"] = float("nan")
-    df.loc[_mask_sin_reporte, "Cumplimiento_norm"] = float("nan")
-
-    # ── Categorizar ───────────────────────────────────────────────────────────
+    # Categorizar
     df["Categoria"] = df.apply(
         lambda r: categorizar_cumplimiento(
             r["Cumplimiento_norm"],
@@ -222,19 +223,44 @@ def cargar_dataset() -> pd.DataFrame:
         axis=1,
     )
 
-    # ── Fechas ────────────────────────────────────────────────────────────────
+    # Fechas y tipos finales
     if "Fecha" in df.columns:
         df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-
-    # ── Año como Int64 ────────────────────────────────────────────────────────
-    # La columna Año puede contener fórmulas Excel (ej. "=YEAR(F2)") que
-    # to_numeric convierte a NaN. En ese caso se deriva desde Fecha.
     if "Anio" in df.columns:
         df["Anio"] = pd.to_numeric(df["Anio"], errors="coerce")
         if "Fecha" in df.columns and df["Anio"].isna().any():
             df["Anio"] = df["Anio"].fillna(df["Fecha"].dt.year)
         df["Anio"] = df["Anio"].astype("Int64")
 
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=300, show_spinner="Cargando datos principales...")
+def cargar_dataset() -> pd.DataFrame:
+    """
+    Carga el dataset principal desde Resultados Consolidados.xlsx (fuente oficial).
+
+    Pipeline interno (cada paso tiene una sola responsabilidad):
+      1. _leer_consolidado_semestral()    → IO + renombrar columnas
+      2. _enriquecer_clasificacion()      → join Catalogo Indicadores
+      3. _enriquecer_cmi_y_procesos()     → join CMI + mapeo procesos
+      4. _reconstruir_columnas_formula()  → Año/Mes/Periodo desde Fecha
+      5. _aplicar_calculos_cumplimiento() → normalizar + categorizar
+
+    El Sentido se toma SIEMPRE del Consolidado (calculado desde Kawak/API).
+    """
+    path = DATA_OUTPUT / "Resultados Consolidados.xlsx"
+    if not path.exists():
+        st.error(f"Archivo no encontrado: {path}")
+        return pd.DataFrame()
+
+    df = _leer_consolidado_semestral(path)
+    df = _enriquecer_clasificacion(df, path)
+    df = _enriquecer_cmi_y_procesos(df)
+    df = _reconstruir_columnas_formula(df)
+    df = _aplicar_calculos_cumplimiento(df)
     return df
 
 

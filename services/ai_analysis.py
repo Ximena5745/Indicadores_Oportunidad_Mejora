@@ -3,9 +3,12 @@ services/ai_analysis.py — Análisis de texto con Claude (Anthropic).
 
 Extrae insights y oportunidades de mejora del análisis registrado por el usuario.
 Requiere ANTHROPIC_API_KEY en st.secrets o variable de entorno.
+
+DISEÑO: este módulo es PURO — no importa streamlit ni gestiona st.session_state.
+La caché entre llamadas debe gestionarse en la capa UI con @st.cache_data.
 """
 import hashlib
-import streamlit as st
+import os
 
 
 _MODEL = "claude-haiku-4-5-20251001"
@@ -34,9 +37,14 @@ def _get_client():
     """Retorna cliente Anthropic o None si la key no está configurada."""
     try:
         import anthropic
-        key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        # Intentar desde st.secrets solo si streamlit está disponible
+        key = ""
+        try:
+            import streamlit as st
+            key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        except Exception:
+            pass
         if not key:
-            import os
             key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not key:
             return None
@@ -55,17 +63,19 @@ def analizar_texto_indicador(
 ) -> str | None:
     """
     Llama a Claude para extraer insights y oportunidades de mejora.
-    Usa st.session_state como caché para no repetir llamadas en el mismo indicador.
+
+    PURO: no gestiona estado ni caché. El caller debe usar @st.cache_data
+    si desea evitar llamadas repetidas dentro de una sesión:
+
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def _analisis_cacheado(id_ind, texto, ...):
+            return analizar_texto_indicador(id_ind, texto, ...)
+
     Retorna el texto generado, o None si no hay API key o falla la llamada.
     """
     client = _get_client()
     if client is None:
         return None
-
-    # Caché por hash del texto para no rellamar si no cambió
-    cache_key = "_ai_" + hashlib.md5(f"{id_ind}{texto_analisis}".encode()).hexdigest()
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
 
     prompt = _PROMPT_TEMPLATE.format(
         nombre=nombre,
@@ -81,8 +91,6 @@ def analizar_texto_indicador(
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
-        resultado = message.content[0].text.strip()
-        st.session_state[cache_key] = resultado
-        return resultado
+        return message.content[0].text.strip()
     except Exception:
         return None

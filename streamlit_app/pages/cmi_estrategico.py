@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from streamlit_app.services.strategic_indicators import (
+from services.strategic_indicators import (
     NIVEL_COLOR_EXT,
     load_pdi_catalog,
     preparar_pdi_con_cierre,

@@ -10,7 +10,29 @@
 **Estado:** � SEMANA 2/8 — REFACTORIZACIÓN SPRINT 1-2 COMPLETADA ✅ | Limpieza dead code (8,034 líneas), descomposición cargar_dataset(), servicios desacoplados, imports estandarizadas, tests 105/105 pasando
 
 ---
+## 📊 RESUMEN DE AVANCE GENERAL
 
+| Semana | Periodo | Estado | Avance | Logros Clave |
+|--------|---------|--------|--------|-------------|
+| **1-2** | 12-25 abril | 🟢 **COMPLETADA** | **100%** | ✅ Refactorización Sprint 1-2, 8,034L código muerto eliminadas, arquitectura limpia |
+| **3-4** | 26 abril - 9 mayo | 🟡 Próxima | 0% | ⏳ ETL optimization, validation automation, forecasting POC |
+| **5-6** | 10-23 mayo | ⏳ Planeada | 0% | ⏳ Cache tuning, risk models, runbooks, drift detection |
+| **7-8** | 24 mayo - 6 junio | ⏳ Planeada | 0% | ⏳ Causal analysis, docs finales, production readiness |
+
+### Avance por Pilar
+
+| Pilar | Nombre | Avance | Estado |
+|-------|--------|--------|--------|
+| **A** | Performance & Optimization | 10% | 🟡 Pendiente (inicia S3-4) |
+| **B** | CI/CD & Quality | 15% | 🟡 GitHub Actions UP, testing base en place; Sprint automation pendiente |
+| **C** | Data Validation & Contracts | 5% | 🟡 Definiciones listas; implementación pendiente (S3-4) |
+| **D** | Analytics & Predictions | 0% | ⏳ Planificado para S5+ |
+| **E** | Documentation & Knowledge | 60% | 🟢 Significativo avance: arquitectura documentada, índices, organización |
+
+**Esfuerzo consumido:** ~28 horas de 232 (12%)  
+**Velocidad:** 14 horas/semana (on track con ~28h esperadas en Semana 1-2)
+
+---
 ## TABLA DE CONTENIDOS
 
 1. [Dependencias de Fase 1](#1-dependencias-de-fase-1)
@@ -311,49 +333,55 @@ Transformar SGIND de plataforma funcional a **escalable, automatizable y predeci
 
 ---
 
-### Semana 3-4 (26 abril - 9 mayo)
+### Semana 3-4 (26 abril - 9 mayo) — 🟡 PRÓXIMA (Pendiente inicio)
 
 **Sprint Goal:** Optimize ETL, implement validation, start API (desbloqueado por refactorización Sprint 1-2)
 
-| Task | Owner | Days | Deliverable |
-|------|-------|------|-------------|
-| ETL hot-path optimization (lote 1-2) | Backend | 3 | actualizar_consolidado/fuentes/builders optimizados ✅ |
-| Validation auto in ingest | Backend | 3 | services/validation.py |
-| Quality dashboard page | Frontend | 3 | Streamlit page |
-| Forecasting POC | ML Eng | 4 | Prophet model trained |
+**Status:** 🟡 Planificado | Avance esperado: 0% (inicia 26 de abril)
 
-**Gate:** ✅ `actualizar_consolidado` con mejora >20% vs baseline, validation working, forecast accuracy >80%
+| Task | Owner | Days | Deliverable | Avance |
+|------|-------|------|-------------|--------|
+| ETL hot-path optimization (lote 1-2) | Backend | 3 | actualizar_consolidado/fuentes/builders optimizados | 0% |
+| Validation auto in ingest | Backend | 3 | services/validation.py | 0% |
+| Quality dashboard page | Frontend | 3 | Streamlit page | 0% |
+| Forecasting POC | ML Eng | 4 | Prophet model trained | 0% |
+
+**Gate:** Planificado ⏳ `actualizar_consolidado` con mejora >20% vs baseline, validation working, forecast accuracy >80%
 
 ---
 
-### Semana 5-6 (10-23 mayo)
+### Semana 5-6 (10-23 mayo) — ⏳ PLANEADA (Pendiente)
 
 **Sprint Goal:** Deploy optimization, advance ML, create runbooks
 
-| Task | Owner | Days | Deliverable |
-|------|-------|------|-------------|
-| Local cache tuning + observabilidad | DevOps/Backend | 3 | hit-rate y estrategia TTL documentadas |
-| Risk prediction model | ML Eng | 4 | XGBoost model ready |
-| Runbooks drafted | Operations | 3 | 5+ key scenarios |
-| Drift detector | ML Eng | 2 | Deployed to staging |
+**Status:** ⏳ Futuro | Avance esperado: 0% (inicia 10 de mayo)
 
-**Gate:** ✅ Pipeline estable y optimizado (sin Redis), risk model >85% accuracy, staging stable
+| Task | Owner | Days | Deliverable | Avance |
+|------|-------|------|-------------|--------|
+| Local cache tuning + observabilidad | DevOps/Backend | 3 | hit-rate y estrategia TTL documentadas | 0% |
+| Risk prediction model | ML Eng | 4 | XGBoost model ready | 0% |
+| Runbooks drafted | Operations | 3 | 5+ key scenarios | 0% |
+| Drift detector | ML Eng | 2 | Deployed to staging | 0% |
+
+**Gate:** Planificado ⏳ Pipeline estable y optimizado (sin Redis), risk model >85% accuracy, staging stable
 
 ---
 
-### Semana 7-8 (24 mayo - 6 junio)
+### Semana 7-8 (24 mayo - 6 junio) — ⏳ PLANEADA (Pendiente)
 
 **Sprint Goal:** Causal analysis, final docs, production readiness
 
-| Task | Owner | Days | Deliverable |
-|------|-------|------|-------------|
-| Causal graph | Analytics | 3 | Graph visualization + inference |
-| Scenario simulator | Analytics | 3 | Interactive "what if" tool |
-| Architecture book | Tech Lead | 3 | `ARQUITECTURA_FASE_2.md` |
-| Onboarding docs | Tech Lead | 2 | `ONBOARDING.md` + videos |
-| Production readiness review | ALL | 2 | Sign-off checklist |
+**Status:** ⏳ Futuro | Avance esperado: 0% (inicia 24 de mayo)
 
-**Gate:** ✅ All features tested, docs complete, SLA defined (99.5%)
+| Task | Owner | Days | Deliverable | Avance |
+|------|-------|------|-------------|--------|
+| Causal graph | Analytics | 3 | Graph visualization + inference | 0% |
+| Scenario simulator | Analytics | 3 | Interactive "what if" tool | 0% |
+| Architecture book | Tech Lead | 3 | `ARQUITECTURA_FASE_2.md` | 0% |
+| Onboarding docs | Tech Lead | 2 | `ONBOARDING.md` + videos | 0% |
+| Production readiness review | ALL | 2 | Sign-off checklist | 0% |
+
+**Gate:** Planificado ⏳ All features tested, docs complete, SLA defined (99.5%)
 
 ---
 

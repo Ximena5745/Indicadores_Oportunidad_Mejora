@@ -18,7 +18,7 @@ def _dummy_cache_data(**kwargs):
 _st.cache_data = _dummy_cache_data
 _st.cache_resource = _dummy_cache_data
 
-from streamlit_app.pages.resumen_general_real import _build_sunburst
+from streamlit_app.pages.resumen_general import _build_sunburst
 
 pdi_xlsx = 'artifacts/debug_cascada/pdi.xlsx'
 if not os.path.exists(pdi_xlsx):

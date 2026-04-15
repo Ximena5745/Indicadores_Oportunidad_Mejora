@@ -5,7 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 from services.data_loader import cargar_acciones_mejora
-from streamlit_app.services.strategic_indicators import (
+from services.strategic_indicators import (
     NIVEL_COLOR_EXT,
     load_cna_catalog,
     preparar_cna_con_cierre,

@@ -1,7 +1,22 @@
+# ════════════════════════════════════════════════════════════════════════════════
+# CONFIGURACIÓN PERMANENTE STREAMLIT — NO MODIFICAR
+# Última actualización: 15-04-2026
+# Purpose: Eliminar espaciado lateral excesivo + mantener layout wide
+# ════════════════════════════════════════════════════════════════════════════════
+
+[client]
+# Layout ancho - Elimina márgenes laterales
+toolbarMode = "minimal"
+showErrorDetails = false
+
 [server]
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+# Máximos KB para upload
+maxUploadSize = 50
+# Máximo items en dataframe
+maxMessageSize = 200
 
 [theme]
 base = "light"
@@ -17,3 +32,6 @@ gatherUsageStats = false
 
 [runner]
 magicEnabled = true
+
+[logger]
+level = "info"

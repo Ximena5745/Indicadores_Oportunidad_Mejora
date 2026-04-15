@@ -1,10 +1,21 @@
 # Sistema de Indicadores Institucionales (SGIND)
 
-**Versión:** 2026 Q1  
-**Estado:** 🟢 Producción — **Fase 1 COMPLETADA** ✅  
-**Última actualización:** 11 de abril de 2026
+**Versión:** 2026 Q2  
+**Estado:** � **Fase 2 EN EJECUCIÓN** (Semana 2/8) — ✅ Refactorización Arquitectónica Sprint 1-2 Completada  
+**Última actualización:** 15 de abril de 2026
 
-📄 **[VER CIERRE FORMAL FASE 1](CIERRE_FASE_1.md)** — Entregables, métricas, validación y roadmap a Fase 2.
+## 🗺️ Índices de Documentación
+
+### [📌 MASTER_INDEX.md](MASTER_INDEX.md) ← **COMIENZA AQUÍ**
+Mapa completo de toda la documentación organizada por carpetas temáticas (Estrategia, Planificación, Técnica, Funcional, Operativa)
+
+### [📋 PLAN_INTEGRAL_MEJORA_SGIND.md](02-PLANIFICACION/PLAN_INTEGRAL_MEJORA_SGIND.md)
+Consolidación de visión completa: 3 Fases + 15 Pilares + roadmap semanal + métricas + riesgos
+
+---
+
+🟢 **[Resultado Refactorización Sprint 1-2](05-OPERATIVO/RESULTADO_REFACTORIZACION_SPRINT1-2.md)** — ✅ 8,034 líneas dead code eliminadas, 105 tests pasando  
+📄 **[Plan Fase 2 Detallado](02-PLANIFICACION/FASE_2_PLAN.md)** — Semanas 1-8 (refactorización incluida)
 
 ---
 

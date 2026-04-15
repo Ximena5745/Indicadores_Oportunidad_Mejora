@@ -1,4 +1,4 @@
-from streamlit_app.pages.resumen_general_real import _load_consolidado_cierres, _filter_consolidado_by_year_month
+from streamlit_app.pages.resumen_general import _load_consolidado_cierres, _filter_consolidado_by_year_month
 
 consolidado = _load_consolidado_cierres()
 filtered = _filter_consolidado_by_year_month(consolidado, 2025, 12)

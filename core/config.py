@@ -116,3 +116,15 @@ COLS_TABLA_OM = [
 
 # ── Cache TTL (segundos) ───────────────────────────────────────────────────────
 CACHE_TTL = 300
+
+# ── Strings de estado / dominio — FUENTE ÚNICA DE VERDAD ──────────────────────
+# Usar siempre estas constantes; nunca strings literales en el código.
+ESTADO_NO_APLICA  = "No Aplica"
+ESTADO_PENDIENTE  = "Pendiente de reporte"
+ESTADO_SIN_DATO   = "Sin dato"
+
+SENTIDO_POSITIVO  = "Positivo"
+SENTIDO_NEGATIVO  = "Negativo"
+
+TIPO_METRICA      = "metrica"
+TIPO_NO_APLICA    = "no aplica"
