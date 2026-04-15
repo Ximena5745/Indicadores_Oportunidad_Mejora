@@ -52,7 +52,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-from services.strategic_indicators import preparar_pdi_con_cierre
+try:
+    from ..services.strategic_indicators import preparar_pdi_con_cierre
+except (ImportError, ValueError):
+    from services.strategic_indicators import preparar_pdi_con_cierre
 from services import strategic_indicators as si
 
 from core.config import DATA_OUTPUT

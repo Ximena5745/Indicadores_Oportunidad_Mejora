@@ -30,11 +30,14 @@ def _guardar_kpi_diag(con_ia: bool, elapsed: float) -> None:
     except Exception:
         pass  # No bloquear la UI si falla la escritura
 
-from components.charts import exportar_excel
-from core.config import CACHE_TTL
-from core.db_manager import guardar_registro_om, leer_registros_om, registros_om_como_dict
-from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
-from services.data_loader import cargar_acciones_mejora, cargar_dataset
+try:
+    from ..components.charts import exportar_excel
+    from ..services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
+    from ..services.data_loader import cargar_acciones_mejora, cargar_dataset
+except (ImportError, ValueError):
+    from components.charts import exportar_excel
+    from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
+    from services.data_loader import cargar_acciones_mejora, cargar_dataset
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

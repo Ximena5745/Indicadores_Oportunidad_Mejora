@@ -5,12 +5,20 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from services.strategic_indicators import (
-    NIVEL_COLOR_EXT,
-    load_pdi_catalog,
-    preparar_pdi_con_cierre,
-    load_cierres,
-)
+try:
+    from ..services.strategic_indicators import (
+        NIVEL_COLOR_EXT,
+        load_pdi_catalog,
+        preparar_pdi_con_cierre,
+        load_cierres,
+    )
+except (ImportError, ValueError):
+    from services.strategic_indicators import (
+        NIVEL_COLOR_EXT,
+        load_pdi_catalog,
+        preparar_pdi_con_cierre,
+        load_cierres,
+    )
 
 CORTE_SEMESTRAL = {
     "Junio": 6,

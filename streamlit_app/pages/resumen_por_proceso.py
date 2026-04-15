@@ -5,8 +5,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from components import KPIRow
-from components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+try:
+    from ..components import KPIRow
+    from ..components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+except (ImportError, ValueError):
+    from components import KPIRow
+    from components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
 from streamlit_app.services.data_service import DataService
 from streamlit_app.components.filters import render_filters
 from core.calculos import simple_categoria_desde_porcentaje

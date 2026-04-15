@@ -5,7 +5,10 @@ Muestra el Índice de Salud Institucional (ISI) con alertas y gauge interactivo
 
 import streamlit as st
 import plotly.graph_objects as go
-from styles.design_system import COLORS, GRADIENTS, ICONS, get_line_color
+try:
+    from ..styles.design_system import COLORS, GRADIENTS, ICONS, get_line_color
+except (ImportError, ValueError):
+    from styles.design_system import COLORS, GRADIENTS, ICONS, get_line_color
 
 
 def render_hero_section(isi_value, alertas, subtitle="Politécnico Grancolombiano", linea=None):
