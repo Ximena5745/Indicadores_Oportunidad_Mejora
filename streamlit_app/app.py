@@ -10,9 +10,29 @@ if "cache_cleared" not in st.session_state:
     st.cache_resource.clear()
     st.session_state.cache_cleared = True
 
-from streamlit_app.components import ui_components
+from components import ui_components
 
 st.set_page_config(page_title="Dashboard Cumplimiento", layout="wide")
+
+# ─── Inyectar estilos CSS personalizados ───────────────────────────────────────
+def _load_css(file_path):
+    """Carga un archivo CSS y lo retorna como una cadena."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def _inject_styles():
+    """Inyecta estilos locales con ruta robusta para local y cloud."""
+    base = Path(__file__).resolve().parent / "styles"
+    css_files = ["styles.css", "main.css"]
+    for css_name in css_files:
+        css_path = base / css_name
+        if not css_path.exists():
+            css_path = Path(f"streamlit_app/styles/{css_name}")
+        if css_path.exists():
+            styles = _load_css(str(css_path))
+            st.markdown(f"<style>{styles}</style>", unsafe_allow_html=True)
+
+_inject_styles()
 
 # Render filtros y construir payload dinámico
 filters = ui_components.render_filters()

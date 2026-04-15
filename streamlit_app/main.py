@@ -59,7 +59,7 @@ def main():
     _inject_styles()
 
     # Importar páginas bajo demanda para evitar circular imports durante la carga
-    from streamlit_app.pages import (
+    from .pages import (
         cmi_estrategico,
         gestion_om,
         plan_mejoramiento,
