@@ -365,7 +365,12 @@ def render() -> None:
         cum_s   = pd.to_numeric(df.get("Cumplimiento", pd.Series(dtype=float)), errors="coerce").dropna()
         prom_c  = float(cum_s.mean() * 100) if not cum_s.empty else None
 
-        from components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+        try:
+            from ..components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
+        except (ImportError, ModuleNotFoundError):
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from components.renderers import kpi_card, generate_sparkline_counts, generate_sparkline_agg
         # Generar sparklines (usamos `df_all` para series históricas)
         spark_total = generate_sparkline_counts(df_all, periods=6)
         spark_peligro = generate_sparkline_counts(df_all, group_col='Categoria', filter_val='Peligro', periods=6)
@@ -401,7 +406,12 @@ def render() -> None:
                 st.metric("Cumplimiento promedio", f"{prom_c:.1f}%" if prom_c is not None else "N/D")
 
         try:
-            from components.renderers import render_narrative_panel, render_alert_strip
+            try:
+                from ..components.renderers import render_narrative_panel, render_alert_strip
+            except (ImportError, ModuleNotFoundError):
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from components.renderers import render_narrative_panel, render_alert_strip
             # Mostrar advertencia si promedio muy bajo
             if prom_c is not None and prom_c < 70:
                 render_alert_strip(f"Promedio de cumplimiento bajo: {prom_c:.1f}% — revisar procesos críticos.", level='warning')
@@ -420,7 +430,12 @@ def render() -> None:
         with r1c1:
             st.markdown("#### Distribución por nivel")
             try:
-                from components.renderers import render_echarts
+                try:
+                    from ..components.renderers import render_echarts
+                except (ImportError, ModuleNotFoundError):
+                    import sys
+                    sys.path.insert(0, str(Path(__file__).parent.parent))
+                    from components.renderers import render_echarts
                 opt = _option_donut(df)
                 if opt and opt.get('option'):
                     render_echarts(opt['option'], height=opt.get('height', 380))
@@ -431,7 +446,12 @@ def render() -> None:
         with r1c2:
             st.markdown("#### Por proceso (top 16 críticos)")
             try:
-                from components.renderers import render_echarts
+                try:
+                    from ..components.renderers import render_echarts
+                except (ImportError, ModuleNotFoundError):
+                    import sys
+                    sys.path.insert(0, str(Path(__file__).parent.parent))
+                    from components.renderers import render_echarts
                 opt_h = _option_proceso(df)
                 if opt_h and isinstance(opt_h, dict) and opt_h.get('option'):
                     render_echarts(opt_h['option'], height=opt_h.get('height', 420))

@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from ..styles.design_system import COLORS, SHADOWS, get_palette_for_chart
+from streamlit_app.styles.design_system import COLORS, SHADOWS, get_palette_for_chart
 
 
 def render_performance_heatmap(

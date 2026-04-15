@@ -6,11 +6,11 @@ Tarjetas interactivas con efectos hover, tendencias y acciones
 import streamlit as st
 import plotly.graph_objects as go
 
-from ..styles.design_system import (
+from streamlit_app.styles.design_system import (
     COLORS, GRADIENTS, SHADOWS, ICONS, 
     get_color_for_cumplimiento, get_icon_for_estado
 )
-from ..styles.design_system import get_line_color, get_palette_for_chart
+from streamlit_app.styles.design_system import get_line_color, get_palette_for_chart
 
 
 def render_metric_card(

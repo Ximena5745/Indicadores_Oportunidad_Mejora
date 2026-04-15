@@ -136,3 +136,4 @@ except Exception:
 # Footer
 st.markdown("---")
 st.markdown("Sistema de Indicadores · Politécnico Grancolombiano · 2026")
+
