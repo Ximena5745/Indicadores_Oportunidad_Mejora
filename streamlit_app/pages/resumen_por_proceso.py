@@ -371,8 +371,8 @@ def render():
         # Opción 4: Segmented Control (botones) - Requiere Streamlit 1.37+
         # show_subprocs = st.segmented_control("Mostrar subprocesos", ["Sí", "No"], default="No", key="resumen_show_subprocs") == "Sí"
         
-        # Opción 5: Radio buttons (alterna con flechas)
-        show_subprocs = st.radio("Mostrar subprocesos", ["No", "Sí"], index=0, horizontal=True, key="resumen_show_subprocs") == "Sí"
+        # Opción 5: Radio buttons (reemplazado por selectbox para consistencia)
+        show_subprocs = st.selectbox("Mostrar subprocesos", ["No", "Sí"], index=0, key="resumen_show_subprocs") == "Sí"
 
     _activos = []
     if anio:

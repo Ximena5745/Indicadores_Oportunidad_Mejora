@@ -323,18 +323,33 @@ def render():
         st.error("No se encontraron años válidos en los datos.")
         return
 
+    # Meses en español para despliegue
+    MESES_NOMBRES = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
+
     col_year, col_month = st.columns(2)
     with col_year:
         selected_year = st.segmented_control("Año de análisis", options=years, default=years[-1])
     with col_month:
         available_months = _available_months_for_year(consolidado, selected_year)
         if available_months:
-            selected_month = st.selectbox("Mes de análisis", options=available_months, index=len(available_months)-1)
+            month_options = [MESES_NOMBRES[m - 1] for m in available_months if 1 <= m <= 12]
+            if month_options:
+                selected_month_name = st.selectbox("Mes de análisis", options=month_options, index=len(month_options) - 1)
+                try:
+                    selected_month = MESES_NOMBRES.index(selected_month_name) + 1
+                except Exception:
+                    selected_month = available_months[-1]
+            else:
+                selected_month = None
+                st.selectbox("Mes de análisis", options=["Sin datos"], disabled=True)
         else:
             selected_month = None
             st.selectbox("Mes de análisis", options=["Sin datos"], disabled=True)
 
-    month_label = selected_month if selected_month else "último disponible"
+    month_label = MESES_NOMBRES[selected_month - 1] if selected_month and 1 <= selected_month <= 12 else "último disponible"
     st.caption(f"Corte seleccionado: {selected_year} — Mes {month_label}")
 
     pdi_df = preparar_pdi_con_cierre(selected_year, selected_month if selected_month else 12)

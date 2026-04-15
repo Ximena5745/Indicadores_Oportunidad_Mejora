@@ -593,7 +593,7 @@ def render():
                 with col2:
                     modal_mes = st.selectbox("Mes OM", meses, index=meses.index(mes_sel) if mes_sel in meses else 0)
 
-                estado_om = st.radio("Estado OM", ["Abierta", "Pendiente"], horizontal=True)
+                estado_om = st.selectbox("Estado OM", ["Abierta", "Pendiente"], index=0)
                 numero_om = st.text_input("Número OM", value="" if estado_om == "Pendiente" else "")
                 observacion = st.text_area("Observación", placeholder="Describe la situación o justificación para la OM.")
 
