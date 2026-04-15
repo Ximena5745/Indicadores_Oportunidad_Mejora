@@ -344,10 +344,9 @@ def render() -> None:
         filtered = filtered[filtered["Proceso_padre"].astype(str) == proceso_sel]
 
     if filtered.empty:
-        st.info("No hay datos para la combinación de filtros seleccionada.")
-        return
+        st.info("No hay datos para la combinación de filtros seleccionada. Se muestran las pestañas en modo informativo.")
 
-    latest = _latest_per_indicator(filtered)
+    latest = _latest_per_indicator(filtered) if not filtered.empty else filtered.copy()
     selected_process_label = proceso_sel if proceso_sel != "Todos" else "Todos los procesos"
 
     st.caption(f"Filtro Padre activo: {selected_process_label} | Corte: {mes} {anio}")
@@ -365,65 +364,76 @@ def render() -> None:
     with tabs[0]:
         st.markdown("### Resumen general - Gráficas importantes")
 
-        total = len(latest)
-        cumplimiento = pd.to_numeric(latest.get("Cumplimiento_pct"), errors="coerce")
-        avg = float(cumplimiento.mean()) if not cumplimiento.dropna().empty else None
-        criticos = int((cumplimiento < 80).sum()) if not cumplimiento.dropna().empty else 0
+        if latest.empty:
+            st.warning("No hay datos para construir gráficas con el filtro actual.")
+        else:
+            total = len(latest)
+            cumplimiento = pd.to_numeric(latest.get("Cumplimiento_pct"), errors="coerce")
+            avg = float(cumplimiento.mean()) if not cumplimiento.dropna().empty else None
+            criticos = int((cumplimiento < 80).sum()) if not cumplimiento.dropna().empty else 0
 
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Total indicadores", total)
-        k2.metric("Cumplimiento promedio", f"{avg:.1f}%" if avg is not None else "Sin dato")
-        k3.metric("Indicadores en alerta/peligro", criticos)
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Total indicadores", total)
+            k2.metric("Cumplimiento promedio", f"{avg:.1f}%" if avg is not None else "Sin dato")
+            k3.metric("Indicadores en alerta/peligro", criticos)
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            bins_df = pd.DataFrame({"Nivel": "Sin dato"}, index=latest.index)
-            bins_df.loc[cumplimiento >= 105, "Nivel"] = "Sobrecumplimiento"
-            bins_df.loc[(cumplimiento >= 100) & (cumplimiento < 105), "Nivel"] = "Cumplimiento"
-            bins_df.loc[(cumplimiento >= 80) & (cumplimiento < 100), "Nivel"] = "Alerta"
-            bins_df.loc[cumplimiento < 80, "Nivel"] = "Peligro"
+            col_a, col_b = st.columns(2)
+            with col_a:
+                bins_df = pd.DataFrame({"Nivel": "Sin dato"}, index=latest.index)
+                bins_df.loc[cumplimiento >= 105, "Nivel"] = "Sobrecumplimiento"
+                bins_df.loc[(cumplimiento >= 100) & (cumplimiento < 105), "Nivel"] = "Cumplimiento"
+                bins_df.loc[(cumplimiento >= 80) & (cumplimiento < 100), "Nivel"] = "Alerta"
+                bins_df.loc[cumplimiento < 80, "Nivel"] = "Peligro"
 
-            pie_df = bins_df["Nivel"].value_counts().rename_axis("Nivel").reset_index(name="Total")
-            fig_pie = px.pie(
-                pie_df,
-                names="Nivel",
-                values="Total",
-                color="Nivel",
-                color_discrete_map={
-                    "Sobrecumplimiento": NIVELES_COLORS["sobrecumplimiento"],
-                    "Cumplimiento": NIVELES_COLORS["cumplimiento"],
-                    "Alerta": NIVELES_COLORS["alerta"],
-                    "Peligro": NIVELES_COLORS["peligro"],
-                    "Sin dato": NIVELES_COLORS["sin dato"],
-                },
-                title="Distribución de cumplimiento",
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+                pie_df = bins_df["Nivel"].value_counts().rename_axis("Nivel").reset_index(name="Total")
+                fig_pie = px.pie(
+                    pie_df,
+                    names="Nivel",
+                    values="Total",
+                    color="Nivel",
+                    color_discrete_map={
+                        "Sobrecumplimiento": NIVELES_COLORS["sobrecumplimiento"],
+                        "Cumplimiento": NIVELES_COLORS["cumplimiento"],
+                        "Alerta": NIVELES_COLORS["alerta"],
+                        "Peligro": NIVELES_COLORS["peligro"],
+                        "Sin dato": NIVELES_COLORS["sin dato"],
+                    },
+                    title="Distribución de cumplimiento",
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
 
-        with col_b:
-            by_sub = (
-                latest.groupby("Subproceso_final", dropna=False)
-                .size()
-                .reset_index(name="Indicadores")
-                .sort_values("Indicadores", ascending=False)
-                .head(15)
-            )
-            fig_bar = px.bar(
-                by_sub,
-                x="Indicadores",
-                y="Subproceso_final",
-                orientation="h",
-                title="Top subprocesos por número de indicadores",
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            with col_b:
+                by_sub = (
+                    latest.groupby("Subproceso_final", dropna=False)
+                    .size()
+                    .reset_index(name="Indicadores")
+                    .sort_values("Indicadores", ascending=False)
+                    .head(15)
+                )
+                fig_bar = px.bar(
+                    by_sub,
+                    x="Indicadores",
+                    y="Subproceso_final",
+                    orientation="h",
+                    title="Top subprocesos por número de indicadores",
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
 
     with tabs[1]:
         st.markdown("### Información por proceso")
-        st.dataframe(_build_info_table(latest), use_container_width=True, hide_index=True)
+        info_df = _build_info_table(latest)
+        if info_df.empty:
+            st.info("Sin información para el filtro actual.")
+        else:
+            st.dataframe(info_df, use_container_width=True, hide_index=True)
 
     with tabs[2]:
         st.markdown("### Indicadores")
-        st.dataframe(_build_indicadores_table(latest), use_container_width=True, hide_index=True)
+        ind_df = _build_indicadores_table(latest)
+        if ind_df.empty:
+            st.info("Sin indicadores para el filtro actual.")
+        else:
+            st.dataframe(ind_df, use_container_width=True, hide_index=True)
 
     with tabs[3]:
         st.markdown("### Calidad")
