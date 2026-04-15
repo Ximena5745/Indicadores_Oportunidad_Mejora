@@ -447,7 +447,16 @@ def render():
     
     # Cargar datos PDI para CMI Estratégico
     pdi_estrategico = preparar_pdi_con_cierre(int(year_estrategico), int(month_estrategico))
+    
+    # Debug info
+    st.info(f"✅ PDI cargado: {len(pdi_estrategico)} registros antes de filtrar por CMI Estratégico")
+    
     pdi_estrategico = filter_df_for_cmi_estrategico(pdi_estrategico, id_column="Id")
+    
+    # Debug info después del filtro
+    st.info(f"✅ CMI Estratégico filtrado: {len(pdi_estrategico)} indicadores")
+    if not pdi_estrategico.empty:
+        st.success(f"Columnas disponibles: {', '.join(pdi_estrategico.columns[:10])}")
     
     # Filtrar por línea si se selecciona
     pdi_catalog = load_pdi_catalog()
@@ -464,7 +473,9 @@ def render():
         )
     
     if linea_seleccionada != "Todas" and not pdi_estrategico.empty:
+        before_count = len(pdi_estrategico)
         pdi_estrategico = pdi_estrategico[pdi_estrategico["Linea"] == linea_seleccionada]
+        st.info(f"Filtrado por línea '{linea_seleccionada}': {before_count} → {len(pdi_estrategico)} indicadores")
     
     # Datos previos para comparación
     prev_year_e = year_estrategico - 1
@@ -477,12 +488,33 @@ def render():
     if not pdi_estrategico.empty:
         # === Tarjetas por Línea Estratégica ===
         st.markdown("##### Métricas Clave por Línea Estratégica")
-        render_linea_cards(pdi_estrategico, prev_pdi_e)
+        try:
+            render_linea_cards(pdi_estrategico, prev_pdi_e)
+        except Exception as e:
+            st.error(f"Error renderizando tarjetas: {e}")
+            import traceback
+            st.code(traceback.format_exc())
         
         # === Sunburst ===
         st.markdown("##### Alineación de Objetivos Estratégicos")
-        sunburst = _build_sunburst(pdi_estrategico)
-        st.plotly_chart(sunburst, use_container_width=True)
+        try:
+            # Verificar columnas necesarias
+            required_cols = ["Linea", "Objetivo", "cumplimiento_pct"]
+            missing_cols = [col for col in required_cols if col not in pdi_estrategico.columns]
+            if missing_cols:
+                st.error(f"❌ Columnas faltantes para sunburst: {missing_cols}")
+                st.write("Columnas disponibles:", list(pdi_estrategico.columns))
+            else:
+                st.success(f"✅ Construyendo sunburst con {len(pdi_estrategico)} indicadores")
+                sunburst = _build_sunburst(pdi_estrategico)
+                if len(sunburst.data) > 0:
+                    st.plotly_chart(sunburst, use_container_width=True)
+                else:
+                    st.warning("⚠️ El sunburst está vacío (sin datos válidos)")
+        except Exception as e:
+            st.error(f"❌ Error construyendo sunburst: {e}")
+            import traceback
+            st.code(traceback.format_exc())
         
         # === KPIs Globales ===
         st.markdown("##### KPIs Globales")
