@@ -764,20 +764,30 @@ def render():
     data_service = DataService()
     map_df = data_service.get_process_map()
     
-    # DEBUG: Verificar condiciones
-    st.write(f"DEBUG: map_df.empty={map_df.empty}, tiene Tipo de proceso={'Tipo de proceso' in map_df.columns}, pdi_df tiene Proceso={'Proceso' in pdi_df.columns}")
-    if not map_df.empty:
-        st.write(f"DEBUG: Columnas en map_df: {list(map_df.columns)}")
-    if "Proceso" in pdi_df.columns:
-        st.write(f"DEBUG: Sample de Proceso en pdi_df: {pdi_df['Proceso'].head().tolist()}")
+    # DEBUG: Verificar columnas disponibles en pdi_df
+    st.write(f"DEBUG: Columnas en pdi_df: {list(pdi_df.columns)}")
+    st.write(f"DEBUG: Columnas en map_df: {list(map_df.columns) if not map_df.empty else 'vacío'}")
     
-    if not map_df.empty and "Tipo de proceso" in map_df.columns and "Proceso" in pdi_df.columns:
-        # Hacer merge para agregar Tipo de proceso a pdi_df
-        pdi_with_tipo = pdi_df.merge(
-            map_df[["Proceso", "Tipo de proceso"]].drop_duplicates(),
-            on="Proceso",
-            how="left"
-        )
+    # Determinar la columna correcta para el merge (Proceso o Subproceso)
+    merge_column = None
+    if "Proceso" in pdi_df.columns:
+        merge_column = "Proceso"
+    elif "Subproceso" in pdi_df.columns:
+        merge_column = "Subproceso"
+    
+    st.write(f"DEBUG: Usando columna '{merge_column}' para merge")
+    
+    if not map_df.empty and "Tipo de proceso" in map_df.columns and merge_column:
+        # Hacer merge para agregar Tipo de proceso a pdi_df usando la columna correcta
+        if merge_column in map_df.columns:
+            pdi_with_tipo = pdi_df.merge(
+                map_df[[merge_column, "Tipo de proceso"]].drop_duplicates(),
+                on=merge_column,
+                how="left"
+            )
+        else:
+            st.error(f"DEBUG: La columna '{merge_column}' no existe en map_df")
+            pdi_with_tipo = pd.DataFrame()
         
         # Aplicar filtro de tipo de proceso si se seleccionó uno específico
         if selected_tipo_proceso != "Todos":
@@ -804,7 +814,7 @@ def render():
                         df_tipo = pdi_with_tipo[pdi_with_tipo["Tipo de proceso"] == tipo]
                         
                         total_indicadores = len(df_tipo)
-                        n_procesos = df_tipo["Proceso"].nunique() if "Proceso" in df_tipo.columns else 0
+                        n_procesos = df_tipo[merge_column].nunique() if merge_column in df_tipo.columns else 0
                         
                         # Calcular % cumplimiento promedio
                         if "cumplimiento_pct" in df_tipo.columns:
@@ -840,10 +850,10 @@ def render():
             else:
                 st.markdown(f"### 📊 Procesos de tipo: {selected_tipo_proceso}")
                 
-                procesos_del_tipo = sorted(pdi_with_tipo["Proceso"].dropna().unique())
+                procesos_del_tipo = sorted(pdi_with_tipo[merge_column].dropna().unique())
                 
                 if procesos_del_tipo:
-                    # Mostrar en grid de 3 columnas
+                    # Mostrar en grid de 3 columnasmerge_column
                     for i in range(0, len(procesos_del_tipo), 3):
                         cols = st.columns(3)
                         for idx, proceso in enumerate(procesos_del_tipo[i:i+3]):
