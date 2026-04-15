@@ -764,6 +764,13 @@ def render():
     data_service = DataService()
     map_df = data_service.get_process_map()
     
+    # DEBUG: Verificar condiciones
+    st.write(f"DEBUG: map_df.empty={map_df.empty}, tiene Tipo de proceso={'Tipo de proceso' in map_df.columns}, pdi_df tiene Proceso={'Proceso' in pdi_df.columns}")
+    if not map_df.empty:
+        st.write(f"DEBUG: Columnas en map_df: {list(map_df.columns)}")
+    if "Proceso" in pdi_df.columns:
+        st.write(f"DEBUG: Sample de Proceso en pdi_df: {pdi_df['Proceso'].head().tolist()}")
+    
     if not map_df.empty and "Tipo de proceso" in map_df.columns and "Proceso" in pdi_df.columns:
         # Hacer merge para agregar Tipo de proceso a pdi_df
         pdi_with_tipo = pdi_df.merge(
@@ -775,6 +782,11 @@ def render():
         # Aplicar filtro de tipo de proceso si se seleccionó uno específico
         if selected_tipo_proceso != "Todos":
             pdi_with_tipo = pdi_with_tipo[pdi_with_tipo["Tipo de proceso"] == selected_tipo_proceso]
+        
+        # DEBUG: Verificar resultado del merge
+        st.write(f"DEBUG: pdi_with_tipo.empty={pdi_with_tipo.empty}, tiene Tipo de proceso={'Tipo de proceso' in pdi_with_tipo.columns}")
+        if not pdi_with_tipo.empty and "Tipo de proceso" in pdi_with_tipo.columns:
+            st.write(f"DEBUG: Valores únicos de Tipo de proceso: {pdi_with_tipo['Tipo de proceso'].dropna().unique().tolist()}")
         
         if not pdi_with_tipo.empty and "Tipo de proceso" in pdi_with_tipo.columns:
             st.markdown("---")
@@ -866,6 +878,10 @@ def render():
                     st.info(f"No hay procesos del tipo {selected_tipo_proceso} con indicadores en este período.")
             
             st.markdown("---")
+        else:
+            st.warning("DEBUG: pdi_with_tipo está vacío o no tiene columna 'Tipo de proceso'")
+    else:
+        st.warning(f"DEBUG: No se pudo cargar mapa de procesos o faltan columnas necesarias")
     
     # Calcular variables necesarias para insights y análisis posteriores
     prev_year = selected_year - 1
