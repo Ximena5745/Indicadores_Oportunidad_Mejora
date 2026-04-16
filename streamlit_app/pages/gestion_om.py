@@ -868,81 +868,45 @@ def render():
     total_peligro = len(df_tabla)
     st.markdown(f"### 📊 Indicadores en Peligro: {total_peligro} ({mes_sel} {anio_sel})")
 
-    # --- Visualización mejorada de la tabla con expansión por fila ---
+    # --- Tabla principal estable (estructura original) ---
     from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
+
     df_tabla_fmt = formatear_meta_ejecucion_df(df_tabla.copy(), meta_col="Meta", ejec_col="Ejecucion")
-    # Definir columnas a mostrar según las realmente presentes y renombradas
     rename_map = {
         "Cumplimiento_pct": "Cumplimiento",
         "avance_om": "Avance OM",
         "tiene_om": "Ver más",
         "tipo_accion": "Tipo de Acción",
-        "identificador": "OM"
+        "identificador": "OM",
     }
-    # Renombrar para alinear visualización con nombres de negocio
     df_tabla_fmt = df_tabla_fmt.rename(columns=rename_map)
 
-    # Si el DataFrame ya está formateado, usar los nombres correctos
-    posibles = ["Id", "Indicador", "Subproceso", "Periodicidad", "Meta", "Ejecucion", "Cumplimiento", "Categoria", "Tipo de Acción", "OM", "Avance OM", "Ver más"]
-    cols = [c for c in posibles if c in df_tabla_fmt.columns]
-    st.markdown("""
-    <style>
-    .om-bar-bg { height: 18px; border-radius: 8px; background: #F3F4F6; position: relative; }
-    .om-bar-fill { height: 18px; border-radius: 8px; position: absolute; left: 0; top: 0; }
-    .om-badge { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; margin-right: 2px; }
-    .om-kawak { background: #3B82F6; }
-    .om-reto { background: #F59E0B; }
-    .om-proy { background: #8B5CF6; }
-    .om-otro { background: #6B7280; }
-    .om-sin { background: #9CA3AF; color: #222; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown("<div style='background:#1E293B;color:#fff;padding:8px 4px;font-weight:bold;border-radius:6px 6px 0 0;'>"
-                + " | ".join(cols) + "</div>", unsafe_allow_html=True)
-    for idx, row in df_tabla_fmt.iterrows():
-        c1, c2 = st.columns([0.97, 0.03])
-        with c1:
-            rendered = []
-            for c in cols:
-                if c == "Avance OM" and c in row:
-                    rendered.append(barra_avance_om(row[c]))
-                elif c == "Tipo de Acción" and c in row:
-                    rendered.append(badge_tipo_accion(row[c]))
-                else:
-                    rendered.append(str(row.get(c, "")))
-            st.markdown("<div style='border-bottom:1px solid #E5E7EB;padding:4px 0;'>" + " | ".join(rendered) + "</div>", unsafe_allow_html=True)
-        with c2:
-            om_id = row.get("OM", "")
-            tiene_om = row.get("Ver más", 0)
-            if (str(tiene_om) in ["1", "True", "true"]) and om_id and str(om_id).lower() != "nan":
-                expand_key = f"expand_om_{om_id}"
-                expanded = st.toggle("", key=expand_key, label_visibility="collapsed")
-                if expanded:
-                    plan_df = _cargar_plan_accion_para_om(om_id)
-                    campos = ["Id Acción", "Acción", "Responsable de ejecución", "Avance (%)", "Estado (Plan de Acción)", "Estado (Oportunidad de mejora)"]
-                    if plan_df is not None and not plan_df.empty:
-                        df_show = plan_df.copy()
-                        renames = {}
-                        for c in df_show.columns:
-                            if c.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u") == "id accion":
-                                renames[c] = "Id Acción"
-                            if c.lower().startswith("accion"):
-                                renames[c] = "Acción"
-                            if "responsable" in c.lower():
-                                renames[c] = "Responsable de ejecución"
-                            if "avance" in c.lower():
-                                renames[c] = "Avance (%)"
-                            if "plan de accion" in c.lower():
-                                renames[c] = "Estado (Plan de Acción)"
-                            if "oportunidad" in c.lower():
-                                renames[c] = "Estado (Oportunidad de mejora)"
-                        df_show = df_show.rename(columns=renames)
-                        df_show = df_show[[c for c in campos if c in df_show.columns]].copy()
-                        st.markdown("<div style='background:#F8FAFC;padding:8px 0 8px 0;border-radius:0 0 8px 8px;'>", unsafe_allow_html=True)
-                        st.write(df_show.style.set_properties(**{"text-align": "center"}), unsafe_allow_html=True)
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    else:
-                        st.info("Sin actividades.")
+    cols_orden = [
+        "Id", "Indicador", "Subproceso", "Periodicidad", "Meta", "Ejecucion",
+        "Cumplimiento", "Categoria", "Tipo de Acción", "OM", "Avance OM", "Ver más"
+    ]
+    cols_tabla = [c for c in cols_orden if c in df_tabla_fmt.columns]
+    df_view = df_tabla_fmt[cols_tabla].copy()
+
+    if "Cumplimiento" in df_view.columns:
+        df_view["Cumplimiento"] = pd.to_numeric(df_view["Cumplimiento"], errors="coerce").round(1)
+        df_view["Cumplimiento"] = df_view["Cumplimiento"].apply(
+            lambda v: "-" if pd.isna(v) else f"{v:.1f}%"
+        )
+
+    if "Avance OM" in df_view.columns:
+        df_view["Avance OM"] = pd.to_numeric(df_view["Avance OM"], errors="coerce").round(1)
+        df_view["Avance OM"] = df_view["Avance OM"].apply(
+            lambda v: "-" if pd.isna(v) or v == 0 else f"{v:.1f}%"
+        )
+
+    if "OM" in df_view.columns:
+        df_view["OM"] = df_view["OM"].apply(lambda v: "" if pd.isna(v) else str(v))
+
+    if "Ver más" in df_view.columns:
+        df_view["Ver más"] = df_view["Ver más"].apply(lambda v: "Si" if str(v) in {"1", "True", "true"} else "")
+
+    st.dataframe(df_view, use_container_width=True, hide_index=True)
 
     oms_con_om = df_tabla[df_tabla["tiene_om"] == 1][["Id", "identificador"]].dropna()
     if not oms_con_om.empty:
