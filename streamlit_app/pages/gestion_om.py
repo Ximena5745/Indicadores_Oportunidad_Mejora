@@ -118,6 +118,61 @@ def _cargar_avance_om() -> dict:
     return {str(k).strip(): round(float(v), 1) for k, v in resultado.items()}
 
 
+def _cargar_plan_accion_para_om(om_id: str) -> pd.DataFrame:
+    """Carga las actividades del plan de acción para un Id Oportunidad de mejora (om_id).
+
+    Devuelve un DataFrame con columnas:
+      - Acción
+      - Responsable de ejecución
+      - Avance (%)
+      - Estado (Plan de Acción)
+      - Estado (Oportunidad de mejora)
+    Si no hay datos, devuelve un DataFrame vacío.
+    """
+    if not om_id:
+        return pd.DataFrame()
+    base_path = Path(__file__).resolve().parents[2] / "data" / "raw" / "Plan de accion"
+    if not base_path.exists():
+        return pd.DataFrame()
+
+    rows = []
+    for f in base_path.glob("*.xlsx"):
+        try:
+            df = pd.read_excel(f, dtype=str, na_filter=False)
+        except Exception:
+            continue
+        cols = df.columns.tolist()
+        id_col = next((c for c in cols if "Id Oportunidad de mejora" in c), None)
+        if not id_col:
+            id_col = next((c for c in cols if c.startswith("Id ") and "Oportunidad" in c), None)
+        if not id_col or id_col not in df.columns:
+            continue
+        subset = df.loc[df[id_col].astype(str).str.strip() == om_id, :]
+        if subset.empty:
+            continue
+        # Build plan action rows
+        for _, row in subset.iterrows():
+            accion = str(row.get("Descripci\u00f3n", "")) or str(row.get("Descripcion", "")) or str(row.get("Id Acción", ""))
+            if not accion:
+                accion = str(row.get("Acción", ""))
+            resp = str(row.get("Responsable de ejecuci\u00f3n", "")) or str(row.get("Responsable", "")) or str(row.get("Fuente de Identificaci\u00f3n", ""))
+            avance = row.get("Avance (%)", row.get("Avance", ""))
+            if avance is None or (isinstance(avance, float) and pd.isna(avance)):
+                avance = ""
+            estado_plan = str(row.get("Estado (Plan de Acci\u00f3n)", "")) or str(row.get("Estado (Plan Acción)", ""))
+            estado_om = str(row.get("Estado (Oportunidad de mejora)", "")) or str(row.get("Estado de Oportunidad", ""))
+            rows.append({
+                "Acción": accion,
+                "Responsable de ejecución": resp,
+                "Avance (%)": avance,
+                "Estado (Plan de Acción)": estado_plan,
+                "Estado (Oportunidad de mejora)": estado_om,
+            })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
 def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
     """Extrae el tipo de acción y el identificador del campo numero_om."""
     if not numero_om:
@@ -448,10 +503,25 @@ def _resumen_om_por_id(df_reg: pd.DataFrame, avances_om: dict = None) -> pd.Data
     
     if avances_om and isinstance(avances_om, dict) and len(avances_om) > 0:
         def buscar_avance(x):
+            import re
             x_clean = str(x).strip()
             if not x_clean:
                 return 0
-            return avances_om.get(x_clean, avances_om.get(x_clean.upper(), avances_om.get(x_clean.lower(), 0)))
+            # Prefijo exacto
+            if x_clean in avances_om:
+                return avances_om[x_clean]
+            # Digitos puros (ej. 'OM 440' -> '440')
+            m = re.findall(r"\d+", x_clean)
+            if m:
+                key = m[0]
+                if key in avances_om:
+                    return avances_om[key]
+            # Upper / lower variants
+            if x_clean.upper() in avances_om:
+                return avances_om[x_clean.upper()]
+            if x_clean.lower() in avances_om:
+                return avances_om[x_clean.lower()]
+            return 0
         out["avance_om"] = out["identificador"].apply(buscar_avance)
     else:
         out["avance_om"] = 0
@@ -773,6 +843,14 @@ def render():
     avances_om = _cargar_avance_om()
     
     df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om)
+    # Debug: expose avances_om mapping for troubleshooting UI
+    try:
+        import os
+        if os.getenv("DEBUG_OM_UI", "0") == "1":
+            st.write("DEBUG avances_om:")
+            st.json(avances_om)
+    except Exception:
+        pass
 
     if df_tabla.empty:
         st.info("No hay indicadores en Peligro con los filtros seleccionados.")
@@ -835,7 +913,7 @@ def render():
                 
                 submitted = st.form_submit_button("💾 Guardar Oportunidad de Mejora", use_container_width=True)
 
-                if submitted:
+        if submitted:
                     payload = {
                         "id_indicador": str(indicador),
                         "nombre_indicador": str(nombre_ind),
@@ -849,6 +927,37 @@ def render():
                     }
                     if guardar_registro_om(payload):
                         st.success(f"✅ Oportunidad de mejora guardada para indicador {indicador}")
+
+    # Nueva funcionalidad: columna Ver más con ventana emergente (Plan de Acción)
+    if not df_tabla.empty:
+        for idx, r in df_tabla.iterrows():
+            om_id = str(r.get("Id", ""))
+            if om_id:
+                if st.button(f"Ver más - {om_id}", key=f'ver_mas_{idx}'):
+                    st.session_state["om_popup_open"] = True
+                    st.session_state["om_popup_id"] = om_id
+
+    if st.session_state.get("om_popup_open"):
+        om_id = str(st.session_state.get("om_popup_id", ""))
+        plan_df = _cargar_plan_accion_para_om(om_id)
+        # Usar modal para ventana emergente
+        try:
+            with st.modal(f"Plan de Acción - OM {om_id}"):
+                st.subheader(f"Plan de Acción para OM {om_id}")
+                if plan_df is not None and not plan_df.empty:
+                    st.table(plan_df)
+                else:
+                    st.write("No hay actividades para mostrar.")
+                if st.button("Cerrar", key=f'cerrar_popup_{om_id}'):
+                    st.session_state["om_popup_open"] = False
+        except Exception:
+            # Fallback: usar un expander si modal no está disponible
+            with st.expander(f"Plan de Acción - OM {om_id}"):
+                if plan_df is not None and not plan_df.empty:
+                    st.table(plan_df)
+                else:
+                    st.write("No hay actividades para mostrar.")
+            st.session_state["om_popup_open"] = False
                         st.session_state["om_modal_open"] = False
                         st.session_state["om_indicador_seleccionado"] = None
                         st.rerun()
