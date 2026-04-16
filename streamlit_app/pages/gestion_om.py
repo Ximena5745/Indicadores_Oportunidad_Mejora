@@ -773,8 +773,9 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     return m.sort_values(["tipo_mitigacion", "Id"], ascending=[True, True]).reset_index(drop=True)
 
 
-def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_sel: str, anio_sel: str, proc_sel: str, sub_sel: str, avances_om: dict = None) -> pd.DataFrame:
-    """Construye la tabla de indicadores en peligro aplicando filtros."""
+
+def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_sel: str, anio_sel: str, proc_sel: str, sub_sel: str, avances_om: dict = None, mostrar_alerta: bool = False) -> pd.DataFrame:
+    """Construye la tabla de indicadores en peligro (y opcionalmente alerta) aplicando filtros."""
     if df_riesgo.empty:
         return pd.DataFrame()
 
@@ -792,6 +793,12 @@ def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_se
 
     if sub_sel != "Todos":
         df_filtrado = df_filtrado[df_filtrado.get("Subproceso", "").astype(str) == sub_sel]
+
+    # Filtrar por categoría según el checkbox
+    categorias = ["Peligro"]
+    if mostrar_alerta:
+        categorias.append("Alerta")
+    df_filtrado = df_filtrado[df_filtrado.get("Categoria", "").isin(categorias)]
 
     if df_filtrado.empty:
         return pd.DataFrame()
@@ -987,6 +994,7 @@ def render():
     if "Subproceso" in df_riesgo.columns:
         subprocesos += sorted(df_riesgo["Subproceso"].dropna().astype(str).unique().tolist())
 
+
     with st.expander("Filtros", expanded=True):
         fa, fm, fp, fs = st.columns(4)
         with fa:
@@ -999,10 +1007,19 @@ def render():
         with fs:
             sub_sel = st.selectbox("Subproceso", subprocesos, index=0)
 
+    # Checkbox para mostrar indicadores en alerta
+    mostrar_alerta = st.checkbox(
+        "Mostrar también indicadores en Alerta",
+        value=False,
+        help="Si se activa, se mostrarán y podrán asociarse OM a indicadores en alerta además de los de peligro."
+    )
+
     registros_om = _cargar_registros_om()
     avances_om = _cargar_avance_om()
-    
-    df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om)
+
+    df_tabla = _construir_tabla_peligro(
+        df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om, mostrar_alerta
+    )
     # Estado local para expandir/cerrar detalle OM por fila (más robusto que query params)
     if "om_expanded_row" not in st.session_state:
         st.session_state["om_expanded_row"] = None
@@ -1246,7 +1263,12 @@ def render():
     st.markdown("---")
 
     opciones = df_tabla.apply(_build_option_label, axis=1).tolist()
-    indicador_seleccionado = st.selectbox("Seleccionar indicador", opciones, index=0)
+    indicador_seleccionado = st.selectbox(
+        "Seleccionar indicador",
+        opciones,
+        index=0,
+        help="Solo se muestran los indicadores en peligro o alerta según el filtro activo."
+    )
     selected_id = indicador_seleccionado.split(" - ")[0] if indicador_seleccionado else ""
 
     if st.button("➕ Asociar nueva OM", use_container_width=True, type="primary"):
