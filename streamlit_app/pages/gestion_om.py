@@ -855,8 +855,12 @@ def render():
     """, unsafe_allow_html=True)
 
     # Mostrar expander de acciones OM si hay query param ver_mas
-    params = st.experimental_get_query_params()
-    om_id_q = params.get("ver_mas", [None])[0]
+    # Compatibilidad con diferentes versiones de Streamlit para query params
+    try:
+        params = st.experimental_get_query_params()
+    except AttributeError:
+        params = st.query_params if hasattr(st, 'query_params') else {}
+    om_id_q = params.get("ver_mas", [None])[0] if params else None
     if om_id_q:
         plan_df = _cargar_plan_accion_para_om(om_id_q)
         with st.expander(f"Acciones asociadas a OM {om_id_q}", expanded=True):
@@ -866,7 +870,11 @@ def render():
             else:
                 st.write("No hay actividades para mostrar.")
             if st.button("Cerrar", key=f'cerrar_popup_{om_id_q}'):
-                st.experimental_set_query_params()  # Limpiar query param
+                try:
+                    st.experimental_set_query_params()
+                except AttributeError:
+                    if hasattr(st, 'query_params'):
+                        st.query_params.clear()
                 st.rerun()
 
     def barra_avance_om(pct):
