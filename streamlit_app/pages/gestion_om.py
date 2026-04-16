@@ -414,16 +414,15 @@ def _resumen_om_por_id(df_reg: pd.DataFrame, avances_om: dict = None) -> pd.Data
         df.groupby("Id", as_index=False)
         .agg(
             tiene_om=("tiene_om", "max"),
+            tipo_accion=("tipo_accion", "first"),
             numero_om=("numero_om", "first"),
             periodo_om=("periodo", "first"),
             anio_om=("anio", "first"),
         )
     )
     out["tiene_om"] = pd.to_numeric(out["tiene_om"], errors="coerce").fillna(0).astype(int)
-    
-    tipo_ident = out["numero_om"].apply(lambda x: _extraer_tipo_y_identificador(x))
-    out["tipo_accion"] = tipo_ident.apply(lambda x: x[0])
-    out["identificador"] = tipo_ident.apply(lambda x: x[1])
+    out["tipo_accion"] = out["tipo_accion"].fillna("OM Kawak")
+    out["identificador"] = out["numero_om"].fillna("")
     
     if avances_om:
         out["avance_om"] = out["identificador"].apply(
@@ -579,6 +578,7 @@ def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_se
             {
                 "id_indicador": k,
                 "tiene_om": v.get("tiene_om", False),
+                "tipo_accion": v.get("tipo_accion", "OM Kawak"),
                 "numero_om": v.get("numero_om", ""),
                 "periodo": v.get("periodo", ""),
                 "anio": v.get("anio", ""),
@@ -802,7 +802,8 @@ def render():
                         "periodo": str(ind_mes),
                         "anio": int(ind_anio) if ind_anio.isdigit() else int(date.today().year),
                         "tiene_om": 1,
-                        "numero_om": f"{tipo_accion}: {numero_om}".strip(),
+                        "tipo_accion": tipo_accion,
+                        "numero_om": str(numero_om).strip(),
                         "comentario": str(observacion).strip(),
                     }
                     if guardar_registro_om(payload):

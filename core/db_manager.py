@@ -49,6 +49,7 @@ def _init_sqlite():
             anio              INTEGER,
             sede              TEXT DEFAULT '',
             tiene_om          INTEGER DEFAULT 0,
+            tipo_accion       TEXT DEFAULT 'OM Kawak',
             numero_om         TEXT,
             comentario        TEXT,
             registrado_por    TEXT DEFAULT '',
@@ -74,6 +75,7 @@ def _init_postgres():
             anio              INTEGER,
             sede              TEXT DEFAULT '',
             tiene_om          INTEGER DEFAULT 0,
+            tipo_accion       TEXT DEFAULT 'OM Kawak',
             numero_om         TEXT,
             comentario        TEXT,
             registrado_por    TEXT DEFAULT '',
@@ -104,9 +106,11 @@ def guardar_registro_om(datos: dict) -> bool:
     Upsert en registros_om.
     datos: dict con claves:
         id_indicador, nombre_indicador, proceso, periodo, anio,
-        tiene_om (0/1), numero_om, comentario
+        tiene_om (0/1), tipo_accion, numero_om, comentario
     Returns True si éxito.
     """
+    inicializar_db()
+    
     datos = {
         "id_indicador":     str(datos.get("id_indicador", "")),
         "nombre_indicador": str(datos.get("nombre_indicador", "")),
@@ -115,6 +119,7 @@ def guardar_registro_om(datos: dict) -> bool:
         "anio":             int(datos.get("anio", 0)),
         "sede":             "",
         "tiene_om":         int(datos.get("tiene_om", 0)),
+        "tipo_accion":      str(datos.get("tipo_accion", "OM Kawak")),
         "numero_om":        str(datos.get("numero_om", "")),
         "comentario":       str(datos.get("comentario", "")),
         "registrado_por":   "",
@@ -136,14 +141,15 @@ def _upsert_sqlite(d: dict) -> bool:
     conn.execute("""
         INSERT INTO registros_om
             (id_indicador, nombre_indicador, proceso, periodo, anio, sede,
-             tiene_om, numero_om, comentario, registrado_por, fecha_registro)
+             tiene_om, tipo_accion, numero_om, comentario, registrado_por, fecha_registro)
         VALUES
             (:id_indicador, :nombre_indicador, :proceso, :periodo, :anio, :sede,
-             :tiene_om, :numero_om, :comentario, :registrado_por, :fecha_registro)
+             :tiene_om, :tipo_accion, :numero_om, :comentario, :registrado_por, :fecha_registro)
         ON CONFLICT(id_indicador, periodo, anio, sede) DO UPDATE SET
             nombre_indicador = excluded.nombre_indicador,
             proceso          = excluded.proceso,
             tiene_om         = excluded.tiene_om,
+            tipo_accion      = excluded.tipo_accion,
             numero_om        = excluded.numero_om,
             comentario       = excluded.comentario,
             fecha_registro   = excluded.fecha_registro
@@ -160,15 +166,16 @@ def _upsert_postgres(d: dict) -> bool:
     cur.execute("""
         INSERT INTO registros_om
             (id_indicador, nombre_indicador, proceso, periodo, anio, sede,
-             tiene_om, numero_om, comentario, registrado_por, fecha_registro)
+             tiene_om, tipo_accion, numero_om, comentario, registrado_por, fecha_registro)
         VALUES
             (%(id_indicador)s, %(nombre_indicador)s, %(proceso)s, %(periodo)s,
-             %(anio)s, %(sede)s, %(tiene_om)s, %(numero_om)s, %(comentario)s,
+             %(anio)s, %(sede)s, %(tiene_om)s, %(tipo_accion)s, %(numero_om)s, %(comentario)s,
              %(registrado_por)s, %(fecha_registro)s)
         ON CONFLICT(id_indicador, periodo, anio, sede) DO UPDATE SET
             nombre_indicador = EXCLUDED.nombre_indicador,
             proceso          = EXCLUDED.proceso,
             tiene_om         = EXCLUDED.tiene_om,
+            tipo_accion      = EXCLUDED.tipo_accion,
             numero_om        = EXCLUDED.numero_om,
             comentario       = EXCLUDED.comentario,
             fecha_registro   = EXCLUDED.fecha_registro
@@ -232,7 +239,7 @@ def _leer_postgres(anio):
 
 def registros_om_como_dict(anio: int = None) -> dict:
     """
-    Retorna {id_indicador: {"tiene_om": bool, "numero_om": str, "periodo": str, "comentario": str}}
+    Retorna {id_indicador: {"tiene_om": bool, "tipo_accion": str, "numero_om": str, "periodo": str, "comentario": str}}
     Útil para cruzar con tabla de indicadores en otros módulos.
     Si un indicador tiene múltiples registros (distintos períodos), conserva el más reciente.
     """
@@ -243,6 +250,7 @@ def registros_om_como_dict(anio: int = None) -> dict:
         if iid not in result:  # leer_registros_om ordena DESC → primer registro = más reciente
             result[iid] = {
                 "tiene_om":   bool(r.get("tiene_om", 0)),
+                "tipo_accion": r.get("tipo_accion", "OM Kawak"),
                 "numero_om":  r.get("numero_om", ""),
                 "periodo":    r.get("periodo", ""),
                 "comentario": r.get("comentario", ""),
