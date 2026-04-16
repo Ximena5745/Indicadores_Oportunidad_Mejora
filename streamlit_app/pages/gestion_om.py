@@ -745,7 +745,7 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
          .replace("identificador", "OM")
          .replace("Ver_mas", "Ver más")
         for c in cols
-    ]
+]
     
     html = """
     <style>
@@ -760,58 +760,58 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
     for c in renamed_cols:
         html += f"<th>{c}</th>"
     html += "</tr></thead><tbody>"
-        for _, row in df.iterrows():
-            html += "<tr>"
-            for col in cols:
-                val = row.get(col)
-                if col == "Ver_mas":
-                    om_id_for_link = str(row.get("identificador", "")).strip()
-                    tengo_om = int(row.get("tiene_om", 0) or 0)
-                    if tengo_om == 1 and om_id_for_link:
-                        html += f"<td><a href='?ver_mas={om_id_for_link}'>Ver más</a></td>"
-                    else:
-                        html += "<td></td>"
-                    continue
-                if col == "Cumplimiento_pct":
-                    icono = _icono_cumplimiento(val)
-                    html += f"<td>{icono} {val}%</td>"
-                elif col == "tipo_accion":
-                    tipo_val = val if val and str(val).strip() and str(val).lower() != "nan" else "Sin acción"
-                    color = _color_tipo_accion_html(tipo_val)
-                    html += f"<td style='color: {color}; font-weight: bold;'>{tipo_val}</td>"
-                elif col == "identificador":
-                    html += f"<td>{val}</td>"
-                elif col == "avance_om":
-                    if val and val > 0:
-                        color_bar = "#22C55E" if val >= 80 else "#F59E0B" if val >= 50 else "#EF4444"
-                        html += f'''<td>
-                            <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
-                                <div style="width: {min(val, 100)}%; height: 100%; background: {color_bar};"></div>
-                            </div>
-                            <span style="font-size: 12px;">{val}%</span>
-                        </td>'''
-                    elif val == 0:
-                        html += f'''<td>
-                            <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
-                                <div style="width: 0%; height: 100%; background: #EF4444;"></div>
-                            </div>
-                            <span style="font-size: 12px;">0%</span>
-                        </td>'''
-                    else:
-                        html += f"<td>-</td>"
-                elif col == "Meta":
-                    html += f"<td>{meta_his_signo(row)}</td>"
-                elif col == "Ejecucion":
-                    html += f"<td>{ejecucion_his_signo(row)}</td>"
-                elif col == "Categoria":
-                    html += f"<td>{val}</td>"
-                elif col == "Id":
-                    html += f"<td><b>{val}</b></td>"
+    for _, row in df.iterrows():
+        html += "<tr>"
+        for col in cols:
+            val = row.get(col)
+            if col == "Ver_mas":
+                om_id_for_link = str(row.get("identificador", "")).strip()
+                tengo_om = int(row.get("tiene_om", 0) or 0)
+                if tengo_om == 1 and om_id_for_link:
+                    html += f"<td><a href='?ver_mas={om_id_for_link}'>Ver más</a></td>"
                 else:
-                    html += f"<td>{val}</td>"
-            html += "</tr>"
-        html += "</tbody></table>"
-        return html
+                    html += "<td></td>"
+                continue
+            if col == "Cumplimiento_pct":
+                icono = _icono_cumplimiento(val)
+                html += f"<td>{icono} {val}%</td>"
+            elif col == "tipo_accion":
+                tipo_val = val if val and str(val).strip() and str(val).lower() != "nan" else "Sin acción"
+                color = _color_tipo_accion_html(tipo_val)
+                html += f"<td style='color: {color}; font-weight: bold;'>{tipo_val}</td>"
+            elif col == "identificador":
+                html += f"<td>{val}</td>"
+            elif col == "avance_om":
+                if val and val > 0:
+                    color_bar = "#22C55E" if val >= 80 else "#F59E0B" if val >= 50 else "#EF4444"
+                    html += f'''<td>
+                        <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
+                            <div style="width: {min(val, 100)}%; height: 100%; background: {color_bar};"></div>
+                        </div>
+                        <span style="font-size: 12px;">{val}%</span>
+                    </td>'''
+                elif val == 0:
+                    html += f'''<td>
+                        <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
+                            <div style="width: 0%; height: 100%; background: #EF4444;"></div>
+                        </div>
+                        <span style="font-size: 12px;">0%</span>
+                    </td>'''
+                else:
+                    html += f"<td>-</td>"
+            elif col == "Meta":
+                html += f"<td>{meta_his_signo(row)}</td>"
+            elif col == "Ejecucion":
+                html += f"<td>{ejecucion_his_signo(row)}</td>"
+            elif col == "Categoria":
+                html += f"<td>{val}</td>"
+            elif col == "Id":
+                html += f"<td><b>{val}</b></td>"
+            else:
+                html += f"<td>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
 
 
 def render():
