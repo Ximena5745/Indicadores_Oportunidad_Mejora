@@ -35,7 +35,7 @@ def _get_database_url() -> str:
         
         if supabase_url and supabase_key:
             # La URL de Supabase es https://xxxxx.supabase.co
-            # Necesitamos extraer el project_ref y la región para el pooler
+            # El host de PostgreSQL es: db.xxxxxx.supabase.co
             if "supabase.co" in supabase_url:
                 # Extraer project_ref de la URL
                 if "://" in supabase_url:
@@ -43,13 +43,9 @@ def _get_database_url() -> str:
                 else:
                     project_ref = supabase_url.split(".")[0]
                 
-                # Extraer región de la URL (ej: us-east-1, us-west-2, etc)
-                # pooler usa formato: aws-[region].pooler.supabase.com
-                url_parts = supabase_url.replace("https://", "").replace("http://", "").split(".")
-                region = url_parts[1] if len(url_parts) > 1 and "pooler" not in url_parts[0] else "us-east-1"
-                
-                # Construir URL de PostgreSQL usando el pooler de Supabase
-                return f"postgresql://postgres.anon:{supabase_key}@{region}.pooler.supabase.com:6543/postgres"
+                # Construir URL de PostgreSQL usando el host directo de Supabase
+                # Formato: postgresql://postgres:[password]@db.projectref.supabase.co:5432/postgres
+                return f"postgresql://postgres:{supabase_key}@db.{project_ref}.supabase.co:5432/postgres"
     except Exception as e:
         pass
     
