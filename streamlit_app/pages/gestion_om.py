@@ -914,6 +914,30 @@ def barra_avance_om(pct):
     return f'''<div class="om-bar-bg"><div class="om-bar-fill" style="width:{min(100,pct)}%;background:{color}"></div><span style="position:absolute;left:8px;top:0;font-size:13px;font-weight:600;color:#222;">{icon} {pct:.1f}%</span></div>'''
 
 
+def barra_cumplimiento(pct):
+    """Barra de cumplimiento: 0% también se muestra en rojo."""
+    if pd.isna(pct):
+        color = "#F3F4F6"
+        icon = "⚪"
+        return f'''<div class="om-bar-bg"><div class="om-bar-fill" style="width:0;background:{color}"></div><span style="position:absolute;left:8px;top:0;font-size:13px;font-weight:600;color:#888;">{icon} -</span></div>'''
+
+    n = float(pct)
+    color = "#F87171"
+    icon = "🔴"
+    if n >= 105:
+        color = "#2563EB"
+        icon = "🔵"
+    elif n >= 100:
+        color = "#22C55E"
+        icon = "🟢"
+    elif n >= 80:
+        color = "#FACC15"
+        icon = "🟡"
+
+    width = 2 if n <= 0 else min(100, n)
+    return f'''<div class="om-bar-bg"><div class="om-bar-fill" style="width:{width}%;background:{color}"></div><span style="position:absolute;left:8px;top:0;font-size:13px;font-weight:600;color:#222;">{icon} {n:.1f}%</span></div>'''
+
+
 def badge_tipo_accion(tipo):
     clases = {
         "OM Kawak": "om-badge om-kawak",
@@ -979,14 +1003,12 @@ def render():
     avances_om = _cargar_avance_om()
     
     df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om)
-    # Soporte: abrir popup desde enlace Ver más usando query params
+    # Soporte: detalle OM por query param
+    om_detalle_q = ""
     try:
         params = st.experimental_get_query_params()
         if "ver_mas" in params and params["ver_mas"]:
-            om_id_q = str(params["ver_mas"][0])
-            if om_id_q:
-                st.session_state["om_popup_open"] = True
-                st.session_state["om_popup_id"] = om_id_q
+            om_detalle_q = str(params["ver_mas"][0]).strip()
     except Exception:
         pass
     # Debug: expose avances_om mapping for troubleshooting UI
@@ -1128,6 +1150,19 @@ def render():
         .om-proy { background:#0EA5A4; }
         .om-otro { background:#6B7280; }
         .om-sin { background:#94A3B8; color:#0F172A; }
+        .om-icon-link {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            width:18px;
+            height:18px;
+            border-radius:4px;
+            text-decoration:none;
+            font-size:0.85rem;
+            line-height:1;
+            color:inherit;
+        }
+        .om-icon-link:hover { background:#e2e8f0; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1147,12 +1182,7 @@ def render():
         cell_class = "om-cell" if ridx % 2 == 0 else "om-cell-alt"
 
         cumple_num = pd.to_numeric(row.get("Cumplimiento"), errors="coerce")
-        if pd.isna(cumple_num):
-            cumple_txt = "⚪ -"
-        else:
-            # Regla solicitada: 0% también se muestra como círculo rojo.
-            icon = "🔴" if cumple_num <= 0 else _icono_cumplimiento(cumple_num)
-            cumple_txt = f"{icon} {cumple_num:.1f}%"
+        cumple_txt = barra_cumplimiento(cumple_num)
 
         tipo_raw = row.get("Tipo de Acción", "Sin acción")
         if pd.isna(tipo_raw) or str(tipo_raw).strip().lower() in {"", "nan", "none"}:
@@ -1187,18 +1217,25 @@ def render():
             om_id = "" if pd.isna(row.get("OM")) else str(row.get("OM")).strip()
             tiene_om = str(row.get("Ver más", "0")) in {"1", "True", "true"}
             if tiene_om and om_id and om_id.lower() != "nan":
-                if st.button("📋", key=f"btn_om_{ridx}_{om_id}", help=f"Ver acciones OM {om_id}", type="tertiary"):
-                    active = st.session_state.get("om_expanded_row")
-                    st.session_state["om_expanded_row"] = None if active == (ridx, om_id) else (ridx, om_id)
+                st.markdown(
+                    f"<div class='{cell_class} om-center'><a class='om-icon-link' href='?ver_mas={om_id}' title='Ver acciones OM {om_id}'>📋</a></div>",
+                    unsafe_allow_html=True,
+                )
             else:
                 st.markdown(f"<div class='{cell_class}'></div>", unsafe_allow_html=True)
 
-        if st.session_state.get("om_expanded_row") == (ridx, om_id):
+        if om_detalle_q and om_id and om_detalle_q == om_id:
             plan_df = _cargar_plan_accion_para_om(om_id)
             df_show = _normalizar_campos_plan_accion(plan_df)
             if not df_show.empty:
                 st.markdown(f"##### Acciones asociadas a OM {om_id}")
                 st.dataframe(df_show, use_container_width=True, hide_index=True)
+                if st.button("Cerrar detalle", key=f"cerrar_detalle_{om_id}"):
+                    try:
+                        st.experimental_set_query_params()
+                    except Exception:
+                        pass
+                    st.rerun()
             else:
                 st.info(f"OM {om_id} sin acciones asociadas.")
 
