@@ -1039,10 +1039,20 @@ def render():
         <style>
         div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
         div[data-testid="stColumn"] { padding-left: 0 !important; padding-right: 0 !important; }
+        div[data-testid="stButton"] {
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        div[data-testid="stButton"] > button {
+            margin: 0 !important;
+        }
         div[data-testid="stButton"] > button[kind="secondary"] {
             min-height: 0 !important;
-            height: 1.2rem !important;
-            width: 1.2rem !important;
+            height: 1rem !important;
+            width: 1rem !important;
             padding: 0 !important;
             margin: 0 auto !important;
             border-radius: 0 !important;
@@ -1051,7 +1061,7 @@ def render():
             box-shadow: none !important;
         }
         div[data-testid="stButton"] > button[kind="secondary"] p {
-            font-size: 0.95rem;
+            font-size: 0.85rem;
             line-height: 1;
         }
         .om-head {
@@ -1077,6 +1087,11 @@ def render():
             line-height:1.15;
         }
         .om-center { text-align:center; }
+        .om-avance-wrap {
+            min-width: 86px;
+            max-width: 110px;
+            margin: 0 auto;
+        }
         .om-badge {
             display:inline-block;
             padding:2px 8px;
@@ -1120,7 +1135,7 @@ def render():
         avance_num = pd.to_numeric(row.get("Avance OM"), errors="coerce")
         if pd.notna(avance_num) and abs(avance_num) <= 1.5:
             avance_num = avance_num * 100
-        avance_txt = "-" if pd.isna(avance_num) else f"{avance_num:.1f}%"
+        avance_txt = "<div class='om-avance-wrap'>" + (barra_avance_om(float(avance_num)) if pd.notna(avance_num) else barra_avance_om(0)) + "</div>"
 
         valores = [
             str(row.get("Id", "")),
