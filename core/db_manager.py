@@ -34,16 +34,23 @@ def _get_database_url() -> str:
         supabase_key = st.secrets.get("SUPABASE_KEY", "")
         
         if supabase_url and supabase_key:
-            # Construir URL de PostgreSQL desde Supabase
-            # Formato: postgresql://postgres:[password]@host:port/database
             # La URL de Supabase es https://xxxxx.supabase.co
-            # Necesitamos la URL de pooled connection
+            # Necesitamos extraer el project_ref y la región para el pooler
             if "supabase.co" in supabase_url:
-                # Convertir a formato PostgreSQL
-                project_ref = supabase_url.split("://")[1].split(".")[0] if "://" in supabase_url else supabase_url.split(".")[0]
-                # Usar el pooler de Supabase (puerto 6543)
-                return f"postgresql://postgres.anonymous:{supabase_key}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
-    except Exception:
+                # Extraer project_ref de la URL
+                if "://" in supabase_url:
+                    project_ref = supabase_url.split("://")[1].split(".")[0]
+                else:
+                    project_ref = supabase_url.split(".")[0]
+                
+                # Extraer región de la URL (ej: us-east-1, us-west-2, etc)
+                # pooler usa formato: aws-[region].pooler.supabase.com
+                url_parts = supabase_url.replace("https://", "").replace("http://", "").split(".")
+                region = url_parts[1] if len(url_parts) > 1 and "pooler" not in url_parts[0] else "us-east-1"
+                
+                # Construir URL de PostgreSQL usando el pooler de Supabase
+                return f"postgresql://postgres.anon:{supabase_key}@{region}.pooler.supabase.com:6543/postgres"
+    except Exception as e:
         pass
     
     # Opción 3: Variable de entorno
