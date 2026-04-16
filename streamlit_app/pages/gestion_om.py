@@ -1093,8 +1093,8 @@ def render():
 
         for i, val in enumerate(valores):
             with row_cols[i]:
-            extra = " om-center" if i in [4, 5, 9, 10] else ""
-            st.markdown(f"<div class='{cell_class}{extra}'>{val}</div>", unsafe_allow_html=True)
+                extra = " om-center" if i in [4, 5, 9, 10] else ""
+                st.markdown(f"<div class='{cell_class}{extra}'>{val}</div>", unsafe_allow_html=True)
 
         with row_cols[11]:
             om_id = "" if pd.isna(row.get("OM")) else str(row.get("OM")).strip()
