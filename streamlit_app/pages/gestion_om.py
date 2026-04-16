@@ -865,8 +865,67 @@ def render():
         plan_df = _cargar_plan_accion_para_om(om_id_q)
         with st.expander(f"Acciones asociadas a OM {om_id_q}", expanded=True):
             st.subheader(f"Plan de Acción para OM {om_id_q}")
+            campos = [
+                "Id Acción", "Acción", "Responsable de ejecución", "Avance (%)", "Estado (Plan de Acción)", "Estado (Oportunidad de mejora)"
+            ]
             if plan_df is not None and not plan_df.empty:
-                st.table(plan_df)
+                df_show = plan_df.copy()
+                # Renombrar columnas si es necesario
+                renames = {}
+                for c in df_show.columns:
+                    if c.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u") == "id accion":
+                        renames[c] = "Id Acción"
+                    if c.lower().startswith("accion"):
+                        renames[c] = "Acción"
+                    if "responsable" in c.lower():
+                        renames[c] = "Responsable de ejecución"
+                    if "avance" in c.lower():
+                        renames[c] = "Avance (%)"
+                    if "plan de accion" in c.lower():
+                        renames[c] = "Estado (Plan de Acción)"
+                    if "oportunidad" in c.lower():
+                        renames[c] = "Estado (Oportunidad de mejora)"
+                df_show = df_show.rename(columns=renames)
+                # Filtrar solo los campos requeridos
+                df_show = df_show[[c for c in campos if c in df_show.columns]].copy()
+                # Centrar columnas y agregar barra de avance
+                st.markdown("""
+                <style>
+                .plan-accion-table td, .plan-accion-table th { text-align: center !important; vertical-align: middle !important; }
+                .avance-bar-bg { height: 16px; border-radius: 8px; background: #F3F4F6; position: relative; }
+                .avance-bar-fill { height: 16px; border-radius: 8px; position: absolute; left: 0; top: 0; }
+                </style>
+                """, unsafe_allow_html=True)
+                table_html = "<table class='plan-accion-table' style='width:100%;border-collapse:collapse;font-size:14px;'>"
+                table_html += "<tr>"
+                for col in df_show.columns:
+                    table_html += f"<th>{col}</th>"
+                table_html += "</tr>"
+                for _, row in df_show.iterrows():
+                    table_html += "<tr>"
+                    for col in df_show.columns:
+                        val = row[col]
+                        if col == "Avance (%)":
+                            try:
+                                pct = float(val)
+                            except Exception:
+                                pct = 0
+                            color = "#F87171"; icon = "🔴"
+                            if pct >= 105:
+                                color = "#2563EB"; icon = "🔵"
+                            elif pct >= 100:
+                                color = "#22C55E"; icon = "🟢"
+                            elif pct >= 80:
+                                color = "#FACC15"; icon = "🟡"
+                            elif pct == 0 or pd.isna(pct):
+                                color = "#F3F4F6"; icon = "⚪"
+                            bar = f'''<div class=\"avance-bar-bg\"><div class=\"avance-bar-fill\" style=\"width:{min(100,pct)}%;background:{color}\"></div><span style=\"position:absolute;left:8px;top:0;font-size:12px;font-weight:600;color:#222;\">{icon} {pct:.1f}%</span></div>'''
+                            table_html += f"<td>{bar}</td>"
+                        else:
+                            table_html += f"<td>{val}</td>"
+                    table_html += "</tr>"
+                table_html += "</table>"
+                st.markdown(table_html, unsafe_allow_html=True)
             else:
                 st.write("No hay actividades para mostrar.")
             if st.button("Cerrar", key=f'cerrar_popup_{om_id_q}'):
@@ -972,8 +1031,9 @@ def render():
         ind_anio = str(row.iloc[0].get("Anio", "")) if not row.empty else ""
         ind_mes = row.iloc[0].get("Mes", "") if not row.empty else ""
         
-        meta_val = meta_his_signo(row.iloc[0]) if not row.empty else ""
-        ejec_val = ejecucion_his_signo(row.iloc[0]) if not row.empty else ""
+        # Usar SIEMPRE el formato global pasando el dict completo de la fila
+        meta_val = meta_his_signo(row.iloc[0].to_dict()) if not row.empty else ""
+        ejec_val = ejecucion_his_signo(row.iloc[0].to_dict()) if not row.empty else ""
         cumpl_val = row.iloc[0].get("Cumplimiento_pct", "") if not row.empty else ""
 
         with st.expander("Asociar Oportunidad de mejora", expanded=True):
