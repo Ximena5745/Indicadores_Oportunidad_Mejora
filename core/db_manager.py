@@ -9,8 +9,10 @@ Prioridad de detección de DATABASE_URL:
 import os
 import sqlite3
 import datetime
+import socket
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 try:
     from dotenv import load_dotenv
@@ -95,7 +97,45 @@ def _connect_postgres():
         raise ValueError(
             "No hay credenciales de PostgreSQL configuradas. Usa DATABASE_URL o SUPABASE_URL + SUPABASE_DB_PASSWORD."
         )
-    return psycopg2.connect(**kwargs)
+    try:
+        return psycopg2.connect(**kwargs)
+    except Exception as exc:
+        msg = str(exc)
+        # Entornos sin salida IPv6 pueden fallar con hostnames que resuelven primero AAAA.
+        if "Cannot assign requested address" in msg or "Network is unreachable" in msg:
+            retry_kwargs = _build_ipv4_retry_connect_kwargs(kwargs)
+            if retry_kwargs:
+                return psycopg2.connect(**retry_kwargs)
+        raise
+
+
+def _build_ipv4_retry_connect_kwargs(kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Crea kwargs de reintento forzando hostaddr IPv4 cuando sea posible."""
+    if "hostaddr" in kwargs:
+        return None
+
+    host = kwargs.get("host")
+    port = kwargs.get("port", 5432)
+
+    if not host and "dsn" in kwargs:
+        parsed = urlparse(str(kwargs.get("dsn", "")))
+        host = parsed.hostname
+        port = parsed.port or 5432
+
+    if not host:
+        return None
+
+    try:
+        ipv4_infos = socket.getaddrinfo(str(host), int(port), socket.AF_INET, socket.SOCK_STREAM)
+        if not ipv4_infos:
+            return None
+        ipv4_addr = ipv4_infos[0][4][0]
+    except Exception:
+        return None
+
+    retry_kwargs = dict(kwargs)
+    retry_kwargs["hostaddr"] = ipv4_addr
+    return retry_kwargs
 
 
 def _use_pg() -> bool:
