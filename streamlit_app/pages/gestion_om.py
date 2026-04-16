@@ -1042,6 +1042,7 @@ def render():
         div[data-testid="stButton"] {
             margin: 0 !important;
             padding: 0 !important;
+            line-height: 0 !important;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1049,20 +1050,35 @@ def render():
         div[data-testid="stButton"] > button {
             margin: 0 !important;
         }
-        div[data-testid="stButton"] > button[kind="secondary"] {
+        div[data-testid="stButton"] > button[kind="secondary"],
+        div[data-testid="stButton"] > button[data-testid="baseButton-secondary"] {
             min-height: 0 !important;
-            height: 1rem !important;
-            width: 1rem !important;
+            height: 18px !important;
+            width: 18px !important;
             padding: 0 !important;
             margin: 0 auto !important;
-            border-radius: 0 !important;
+            border-radius: 4px !important;
             border: none !important;
             background: transparent !important;
             box-shadow: none !important;
         }
-        div[data-testid="stButton"] > button[kind="secondary"] p {
+        div[data-testid="stButton"] > button[kind="secondary"]:hover,
+        div[data-testid="stButton"] > button[data-testid="baseButton-secondary"]:hover {
+            background: #e2e8f0 !important;
+        }
+        div[data-testid="stButton"] > button[kind="secondary"] p,
+        div[data-testid="stButton"] > button[data-testid="baseButton-secondary"] p {
             font-size: 0.85rem;
             line-height: 1;
+        }
+        /* Mantener botones primarios con estilo normal */
+        div[data-testid="stButton"] > button[kind="primary"],
+        div[data-testid="stButton"] > button[data-testid="baseButton-primary"] {
+            width: auto !important;
+            height: auto !important;
+            min-height: 2.25rem !important;
+            padding: 0.25rem 0.9rem !important;
+            border-radius: 0.5rem !important;
         }
         .om-head {
             background:#1e293b;
@@ -1125,7 +1141,7 @@ def render():
         cell_class = "om-cell" if ridx % 2 == 0 else "om-cell-alt"
 
         cumple_num = pd.to_numeric(row.get("Cumplimiento"), errors="coerce")
-        cumple_txt = "-" if pd.isna(cumple_num) else f"{_icono_cumplimiento(cumple_num)} {cumple_num:.1f}%"
+        cumple_txt = barra_avance_om(float(cumple_num)) if pd.notna(cumple_num) else barra_avance_om(0)
 
         tipo_raw = row.get("Tipo de Acción", "Sin acción")
         if pd.isna(tipo_raw) or str(tipo_raw).strip().lower() in {"", "nan", "none"}:
