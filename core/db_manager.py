@@ -34,17 +34,14 @@ def _get_database_url() -> str:
         supabase_key = st.secrets.get("SUPABASE_KEY", "")
         
         if supabase_url and supabase_key:
-            # Extraer project_ref de la URL
+            # Extraer project_ref
             if "://" in supabase_url:
                 project_ref = supabase_url.split("://")[1].split(".")[0]
             else:
                 project_ref = supabase_url.split(".")[0]
             
-            # Usar el pooler de Supabase con la anon key
-            # Pooler usa el formato: [project-ref].supabase.cloud
-            # Puerto 6543 para transacciones (no session)
-            # Formato: postgresql://postgres:[anon_key]@[project].supabase.cloud:6543/postgres
-            return f"postgresql://postgres:{supabase_key}@{project_ref}.supabase.cloud:6543/postgres"
+            # Formato: postgresql://postgres:[password]@db.projectref.supabase.co:5432/postgres
+            return f"postgresql://postgres:[{supabase_key}]@db.{project_ref}.supabase.co:5432/postgres"
     except Exception as e:
         pass
     
