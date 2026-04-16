@@ -10,6 +10,7 @@ import os
 import sqlite3
 import datetime
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 try:
     from dotenv import load_dotenv
@@ -20,37 +21,96 @@ except ImportError:
 DB_PATH = Path(__file__).parent.parent / "data" / "db" / "registros_om.db"
 
 
-def _get_database_url() -> str:
-    """Lee DATABASE_URL desde st.secrets (Streamlit Cloud) o env var.
-    También puede usar SUPABASE_URL y SUPABASE_KEY de st.secrets."""
+def _safe_st_secrets_get(key: str, default: str = "") -> str:
+    """Lee un secret de Streamlit si está disponible, sin romper en ejecución no-Streamlit."""
     try:
         import streamlit as st
-        # Opción 1: DATABASE_URL completa
-        if "DATABASE_URL" in st.secrets:
-            return st.secrets.get("DATABASE_URL", "")
-        
-        # Opción 2: Construir desde SUPABASE_URL y SUPABASE_KEY
-        supabase_url = st.secrets.get("SUPABASE_URL", "")
-        supabase_key = st.secrets.get("SUPABASE_KEY", "")
-        
-        if supabase_url and supabase_key:
-            # Extraer project_ref
-            if "://" in supabase_url:
-                project_ref = supabase_url.split("://")[1].split(".")[0]
-            else:
-                project_ref = supabase_url.split(".")[0]
-            
-            # Formato: postgresql://postgres:[password]@db.projectref.supabase.co:5432/postgres
-            return f"postgresql://postgres:[{supabase_key}]@db.{project_ref}.supabase.co:5432/postgres"
-    except Exception as e:
-        pass
-    
-    # Opción 3: Variable de entorno
-    return os.getenv("DATABASE_URL", "")
+        return str(st.secrets.get(key, default)).strip()
+    except Exception:
+        return default
+
+
+def _get_database_url() -> str:
+    """Lee DATABASE_URL desde st.secrets o variable de entorno."""
+    db_url = _safe_st_secrets_get("DATABASE_URL")
+    if db_url:
+        return db_url
+    return os.getenv("DATABASE_URL", "").strip()
+
+
+def _extract_supabase_project_ref(supabase_url: str) -> str:
+    """Extrae el project_ref desde https://<project_ref>.supabase.co."""
+    if not supabase_url:
+        return ""
+    raw = str(supabase_url).strip().replace("https://", "").replace("http://", "")
+    return raw.split(".")[0] if raw else ""
+
+
+def _get_postgres_connect_kwargs() -> Optional[Dict[str, Any]]:
+    """Construye kwargs de conexión a Postgres para Supabase.
+
+    Prioridad:
+      1) DATABASE_URL
+      2) SUPABASE_POOLER_URL
+      3) SUPABASE_URL + SUPABASE_DB_PASSWORD (+ overrides de host/puerto/usuario/db)
+    """
+    db_url = _get_database_url()
+    if db_url:
+        return {"dsn": db_url}
+
+    pooler_url = _safe_st_secrets_get("SUPABASE_POOLER_URL") or os.getenv("SUPABASE_POOLER_URL", "").strip()
+    if pooler_url:
+        return {"dsn": pooler_url}
+
+    supabase_url = _safe_st_secrets_get("SUPABASE_URL") or os.getenv("SUPABASE_URL", "").strip()
+    supabase_db_password = _safe_st_secrets_get("SUPABASE_DB_PASSWORD") or os.getenv("SUPABASE_DB_PASSWORD", "").strip()
+    supabase_db_host = _safe_st_secrets_get("SUPABASE_DB_HOST") or os.getenv("SUPABASE_DB_HOST", "").strip()
+    supabase_db_port = _safe_st_secrets_get("SUPABASE_DB_PORT") or os.getenv("SUPABASE_DB_PORT", "").strip()
+    supabase_db_user = _safe_st_secrets_get("SUPABASE_DB_USER") or os.getenv("SUPABASE_DB_USER", "").strip()
+    supabase_db_name = _safe_st_secrets_get("SUPABASE_DB_NAME") or os.getenv("SUPABASE_DB_NAME", "").strip()
+
+    project_ref = _extract_supabase_project_ref(supabase_url)
+    if project_ref and supabase_db_password:
+        host = supabase_db_host or f"db.{project_ref}.supabase.co"
+        port = int(supabase_db_port) if supabase_db_port.isdigit() else 5432
+        user = supabase_db_user or "postgres"
+        dbname = supabase_db_name or "postgres"
+        return {
+            "host": host,
+            "port": port,
+            "dbname": dbname,
+            "user": user,
+            "password": supabase_db_password,
+            "sslmode": "require",
+        }
+
+    return None
+
+
+def _connect_postgres():
+    import psycopg2
+
+    kwargs = _get_postgres_connect_kwargs()
+    if not kwargs:
+        raise ValueError(
+            "No hay credenciales de PostgreSQL configuradas. Usa DATABASE_URL o SUPABASE_URL + SUPABASE_DB_PASSWORD."
+        )
+    return psycopg2.connect(**kwargs)
 
 
 def _use_pg() -> bool:
-    return bool(_get_database_url())
+    return _get_postgres_connect_kwargs() is not None
+
+
+def _notify_streamlit(level: str, message: str) -> None:
+    """Publica mensajes en Streamlit si existe contexto UI."""
+    try:
+        import streamlit as st
+        fn = getattr(st, level, None)
+        if callable(fn):
+            fn(message)
+    except Exception:
+        pass
 
 
 # ── Inicialización ────────────────────────────────────────────────────────────
@@ -81,8 +141,7 @@ def _init_sqlite():
 
 
 def _init_postgres():
-    import psycopg2
-    conn = psycopg2.connect(_get_database_url())
+    conn = _connect_postgres()
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS registros_om (
@@ -114,8 +173,7 @@ def inicializar_db():
         else:
             _init_sqlite()
     except Exception as e:
-        import streamlit as st
-        st.warning(f"No se pudo inicializar la base de datos: {e}")
+        _notify_streamlit("warning", f"No se pudo inicializar la base de datos: {e}")
 
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
@@ -150,8 +208,7 @@ def guardar_registro_om(datos: dict) -> bool:
         else:
             return _upsert_sqlite(datos)
     except Exception as e:
-        import streamlit as st
-        st.error(f"Error al guardar: {e}")
+        _notify_streamlit("error", f"Error al guardar: {e}")
         return False
 
 
@@ -179,8 +236,7 @@ def _upsert_sqlite(d: dict) -> bool:
 
 
 def _upsert_postgres(d: dict) -> bool:
-    import psycopg2
-    conn = psycopg2.connect(_get_database_url())
+    conn = _connect_postgres()
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO registros_om
@@ -215,8 +271,7 @@ def leer_registros_om(anio: int = None):
         else:
             return _leer_sqlite(anio)
     except Exception as e:
-        import streamlit as st
-        st.error(f"Error al leer registros: {e}")
+        _notify_streamlit("error", f"Error al leer registros: {e}")
         return []
 
 
@@ -239,9 +294,8 @@ def _leer_sqlite(anio):
 
 
 def _leer_postgres(anio):
-    import psycopg2
     import psycopg2.extras
-    conn = psycopg2.connect(_get_database_url())
+    conn = _connect_postgres()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     if anio:
         cur.execute(
@@ -311,8 +365,7 @@ def guardar_acciones_bulk(df) -> bool:
     cols = list(df.columns)
     try:
         if _use_pg():
-            import psycopg2
-            conn = psycopg2.connect(_get_database_url())
+            conn = _connect_postgres()
             cur = conn.cursor()
             # Crear tabla con columnas TEXT si no existe
             cols_defs = ", ".join([f'"{c}" TEXT' for c in cols])
@@ -339,11 +392,7 @@ def guardar_acciones_bulk(df) -> bool:
             conn.close()
             return True
     except Exception as e:
-        try:
-            import streamlit as st
-            st.error(f"Error guardar_acciones_bulk: {e}")
-        except Exception:
-            pass
+        _notify_streamlit("error", f"Error guardar_acciones_bulk: {e}")
         return False
 
 
@@ -351,8 +400,9 @@ def leer_acciones(limit: int = 1000) -> list:
     """Lee hasta `limit` filas de la tabla `acciones` y retorna lista de dicts."""
     try:
         if _use_pg():
+            import psycopg2
             import psycopg2.extras
-            conn = psycopg2.connect(_get_database_url())
+            conn = _connect_postgres()
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cur.execute(f"SELECT * FROM acciones ORDER BY id DESC LIMIT {int(limit)}")
             rows = cur.fetchall()
@@ -370,11 +420,7 @@ def leer_acciones(limit: int = 1000) -> list:
             conn.close()
             return [dict(r) for r in rows]
     except Exception as e:
-        try:
-            import streamlit as st
-            st.error(f"Error leer_acciones: {e}")
-        except Exception:
-            pass
+        _notify_streamlit("error", f"Error leer_acciones: {e}")
         return []
 
 
@@ -385,8 +431,7 @@ def borrar_acciones_por_marker(col: str, value: str) -> bool:
     """
     try:
         if _use_pg():
-            import psycopg2
-            conn = psycopg2.connect(_get_database_url())
+            conn = _connect_postgres()
             cur = conn.cursor()
             cur.execute(f"DELETE FROM acciones WHERE \"{col}\" = %s", (str(value),))
             conn.commit()
@@ -401,9 +446,5 @@ def borrar_acciones_por_marker(col: str, value: str) -> bool:
             conn.close()
             return True
     except Exception as e:
-        try:
-            import streamlit as st
-            st.error(f"Error borrar_acciones_por_marker: {e}")
-        except Exception:
-            pass
+        _notify_streamlit("error", f"Error borrar_acciones_por_marker: {e}")
         return False
