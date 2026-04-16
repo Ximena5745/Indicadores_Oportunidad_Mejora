@@ -70,13 +70,17 @@ def _cargar_avance_om() -> dict:
             cols = df.columns.tolist()
             
             avance_col = next((c for c in cols if "Avance" in c and "%" in c), None)
-            id_om_col = next((c for c in cols if "Oportunidad" in c and "mejora" in c.lower()), None)
+            
+            # Buscar columna "Id Oportunidad de mejora" (no "Estado...")
+            id_om_col = next((c for c in cols if "Id Oportunidad de mejora" in c), None)
+            if not id_om_col:
+                id_om_col = next((c for c in cols if c.startswith("Id ") and "Oportunidad" in c), None)
             
             if id_om_col and avance_col:
                 df_subset = df[[id_om_col, avance_col]].copy()
                 df_subset.columns = ["Id_OM", "Avance"]
                 dfs.append(df_subset)
-        except Exception:
+        except Exception as e:
             continue
     
     if not dfs:
@@ -88,12 +92,14 @@ def _cargar_avance_om() -> dict:
     
     df_all = df_all.dropna(subset=["Id_OM", "Avance"])
     df_all = df_all[df_all["Id_OM"] != ""]
+    df_all = df_all[df_all["Id_OM"].str.lower() != "nan"]
     
     if df_all.empty:
         return {}
     
     resultado = df_all.groupby("Id_OM")["Avance"].mean().to_dict()
-    return {str(k).strip(): round(v, 1) for k, v in resultado.items()}
+    
+    return {str(k).strip(): round(float(v), 1) for k, v in resultado.items()}
 
 
 def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
@@ -424,10 +430,13 @@ def _resumen_om_por_id(df_reg: pd.DataFrame, avances_om: dict = None) -> pd.Data
     out["tipo_accion"] = out["tipo_accion"].fillna("OM Kawak")
     out["identificador"] = out["numero_om"].fillna("")
     
-    if avances_om:
-        out["avance_om"] = out["identificador"].apply(
-            lambda x: avances_om.get(str(x).strip(), 0)
-        )
+    if avances_om and isinstance(avances_om, dict) and len(avances_om) > 0:
+        def buscar_avance(x):
+            x_clean = str(x).strip()
+            if not x_clean:
+                return 0
+            return avances_om.get(x_clean, avances_om.get(x_clean.upper(), avances_om.get(x_clean.lower(), 0)))
+        out["avance_om"] = out["identificador"].apply(buscar_avance)
     else:
         out["avance_om"] = 0
     
@@ -683,6 +692,13 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
                         </div>
                         <span style="font-size: 12px;">{val}%</span>
                     </td>'''
+                elif val == 0:
+                    html += f'''<td>
+                        <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
+                            <div style="width: 0%; height: 100%; background: #EF4444;"></div>
+                        </div>
+                        <span style="font-size: 12px;">0%</span>
+                    </td>'''
                 else:
                     html += f"<td>-</td>"
             elif col == "Meta":
@@ -739,6 +755,7 @@ def render():
 
     registros_om = _cargar_registros_om()
     avances_om = _cargar_avance_om()
+    
     df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om)
 
     if df_tabla.empty:
@@ -815,8 +832,9 @@ def render():
                         "comentario": str(observacion).strip(),
                     }
                     if guardar_registro_om(payload):
-                        st.success("✅ Oportunidad de mejora asociada correctamente.")
+                        st.success(f"✅ Oportunidad de mejora guardada para indicador {indicador}")
                         st.session_state["om_modal_open"] = False
+                        st.session_state["om_indicador_seleccionado"] = None
                         st.rerun()
                     else:
                         st.error("❌ No fue posible guardar la acción. Intenta nuevamente.")

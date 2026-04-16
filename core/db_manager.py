@@ -21,12 +21,32 @@ DB_PATH = Path(__file__).parent.parent / "data" / "db" / "registros_om.db"
 
 
 def _get_database_url() -> str:
-    """Lee DATABASE_URL desde st.secrets (Streamlit Cloud) o env var."""
+    """Lee DATABASE_URL desde st.secrets (Streamlit Cloud) o env var.
+    También puede usar SUPABASE_URL y SUPABASE_KEY de st.secrets."""
     try:
         import streamlit as st
-        return st.secrets.get("DATABASE_URL", "")
+        # Opción 1: DATABASE_URL completa
+        if "DATABASE_URL" in st.secrets:
+            return st.secrets.get("DATABASE_URL", "")
+        
+        # Opción 2: Construir desde SUPABASE_URL y SUPABASE_KEY
+        supabase_url = st.secrets.get("SUPABASE_URL", "")
+        supabase_key = st.secrets.get("SUPABASE_KEY", "")
+        
+        if supabase_url and supabase_key:
+            # Construir URL de PostgreSQL desde Supabase
+            # Formato: postgresql://postgres:[password]@host:port/database
+            # La URL de Supabase es https://xxxxx.supabase.co
+            # Necesitamos la URL de pooled connection
+            if "supabase.co" in supabase_url:
+                # Convertir a formato PostgreSQL
+                project_ref = supabase_url.split("://")[1].split(".")[0] if "://" in supabase_url else supabase_url.split(".")[0]
+                # Usar el pooler de Supabase (puerto 6543)
+                return f"postgresql://postgres.anonymous:{supabase_key}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
     except Exception:
         pass
+    
+    # Opción 3: Variable de entorno
     return os.getenv("DATABASE_URL", "")
 
 
