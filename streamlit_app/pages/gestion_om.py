@@ -769,7 +769,7 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
                 om_id_for_link = str(row.get("identificador", "")).strip()
                 tengo_om = int(row.get("tiene_om", 0) or 0)
                 if tengo_om == 1 and om_id_for_link:
-                    html += f"<td><a href=\"javascript:window.location.search='?ver_mas={om_id_for_link}'\">Ver más</a></td>"
+                    html += f"<td style='color:#3B82F6;font-weight:bold;'>{om_id_for_link}</td>"
                 else:
                     html += "<td></td>"
                 continue
@@ -882,6 +882,19 @@ def render():
     total_peligro = len(df_tabla)
     st.markdown(f"### 📊 Indicadores en Peligro: {total_peligro} ({mes_sel} {anio_sel})")
     st.markdown(_generar_tabla_html(df_tabla), unsafe_allow_html=True)
+
+    # Selector para ver Plan de Acción de OM
+    om_con_om = df_tabla[df_tabla["tiene_om"] == 1][["identificador"]].dropna().drop_duplicates()
+    if not om_con_om.empty:
+        opciones_om = [""] + sorted(om_con_om["identificador"].unique().tolist())
+        om_seleccionada = st.selectbox("Ver Plan de Acción de OM", opciones_om, index=0)
+        if om_seleccionada:
+            plan_df = _cargar_plan_accion_para_om(om_seleccionada)
+            with st.expander(f"Plan de Acción - OM {om_seleccionada}", expanded=True):
+                if plan_df is not None and not plan_df.empty:
+                    st.table(plan_df)
+                else:
+                    st.write("No hay actividades para mostrar.")
 
     opciones = df_tabla.apply(_build_option_label, axis=1).tolist()
     indicador_seleccionado = st.selectbox("Seleccionar indicador para nueva OM", opciones)
