@@ -173,6 +173,41 @@ def _cargar_plan_accion_para_om(om_id: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _normalizar_campos_plan_accion(plan_df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza columnas del plan de acción y deja solo campos requeridos."""
+    if plan_df is None or plan_df.empty:
+        return pd.DataFrame()
+
+    campos = [
+        "Id Acción",
+        "Acción",
+        "Responsable de ejecución",
+        "Avance (%)",
+        "Estado (Plan de Acción)",
+        "Estado (Oportunidad de mejora)",
+    ]
+
+    df_show = plan_df.copy()
+    renames = {}
+    for c in df_show.columns:
+        c_norm = c.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+        if c_norm == "id accion":
+            renames[c] = "Id Acción"
+        elif c_norm.startswith("accion"):
+            renames[c] = "Acción"
+        elif "responsable" in c_norm:
+            renames[c] = "Responsable de ejecución"
+        elif "avance" in c_norm:
+            renames[c] = "Avance (%)"
+        elif "plan de accion" in c_norm:
+            renames[c] = "Estado (Plan de Acción)"
+        elif "oportunidad" in c_norm:
+            renames[c] = "Estado (Oportunidad de mejora)"
+
+    df_show = df_show.rename(columns=renames)
+    return df_show[[c for c in campos if c in df_show.columns]].copy()
+
+
 def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
     """Extrae el tipo de acción y el identificador del campo numero_om."""
     if not numero_om:
@@ -801,6 +836,19 @@ def badge_tipo_accion(tipo):
     return f'<span class="{clases.get(tipo, "om-badge om-otro")}">{tipo}</span>'
 
 
+def _icono_cumplimiento(cumpl_val) -> str:
+    n = pd.to_numeric(cumpl_val, errors="coerce")
+    if pd.isna(n):
+        return "⚪"
+    if n >= 105:
+        return "🔵"
+    if n >= 100:
+        return "🟢"
+    if n >= 80:
+        return "🟡"
+    return "🔴"
+
+
 def render():
     st.title("Gestión OM")
     st.caption("Filtrado por mes, año, proceso y subproceso. Registra OM abiertas o pendientes sobre indicadores en Peligro.")
@@ -868,7 +916,7 @@ def render():
     total_peligro = len(df_tabla)
     st.markdown(f"### 📊 Indicadores en Peligro: {total_peligro} ({mes_sel} {anio_sel})")
 
-    # --- Tabla principal estable (estructura original) ---
+    # --- Tabla principal con encabezado visual e icono de expansión OM ---
     from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
 
     df_tabla_fmt = formatear_meta_ejecucion_df(df_tabla.copy(), meta_col="Meta", ejec_col="Ejecucion")
@@ -883,16 +931,13 @@ def render():
 
     cols_orden = [
         "Id", "Indicador", "Subproceso", "Periodicidad", "Meta", "Ejecucion",
-        "Cumplimiento", "Categoria", "Tipo de Acción", "OM", "Avance OM", "Ver más"
+        "Cumplimiento", "Categoria", "Tipo de Acción", "OM", "Avance OM"
     ]
     cols_tabla = [c for c in cols_orden if c in df_tabla_fmt.columns]
-    df_view = df_tabla_fmt[cols_tabla].copy()
+    df_view = df_tabla_fmt[cols_tabla + (["Ver más"] if "Ver más" in df_tabla_fmt.columns else [])].copy()
 
     if "Cumplimiento" in df_view.columns:
         df_view["Cumplimiento"] = pd.to_numeric(df_view["Cumplimiento"], errors="coerce").round(1)
-        df_view["Cumplimiento"] = df_view["Cumplimiento"].apply(
-            lambda v: "-" if pd.isna(v) else f"{v:.1f}%"
-        )
 
     if "Avance OM" in df_view.columns:
         df_view["Avance OM"] = pd.to_numeric(df_view["Avance OM"], errors="coerce").round(1)
@@ -903,27 +948,92 @@ def render():
     if "OM" in df_view.columns:
         df_view["OM"] = df_view["OM"].apply(lambda v: "" if pd.isna(v) else str(v))
 
-    if "Ver más" in df_view.columns:
-        df_view["Ver más"] = df_view["Ver más"].apply(lambda v: "Si" if str(v) in {"1", "True", "true"} else "")
+    st.markdown("""
+    <style>
+    .om-grid-header {
+        background: #1e293b;
+        color: #ffffff;
+        font-weight: 700;
+        border-radius: 8px 8px 0 0;
+        padding: 8px 10px;
+        margin-bottom: 2px;
+    }
+    .om-grid-row {
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 6px 10px;
+    }
+    .om-grid-row-alt {
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 6px 10px;
+    }
+    .om-icon-btn {
+        background: #e2e8f0;
+        border-radius: 8px;
+        padding: 2px 6px;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 700;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    st.dataframe(df_view, use_container_width=True, hide_index=True)
+    encabezados = cols_orden + ["Ver más"]
+    anchos = [0.55, 4.2, 2.9, 1.25, 1.0, 1.0, 1.25, 1.1, 1.45, 0.8, 1.1, 0.65]
+    header_cols = st.columns(anchos)
+    for i, h in enumerate(encabezados):
+        with header_cols[i]:
+            st.markdown(f"<div class='om-grid-header'>{h}</div>", unsafe_allow_html=True)
 
-    oms_con_om = df_tabla[df_tabla["tiene_om"] == 1][["Id", "identificador"]].dropna()
-    if not oms_con_om.empty:
-        st.markdown("### Ver detalle de OM")
-        cols = st.columns(3)
-        col_idx = 0
-        for idx, row in oms_con_om.iterrows():
-            id_om = str(row.get("identificador", ""))
-            with cols[col_idx % 3]:
-                if st.checkbox(f"OM {id_om}", key=f"chk_{id_om}"):
-                    plan_df = _cargar_plan_accion_para_om(id_om)
-                    with st.expander(f"Detalle OM {id_om}", expanded=True):
-                        if plan_df is not None and not plan_df.empty:
-                            st.table(plan_df)
-                        else:
-                            st.write("Sin actividades.")
-            col_idx += 1
+    for ridx, row in df_view.iterrows():
+        fila_css = "om-grid-row" if ridx % 2 == 0 else "om-grid-row-alt"
+        row_cols = st.columns(anchos)
+
+        cumple_num = pd.to_numeric(row.get("Cumplimiento"), errors="coerce")
+        cumple_txt = "-" if pd.isna(cumple_num) else f"{_icono_cumplimiento(cumple_num)} {cumple_num:.1f}%"
+        tipo_badge = badge_tipo_accion(str(row.get("Tipo de Acción", "Sin acción")))
+        avance_txt = "-"
+        if "Avance OM" in row and pd.notna(row.get("Avance OM")) and float(row.get("Avance OM")) != 0:
+            avance_txt = f"{float(row.get('Avance OM')):.1f}%"
+
+        valores = [
+            str(row.get("Id", "")),
+            str(row.get("Indicador", "")),
+            str(row.get("Subproceso", "")),
+            str(row.get("Periodicidad", "")),
+            str(row.get("Meta", "")),
+            str(row.get("Ejecucion", "")),
+            cumple_txt,
+            str(row.get("Categoria", "")),
+            tipo_badge,
+            str(row.get("OM", "")),
+            avance_txt,
+        ]
+
+        for i, val in enumerate(valores):
+            with row_cols[i]:
+                st.markdown(f"<div class='{fila_css}'>{val}</div>", unsafe_allow_html=True)
+
+        with row_cols[11]:
+            tiene_om = str(row.get("Ver más", "0")) in {"1", "True", "true"}
+            om_id = str(row.get("OM", "")).strip()
+            if tiene_om and om_id and om_id.lower() != "nan":
+                if st.button("📋", key=f"btn_om_{ridx}_{om_id}", help=f"Ver acciones OM {om_id}"):
+                    active = st.session_state.get("om_expanded_row")
+                    st.session_state["om_expanded_row"] = None if active == (ridx, om_id) else (ridx, om_id)
+                st.markdown("<div class='om-icon-btn'>detalle</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='{fila_css}'></div>", unsafe_allow_html=True)
+
+        if st.session_state.get("om_expanded_row") == (ridx, om_id):
+            plan_df = _cargar_plan_accion_para_om(om_id)
+            df_show = _normalizar_campos_plan_accion(plan_df)
+            if not df_show.empty:
+                st.markdown(f"##### Acciones asociadas a OM {om_id}")
+                st.dataframe(df_show, use_container_width=True, hide_index=True)
+            else:
+                st.info(f"OM {om_id} sin acciones asociadas.")
 
     st.markdown("---")
 
@@ -996,13 +1106,14 @@ def render():
 if st.session_state.get("om_popup_open"):
         om_id = str(st.session_state.get("om_popup_id", ""))
         plan_df = _cargar_plan_accion_para_om(om_id)
-        # Usar expander para ventana emergente
+        df_show = _normalizar_campos_plan_accion(plan_df)
+        # Mantener compatibilidad con query param existente
         with st.expander(f"Plan de Acción - OM {om_id}", expanded=True):
             st.subheader(f"Plan de Acción para OM {om_id}")
-            if plan_df is not None and not plan_df.empty:
-                st.table(plan_df)
+            if not df_show.empty:
+                st.dataframe(df_show, use_container_width=True, hide_index=True)
             else:
                 st.write("No hay actividades para mostrar.")
-            if st.button("Cerrar", key=f'cerrar_popup_{om_id}'):
+            if st.button("Cerrar", key=f"cerrar_popup_{om_id}"):
                 st.session_state["om_popup_open"] = False
                 st.rerun()
