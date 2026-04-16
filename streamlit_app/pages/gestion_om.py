@@ -836,12 +836,12 @@ def render():
     total_peligro = len(df_tabla)
     st.markdown(f"### 📊 Indicadores en Peligro: {total_peligro} ({mes_sel} {anio_sel})")
 
-    # --- Visualización mejorada de la tabla ---
+    # --- Visualización mejorada de la tabla con expansión por fila ---
     from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
     df_tabla_fmt = formatear_meta_ejecucion_df(df_tabla.copy(), meta_col="Meta", ejec_col="Ejecucion")
-    df_display = _generar_tabla_html(df_tabla_fmt)
-
-    # Renderizado personalizado de la tabla
+    # Definir columnas a mostrar
+    cols = ["Id", "Indicador", "Subproceso", "Periodicidad", "Meta", "Ejecucion", "Cumplimiento_pct", "Categoria", "Tipo de Acción", "OM", "Avance OM", "Ver más"]
+    cols = [c for c in cols if c in df_tabla_fmt.columns]
     st.markdown("""
     <style>
     .om-bar-bg { height: 18px; border-radius: 8px; background: #F3F4F6; position: relative; }
@@ -852,91 +852,50 @@ def render():
     .om-proy { background: #8B5CF6; }
     .om-otro { background: #6B7280; }
     .om-sin { background: #9CA3AF; color: #222; }
-    .om-icon-btn { background: none; border: none; cursor: pointer; font-size: 18px; }
     </style>
     """, unsafe_allow_html=True)
-
-    # Mostrar expander de acciones OM si hay query param ver_mas
-    # Compatibilidad con diferentes versiones de Streamlit para query params
-    try:
-        params = st.experimental_get_query_params()
-    except AttributeError:
-        params = st.query_params if hasattr(st, 'query_params') else {}
-    om_id_q = params.get("ver_mas", [None])[0] if params else None
-    if om_id_q:
-        plan_df = _cargar_plan_accion_para_om(om_id_q)
-        with st.expander(f"Acciones asociadas a OM {om_id_q}", expanded=True):
-            st.subheader(f"Plan de Acción para OM {om_id_q}")
-            campos = [
-                "Id Acción", "Acción", "Responsable de ejecución", "Avance (%)", "Estado (Plan de Acción)", "Estado (Oportunidad de mejora)"
-            ]
-            if plan_df is not None and not plan_df.empty:
-                df_show = plan_df.copy()
-                # Renombrar columnas si es necesario
-                renames = {}
-                for c in df_show.columns:
-                    if c.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u") == "id accion":
-                        renames[c] = "Id Acción"
-                    if c.lower().startswith("accion"):
-                        renames[c] = "Acción"
-                    if "responsable" in c.lower():
-                        renames[c] = "Responsable de ejecución"
-                    if "avance" in c.lower():
-                        renames[c] = "Avance (%)"
-                    if "plan de accion" in c.lower():
-                        renames[c] = "Estado (Plan de Acción)"
-                    if "oportunidad" in c.lower():
-                        renames[c] = "Estado (Oportunidad de mejora)"
-                df_show = df_show.rename(columns=renames)
-                # Filtrar solo los campos requeridos
-                df_show = df_show[[c for c in campos if c in df_show.columns]].copy()
-                # Centrar columnas y agregar barra de avance
-                st.markdown("""
-                <style>
-                .plan-accion-table td, .plan-accion-table th { text-align: center !important; vertical-align: middle !important; }
-                .avance-bar-bg { height: 16px; border-radius: 8px; background: #F3F4F6; position: relative; }
-                .avance-bar-fill { height: 16px; border-radius: 8px; position: absolute; left: 0; top: 0; }
-                </style>
-                """, unsafe_allow_html=True)
-                table_html = "<table class='plan-accion-table' style='width:100%;border-collapse:collapse;font-size:14px;'>"
-                table_html += "<tr>"
-                for col in df_show.columns:
-                    table_html += f"<th>{col}</th>"
-                table_html += "</tr>"
-                for _, row in df_show.iterrows():
-                    table_html += "<tr>"
-                    for col in df_show.columns:
-                        val = row[col]
-                        if col == "Avance (%)":
-                            try:
-                                pct = float(val)
-                            except Exception:
-                                pct = 0
-                            color = "#F87171"; icon = "🔴"
-                            if pct >= 105:
-                                color = "#2563EB"; icon = "🔵"
-                            elif pct >= 100:
-                                color = "#22C55E"; icon = "🟢"
-                            elif pct >= 80:
-                                color = "#FACC15"; icon = "🟡"
-                            elif pct == 0 or pd.isna(pct):
-                                color = "#F3F4F6"; icon = "⚪"
-                            bar = f'''<div class=\"avance-bar-bg\"><div class=\"avance-bar-fill\" style=\"width:{min(100,pct)}%;background:{color}\"></div><span style=\"position:absolute;left:8px;top:0;font-size:12px;font-weight:600;color:#222;\">{icon} {pct:.1f}%</span></div>'''
-                            table_html += f"<td>{bar}</td>"
-                        else:
-                            table_html += f"<td>{val}</td>"
-                    table_html += "</tr>"
-                table_html += "</table>"
-                st.markdown(table_html, unsafe_allow_html=True)
-            else:
-                st.write("No hay actividades para mostrar.")
-            if st.button("Cerrar", key=f'cerrar_popup_{om_id_q}'):
-                try:
-                    st.experimental_set_query_params()
-                except AttributeError:
-                    if hasattr(st, 'query_params'):
-                        st.query_params.clear()
-                st.rerun()
+    st.markdown("<div style='background:#1E293B;color:#fff;padding:8px 4px;font-weight:bold;border-radius:6px 6px 0 0;'>"
+                + " | ".join(cols) + "</div>", unsafe_allow_html=True)
+    for idx, row in df_tabla_fmt.iterrows():
+        c1, c2 = st.columns([0.97, 0.03])
+        with c1:
+            st.markdown("<div style='border-bottom:1px solid #E5E7EB;padding:4px 0;'>" +
+                " | ".join([
+                    str(row[c]) if c not in ["Avance OM", "Tipo de Acción"]
+                    else (barra_avance_om(row["Avance OM"]) if c=="Avance OM" else badge_tipo_accion(row["Tipo de Acción"]))
+                for c in cols]) + "</div>", unsafe_allow_html=True)
+        with c2:
+            om_id = row["OM"] if "OM" in row else ""
+            tiene_om = row["Ver más"] if "Ver más" in row else 0
+            if tiene_om == 1 and om_id and str(om_id).lower() != "nan":
+                expand_key = f"expand_om_{om_id}"
+                expanded = st.toggle("", key=expand_key, label_visibility="collapsed")
+                if expanded:
+                    plan_df = _cargar_plan_accion_para_om(om_id)
+                    campos = ["Id Acción", "Acción", "Responsable de ejecución", "Avance (%)", "Estado (Plan de Acción)", "Estado (Oportunidad de mejora)"]
+                    if plan_df is not None and not plan_df.empty:
+                        df_show = plan_df.copy()
+                        renames = {}
+                        for c in df_show.columns:
+                            if c.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u") == "id accion":
+                                renames[c] = "Id Acción"
+                            if c.lower().startswith("accion"):
+                                renames[c] = "Acción"
+                            if "responsable" in c.lower():
+                                renames[c] = "Responsable de ejecución"
+                            if "avance" in c.lower():
+                                renames[c] = "Avance (%)"
+                            if "plan de accion" in c.lower():
+                                renames[c] = "Estado (Plan de Acción)"
+                            if "oportunidad" in c.lower():
+                                renames[c] = "Estado (Oportunidad de mejora)"
+                        df_show = df_show.rename(columns=renames)
+                        df_show = df_show[[c for c in campos if c in df_show.columns]].copy()
+                        st.markdown("<div style='background:#F8FAFC;padding:8px 0 8px 0;border-radius:0 0 8px 8px;'>", unsafe_allow_html=True)
+                        st.write(df_show.style.set_properties(**{"text-align": "center"}), unsafe_allow_html=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        st.info("Sin actividades.")
 
     def barra_avance_om(pct):
         if pd.isna(pct) or pct == 0:
