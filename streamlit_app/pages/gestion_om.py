@@ -53,6 +53,49 @@ def _cargar_registros_om() -> dict:
     return registros_om_como_dict(anio=None)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cargar_avance_om() -> dict:
+    """
+    Carga los archivos de Plan de accion y calcula el avance promedio por Id Oportunidad de mejora.
+    Retorna: {id_oportunidad: avance_promedio}
+    """
+    import os
+    base_path = Path(__file__).resolve().parents[2] / "data" / "raw" / "Plan de accion"
+    if not base_path.exists():
+        return {}
+    
+    dfs = []
+    for f in base_path.glob("*.xlsx"):
+        try:
+            df = pd.read_excel(f, dtype=str, na_filter=False)
+            cols = df.columns.tolist()
+            id_col = next((c for c in cols if "Id Acci" in c or "Id Acci" in c or "id" in c.lower()), None)
+            avance_col = next((c for c in cols if "Avance" in c and "%" in c), None)
+            if id_col and avance_col:
+                df_subset = df[[id_col, avance_col]].copy()
+                df_subset.columns = ["Id_Accion", "Avance"]
+                dfs.append(df_subset)
+        except Exception:
+            continue
+    
+    if not dfs:
+        return {}
+    
+    df_all = pd.concat(dfs, ignore_index=True)
+    df_all["Avance"] = pd.to_numeric(df_all["Avance"], errors="coerce")
+    
+    if "Id Oportunidad de mejora" not in df_all.columns:
+        id_om_col = next((c for c in df_all.columns if "Oportunidad" in c or "Mejora" in c), None)
+    else:
+        id_om_col = "Id Oportunidad de mejora"
+    
+    if id_om_col:
+        df_all = df_all.dropna(subset=[id_om_col, "Avance"])
+        resultado = df_all.groupby(id_om_col)["Avance"].mean().to_dict()
+        return {str(k): round(v, 1) for k, v in resultado.items()}
+    return {}
+
+
 def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
     """Extrae el tipo de acción y el identificador del campo numero_om."""
     if not numero_om:
@@ -354,7 +397,7 @@ def _build_consolidado_por_periodo(df_reg: pd.DataFrame) -> pd.DataFrame:
     return agrupado.sort_values(["anio", "periodo"], ascending=[False, True]).reset_index(drop=True)
 
 
-def _resumen_om_por_id(df_reg: pd.DataFrame) -> pd.DataFrame:
+def _resumen_om_por_id(df_reg: pd.DataFrame, avances_om: dict = None) -> pd.DataFrame:
     if df_reg.empty:
         return pd.DataFrame(columns=["Id", "tiene_om", "numero_om", "periodo_om", "anio_om", "avance_om", "tipo_accion", "identificador"])
 
@@ -374,15 +417,20 @@ def _resumen_om_por_id(df_reg: pd.DataFrame) -> pd.DataFrame:
             numero_om=("numero_om", "first"),
             periodo_om=("periodo", "first"),
             anio_om=("anio", "first"),
-            avance_om=("tiene_om", "max"),
         )
     )
     out["tiene_om"] = pd.to_numeric(out["tiene_om"], errors="coerce").fillna(0).astype(int)
-    out["avance_om"] = out["avance_om"].apply(lambda x: 100 if x == 1 else 0)
     
     tipo_ident = out["numero_om"].apply(lambda x: _extraer_tipo_y_identificador(x))
     out["tipo_accion"] = tipo_ident.apply(lambda x: x[0])
     out["identificador"] = tipo_ident.apply(lambda x: x[1])
+    
+    if avances_om:
+        out["avance_om"] = out["identificador"].apply(lambda x: avances_om.get(str(x).strip(), 0))
+    else:
+        out["avance_om"] = out["tiene_om"].apply(lambda x: 100 if x == 1 else 0)
+    
+    out["avance_om"] = out["avance_om"].fillna(0)
     
     return out
 
@@ -438,7 +486,7 @@ def _resumen_acciones_por_id(df_acc: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df_acc: pd.DataFrame) -> pd.DataFrame:
+def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df_acc: pd.DataFrame, avances_om: dict = None) -> pd.DataFrame:
     if df_riesgo.empty:
         return pd.DataFrame()
 
@@ -448,7 +496,7 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
 
     df_peligro["Id"] = df_peligro["Id"].apply(_id_str)
 
-    om = _resumen_om_por_id(df_reg)
+    om = _resumen_om_por_id(df_reg, avances_om)
     acc = _resumen_acciones_por_id(df_acc)
 
     m = df_peligro.merge(om, on="Id", how="left").merge(acc, on="Id", how="left")
@@ -500,7 +548,7 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
     return m.sort_values(["tipo_mitigacion", "Id"], ascending=[True, True]).reset_index(drop=True)
 
 
-def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_sel: str, anio_sel: str, proc_sel: str, sub_sel: str) -> pd.DataFrame:
+def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_sel: str, anio_sel: str, proc_sel: str, sub_sel: str, avances_om: dict = None) -> pd.DataFrame:
     """Construye la tabla de indicadores en peligro aplicando filtros."""
     if df_riesgo.empty:
         return pd.DataFrame()
@@ -508,11 +556,11 @@ def _construir_tabla_peligro(df_riesgo: pd.DataFrame, registros_om: dict, mes_se
     # Aplicar filtros
     df_filtrado = df_riesgo.copy()
 
-    if mes_sel != "Todos":
+    if mes_sel:
         df_filtrado = df_filtrado[df_filtrado.get("Mes", "").astype(str) == mes_sel]
 
-    if anio_sel != "Todos":
-        df_filtrado = df_filtrado[df_filtrado.get("Anio", "").astype(str) == anio_sel]
+    if anio_sel:
+        df_filtrado = df_filtrado[df_filtrado.get("Anio", "").astype(str) == str(anio_sel)]
 
     if proc_sel != "Todos":
         df_filtrado = df_filtrado[df_filtrado.get("Proceso", "").astype(str) == proc_sel]
@@ -583,16 +631,17 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
         "accion_creada", "mitiga_reto", "mitiga_proyecto", "avance_mitigacion_pct",
         "Meta_Signo", "Meta s", "MetaS", "Ejecucion_Signo", "Ejecución s", "Ejecucion s", "EjecS",
         "Decimales", "Decimales_Meta", "Decimales_Ejecucion", "DecimalesEje", "DecMeta", "DecEjec",
+        "numero_om", "tipo_mitigacion", "Proceso",
     }
     cols = [c for c in cols if c not in cols_excluir]
+    cols_orden = ["Meta", "Ejecucion", "Cumplimiento_pct", "Subproceso", "Id", "Indicador", "Periodicidad", "Categoria", "tipo_accion", "identificador", "avance_om"]
+    cols = [c for c in cols_orden if c in cols]
     renamed_cols = [
         c.replace("Cumplimiento_pct", "Cumplimiento")
-         .replace("tipo_mitigacion", "Tipo Mitigación")
-         .replace("numero_om", "N° OM")
          .replace("avance_om", "Avance OM")
          .replace("tiene_om", "Tiene OM")
          .replace("tipo_accion", "Tipo de Acción")
-         .replace("identificador", "Identificador")
+         .replace("identificador", "OM")
         for c in cols
     ]
     
@@ -618,21 +667,22 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
                 icono = _icono_cumplimiento(val)
                 html += f"<td>{icono} {val}%</td>"
             elif col == "tipo_accion":
-                color = _color_tipo_accion_html(val)
-                html += f"<td style='color: {color}; font-weight: bold;'>{val}</td>"
+                tipo_val = val if val and str(val).strip() and str(val).lower() != "nan" else "Sin acción"
+                color = _color_tipo_accion_html(tipo_val)
+                html += f"<td style='color: {color}; font-weight: bold;'>{tipo_val}</td>"
             elif col == "identificador":
                 html += f"<td>{val}</td>"
-            elif col == "tipo_mitigacion":
-                color = _color_tipo_accion_html(val)
-                html += f"<td style='color: {color}; font-weight: bold;'>{val}</td>"
-            elif col == "tiene_om":
-                html += f"<td>{'✅' if val == 1 else '❌'}</td>"
             elif col == "avance_om":
-                html += f"<td>{val}%</td>"
+                val_str = f"{val}%" if val and val > 0 else "-"
+                html += f"<td>{val_str}</td>"
             elif col == "Meta":
                 html += f"<td>{meta_his_signo(row)}</td>"
             elif col == "Ejecucion":
                 html += f"<td>{ejecucion_his_signo(row)}</td>"
+            elif col == "Categoria":
+                html += f"<td>{val}</td>"
+            elif col == "Id":
+                html += f"<td><b>{val}</b></td>"
             else:
                 html += f"<td>{val}</td>"
         html += "</tr>"
@@ -678,7 +728,8 @@ def render():
             sub_sel = st.selectbox("Subproceso", subprocesos, index=0)
 
     registros_om = _cargar_registros_om()
-    df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel)
+    avances_om = _cargar_avance_om()
+    df_tabla = _construir_tabla_peligro(df_riesgo, registros_om, mes_sel, anio_sel, proc_sel, sub_sel, avances_om)
 
     if df_tabla.empty:
         st.info("No hay indicadores en Peligro con los filtros seleccionados.")
