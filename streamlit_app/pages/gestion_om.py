@@ -53,7 +53,6 @@ def _cargar_registros_om() -> dict:
     return registros_om_como_dict(anio=None)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def _cargar_avance_om() -> dict:
     """
     Carga los archivos de Plan de accion y calcula el avance promedio por Id Oportunidad de mejora.
@@ -69,11 +68,13 @@ def _cargar_avance_om() -> dict:
         try:
             df = pd.read_excel(f, dtype=str, na_filter=False)
             cols = df.columns.tolist()
-            id_col = next((c for c in cols if "Id Acci" in c or "Id Acci" in c or "id" in c.lower()), None)
+            
             avance_col = next((c for c in cols if "Avance" in c and "%" in c), None)
-            if id_col and avance_col:
-                df_subset = df[[id_col, avance_col]].copy()
-                df_subset.columns = ["Id_Accion", "Avance"]
+            id_om_col = next((c for c in cols if "Oportunidad" in c and "mejora" in c.lower()), None)
+            
+            if id_om_col and avance_col:
+                df_subset = df[[id_om_col, avance_col]].copy()
+                df_subset.columns = ["Id_OM", "Avance"]
                 dfs.append(df_subset)
         except Exception:
             continue
@@ -83,17 +84,16 @@ def _cargar_avance_om() -> dict:
     
     df_all = pd.concat(dfs, ignore_index=True)
     df_all["Avance"] = pd.to_numeric(df_all["Avance"], errors="coerce")
+    df_all["Id_OM"] = df_all["Id_OM"].astype(str).str.strip()
     
-    if "Id Oportunidad de mejora" not in df_all.columns:
-        id_om_col = next((c for c in df_all.columns if "Oportunidad" in c or "Mejora" in c), None)
-    else:
-        id_om_col = "Id Oportunidad de mejora"
+    df_all = df_all.dropna(subset=["Id_OM", "Avance"])
+    df_all = df_all[df_all["Id_OM"] != ""]
     
-    if id_om_col:
-        df_all = df_all.dropna(subset=[id_om_col, "Avance"])
-        resultado = df_all.groupby(id_om_col)["Avance"].mean().to_dict()
-        return {str(k): round(v, 1) for k, v in resultado.items()}
-    return {}
+    if df_all.empty:
+        return {}
+    
+    resultado = df_all.groupby("Id_OM")["Avance"].mean().to_dict()
+    return {str(k).strip(): round(v, 1) for k, v in resultado.items()}
 
 
 def _extraer_tipo_y_identificador(numero_om: str) -> tuple:
@@ -137,7 +137,7 @@ def _cargar_indicadores_riesgo() -> pd.DataFrame:
     cols = [
         c
         for c in [
-            "Id", "Indicador", "Proceso", "Categoria", "Cumplimiento", "Cumplimiento_pct", "Periodicidad", "Anio", "Mes",
+            "Id", "Indicador", "Proceso", "Subproceso", "Categoria", "Cumplimiento", "Cumplimiento_pct", "Periodicidad", "Anio", "Mes",
             "Meta", "Ejecucion", "Meta_Signo", "Meta s", "MetaS", "Ejecucion_Signo", "Ejecución s", "Ejecucion s", "EjecS",
             "Decimales", "Decimales_Meta", "Decimales_Ejecucion", "DecimalesEje", "DecMeta", "DecEjec",
         ]
@@ -426,11 +426,13 @@ def _resumen_om_por_id(df_reg: pd.DataFrame, avances_om: dict = None) -> pd.Data
     out["identificador"] = tipo_ident.apply(lambda x: x[1])
     
     if avances_om:
-        out["avance_om"] = out["identificador"].apply(lambda x: avances_om.get(str(x).strip(), 0))
+        out["avance_om"] = out["identificador"].apply(
+            lambda x: avances_om.get(str(x).strip(), 0)
+        )
     else:
-        out["avance_om"] = out["tiene_om"].apply(lambda x: 100 if x == 1 else 0)
+        out["avance_om"] = 0
     
-    out["avance_om"] = out["avance_om"].fillna(0)
+    out["avance_om"] = pd.to_numeric(out["avance_om"], errors="coerce").fillna(0)
     
     return out
 
@@ -634,7 +636,7 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
         "numero_om", "tipo_mitigacion", "Proceso",
     }
     cols = [c for c in cols if c not in cols_excluir]
-    cols_orden = ["Meta", "Ejecucion", "Cumplimiento_pct", "Subproceso", "Id", "Indicador", "Periodicidad", "Categoria", "tipo_accion", "identificador", "avance_om"]
+    cols_orden = ["Id", "Indicador", "Subproceso", "Periodicidad", "Meta", "Ejecucion", "Cumplimiento_pct", "Categoria", "tipo_accion", "identificador", "avance_om"]
     cols = [c for c in cols_orden if c in cols]
     renamed_cols = [
         c.replace("Cumplimiento_pct", "Cumplimiento")
