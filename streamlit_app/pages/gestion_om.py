@@ -538,7 +538,7 @@ def _matriz_mitigacion_peligro(df_riesgo: pd.DataFrame, df_reg: pd.DataFrame, df
         m["identificador"] = ""
 
     cols = [
-        "Id", "Indicador", "Proceso", "Periodicidad", "Categoria",
+        "Id", "Indicador", "Proceso", "Subproceso", "Periodicidad", "Categoria",
         "tiene_om", "numero_om", "tipo_accion", "identificador", "avance_om", "tipo_mitigacion", "Cumplimiento_pct",
         "Meta", "Ejecucion",
         "Meta_Signo", "Meta s", "MetaS", "Ejecucion_Signo", "Ejecución s", "Ejecucion s", "EjecS",
@@ -675,8 +675,16 @@ def _generar_tabla_html(df: pd.DataFrame) -> str:
             elif col == "identificador":
                 html += f"<td>{val}</td>"
             elif col == "avance_om":
-                val_str = f"{val}%" if val and val > 0 else "-"
-                html += f"<td>{val_str}</td>"
+                if val and val > 0:
+                    color_bar = "#22C55E" if val >= 80 else "#F59E0B" if val >= 50 else "#EF4444"
+                    html += f'''<td>
+                        <div style="width: 100px; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden;">
+                            <div style="width: {min(val, 100)}%; height: 100%; background: {color_bar};"></div>
+                        </div>
+                        <span style="font-size: 12px;">{val}%</span>
+                    </td>'''
+                else:
+                    html += f"<td>-</td>"
             elif col == "Meta":
                 html += f"<td>{meta_his_signo(row)}</td>"
             elif col == "Ejecucion":
