@@ -123,10 +123,15 @@ def _cargar_avance_om() -> dict:
     df_all = df_all[df_all["Id_OM"] != ""]
     df_all = df_all[df_all["Id_OM"].str.lower() != "nan"]
 
-    # Evitar sobre-representar avance por actividades repetidas
+    # Evitar sobre-representar avance por actividades repetidas.
+    # Importante: no colapsar filas cuando Id_Accion está vacío, porque eso sesga el promedio.
     if "Id_Accion" in df_all.columns:
         df_all["Id_Accion"] = df_all["Id_Accion"].astype(str).str.strip()
-        df_all = df_all.drop_duplicates(subset=["Id_OM", "Id_Accion"], keep="first")
+        con_id = df_all[df_all["Id_Accion"] != ""].copy()
+        sin_id = df_all[df_all["Id_Accion"] == ""].copy()
+        if not con_id.empty:
+            con_id = con_id.drop_duplicates(subset=["Id_OM", "Id_Accion"], keep="last")
+        df_all = pd.concat([con_id, sin_id], ignore_index=True)
     
     if df_all.empty:
         return {}
@@ -1002,16 +1007,45 @@ def render():
     st.markdown(
         """
         <style>
+        div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
+        div[data-testid="stColumn"] { padding-left: 0 !important; padding-right: 0 !important; }
         .om-head {
-            background:#1e293b;color:#fff;font-weight:700;padding:6px 6px;border-radius:4px 4px 0 0;
+            background:#1e293b;
+            color:#fff;
+            font-weight:700;
+            padding:6px 4px;
             border-right:1px solid #334155;
+            border-radius:0;
+            white-space:nowrap;
+            line-height:1.1;
+            font-size:14px;
         }
         .om-cell {
-            padding:6px 6px;border-bottom:1px solid #e2e8f0;
+            padding:6px 4px;
+            border-bottom:1px solid #e2e8f0;
+            line-height:1.15;
         }
         .om-cell-alt {
-            padding:6px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc;
+            padding:6px 4px;
+            border-bottom:1px solid #e2e8f0;
+            background:#f8fafc;
+            line-height:1.15;
         }
+        .om-center { text-align:center; }
+        .om-badge {
+            display:inline-block;
+            padding:2px 8px;
+            border-radius:8px;
+            font-size:12px;
+            font-weight:700;
+            color:#fff;
+            white-space:nowrap;
+        }
+        .om-kawak { background:#2563EB; }
+        .om-reto { background:#D97706; }
+        .om-proy { background:#0EA5A4; }
+        .om-otro { background:#6B7280; }
+        .om-sin { background:#94A3B8; color:#0F172A; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1019,15 +1053,15 @@ def render():
 
     # Encabezado visual
     encabezados = cols_orden + ["Ver más"]
-    anchos = [0.55, 4.2, 2.9, 1.25, 1.0, 1.0, 1.25, 1.1, 1.45, 0.8, 1.1, 0.65]
-    head_cols = st.columns(anchos)
+    anchos = [0.5, 4.2, 2.8, 1.15, 0.9, 0.95, 1.25, 1.0, 1.4, 0.75, 1.05, 0.45]
+    head_cols = st.columns(anchos, gap="small")
     for i, h in enumerate(encabezados):
         with head_cols[i]:
             st.markdown(f"<div class='om-head'>{h}</div>", unsafe_allow_html=True)
 
     # Filas con estilo + expansión por icono
     for ridx, row in df_view.iterrows():
-        row_cols = st.columns(anchos)
+        row_cols = st.columns(anchos, gap="small")
         cell_class = "om-cell" if ridx % 2 == 0 else "om-cell-alt"
 
         cumple_num = pd.to_numeric(row.get("Cumplimiento"), errors="coerce")
@@ -1059,7 +1093,8 @@ def render():
 
         for i, val in enumerate(valores):
             with row_cols[i]:
-                st.markdown(f"<div class='{cell_class}'>{val}</div>", unsafe_allow_html=True)
+            extra = " om-center" if i in [4, 5, 9, 10] else ""
+            st.markdown(f"<div class='{cell_class}{extra}'>{val}</div>", unsafe_allow_html=True)
 
         with row_cols[11]:
             om_id = "" if pd.isna(row.get("OM")) else str(row.get("OM")).strip()
