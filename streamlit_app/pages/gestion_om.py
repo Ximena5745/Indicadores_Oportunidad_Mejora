@@ -48,9 +48,11 @@ except (ImportError, ModuleNotFoundError):
     from streamlit_app.utils.formatting import ejecucion_his_signo, meta_his_signo
 
 
-def _cargar_registros_om() -> dict:
+def _cargar_registros_om(anio=None, periodo=None) -> dict:
     """Carga OM sin cache para reflejar cambios inmediatamente."""
-    return registros_om_como_dict(anio=None)
+    if isinstance(anio, str) and str(anio).isdigit():
+        anio = int(anio)
+    return registros_om_como_dict(anio=anio, periodo=periodo)
 
 
 def _cargar_avance_om() -> dict:
@@ -1016,7 +1018,7 @@ def render():
         help="Si se activa, se mostrarán y podrán asociarse OM a indicadores en alerta además de los de peligro."
     )
 
-    registros_om = _cargar_registros_om()
+    registros_om = _cargar_registros_om(anio=anio_sel, periodo=mes_sel)
     avances_om = _cargar_avance_om()
 
     df_tabla = _construir_tabla_peligro(

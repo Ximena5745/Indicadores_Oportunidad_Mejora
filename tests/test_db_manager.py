@@ -71,6 +71,25 @@ def test_leer_registros_filtra_por_anio(tmp_path, monkeypatch):
     assert rows_2025[0]["id_indicador"] == "151"
 
 
+def test_leer_registros_filtra_por_periodo(tmp_path, monkeypatch):
+    tmp_db = Path(tmp_path) / "registros_om_test.db"
+    monkeypatch.setattr(db_manager, "DB_PATH", tmp_db)
+    monkeypatch.setattr(db_manager, "_use_pg", lambda: False)
+
+    db_manager._init_sqlite()
+
+    db_manager.guardar_registro_om(_payload_base(anio=2026, id_indicador="150", periodo="Mayo", numero_om="OM-1"))
+    db_manager.guardar_registro_om(_payload_base(anio=2026, id_indicador="151", periodo="Junio", numero_om="OM-2"))
+
+    rows_mayo = db_manager.leer_registros_om(periodo="Mayo")
+    rows_junio = db_manager.leer_registros_om(periodo="junio")
+
+    assert len(rows_mayo) == 1
+    assert rows_mayo[0]["id_indicador"] == "150"
+    assert len(rows_junio) == 1
+    assert rows_junio[0]["id_indicador"] == "151"
+
+
 def test_registros_om_como_dict(tmp_path, monkeypatch):
     tmp_db = Path(tmp_path) / "registros_om_test.db"
     monkeypatch.setattr(db_manager, "DB_PATH", tmp_db)

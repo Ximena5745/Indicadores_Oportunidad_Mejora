@@ -423,27 +423,41 @@ def _upsert_postgres(d: dict) -> bool:
 
 # ── Consulta ──────────────────────────────────────────────────────────────────
 
-def leer_registros_om(anio: int = None):
+def leer_registros_om(anio: int = None, periodo: str = None):
     """Retorna lista de dicts con los registros guardados."""
     try:
         if _use_pg():
-            return _leer_postgres(anio)
+            return _leer_postgres(anio, periodo)
         else:
-            return _leer_sqlite(anio)
+            return _leer_sqlite(anio, periodo)
     except Exception as e:
         _notify_streamlit("error", f"Error al leer registros: {e}")
         return []
 
 
-def _leer_sqlite(anio):
+def _leer_sqlite(anio, periodo):
     if not DB_PATH.exists():
         return []
+    periodo_norm = ""
+    if periodo:
+        periodo_norm, _ = _normalize_om_periodo_anio(periodo, anio or 0)
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    if anio:
+    if anio and periodo_norm:
+        rows = conn.execute(
+            "SELECT * FROM registros_om WHERE anio = ? AND periodo = ? ORDER BY fecha_registro DESC",
+            (anio, periodo_norm),
+        ).fetchall()
+    elif anio:
         rows = conn.execute(
             "SELECT * FROM registros_om WHERE anio = ? ORDER BY fecha_registro DESC",
             (anio,),
+        ).fetchall()
+    elif periodo_norm:
+        rows = conn.execute(
+            "SELECT * FROM registros_om WHERE periodo = ? ORDER BY fecha_registro DESC",
+            (periodo_norm,),
         ).fetchall()
     else:
         rows = conn.execute(
@@ -453,14 +467,28 @@ def _leer_sqlite(anio):
     return [dict(r) for r in rows]
 
 
-def _leer_postgres(anio):
+def _leer_postgres(anio, periodo):
     import psycopg2.extras
     conn = _connect_postgres()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    if anio:
+    periodo_norm = ""
+    if periodo:
+        periodo_norm, _ = _normalize_om_periodo_anio(periodo, anio or 0)
+
+    if anio and periodo_norm:
+        cur.execute(
+            "SELECT * FROM registros_om WHERE anio = %(anio)s AND periodo = %(periodo)s ORDER BY fecha_registro DESC",
+            {"anio": anio, "periodo": periodo_norm},
+        )
+    elif anio:
         cur.execute(
             "SELECT * FROM registros_om WHERE anio = %(anio)s ORDER BY fecha_registro DESC",
             {"anio": anio},
+        )
+    elif periodo_norm:
+        cur.execute(
+            "SELECT * FROM registros_om WHERE periodo = %(periodo)s ORDER BY fecha_registro DESC",
+            {"periodo": periodo_norm},
         )
     else:
         cur.execute("SELECT * FROM registros_om ORDER BY fecha_registro DESC")
@@ -470,13 +498,13 @@ def _leer_postgres(anio):
     return [dict(r) for r in rows]
 
 
-def registros_om_como_dict(anio: int = None) -> dict:
+def registros_om_como_dict(anio: int = None, periodo: str = None) -> dict:
     """
     Retorna {id_indicador: {"tiene_om": bool, "tipo_accion": str, "numero_om": str, "periodo": str, "comentario": str}}
     Útil para cruzar con tabla de indicadores en otros módulos.
     Si un indicador tiene múltiples registros (distintos períodos), conserva el más reciente.
     """
-    registros = leer_registros_om(anio=anio)
+    registros = leer_registros_om(anio=anio, periodo=periodo)
     result = {}
     for r in registros:
         iid = r["id_indicador"]
