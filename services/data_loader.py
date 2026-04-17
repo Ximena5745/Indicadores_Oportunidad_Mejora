@@ -1,7 +1,8 @@
 """
 services/data_loader.py — Carga de datos desde xlsx con caché st.cache_data.
 
-Fuente principal: data/output/Resultados Consolidados.xlsx (hoja Consolidado Semestral).
+Fuente principal general: data/output/Resultados Consolidados.xlsx (hoja Consolidado Semestral).
+Excepción: Gestión OM consume Consolidado Historico desde cargar_dataset_historico().
 El Dataset_Unificado.xlsx NO es fuente oficial y NO debe usarse como origen de datos.
 
 Regla de capas:
@@ -80,6 +81,15 @@ def _cargar_mapa_proceso_padre() -> dict:
 def _leer_consolidado_semestral(path: Path) -> pd.DataFrame:
     """Paso 1: Solo IO — leer hoja principal y normalizar columnas/IDs."""
     df = pd.read_excel(path, sheet_name="Consolidado Semestral", engine="openpyxl")
+    df = _renombrar(df, _RENAME)
+    if "Id" in df.columns:
+        df["Id"] = df["Id"].apply(_id_a_str)
+    return df
+
+
+def _leer_consolidado_historico(path: Path) -> pd.DataFrame:
+    """Paso 1 (OM): Solo IO — leer hoja histórico y normalizar columnas/IDs."""
+    df = pd.read_excel(path, sheet_name="Consolidado Historico", engine="openpyxl")
     df = _renombrar(df, _RENAME)
     if "Id" in df.columns:
         df["Id"] = df["Id"].apply(_id_a_str)
@@ -241,6 +251,7 @@ def _aplicar_calculos_cumplimiento(df: pd.DataFrame) -> pd.DataFrame:
 def cargar_dataset() -> pd.DataFrame:
     """
     Carga el dataset principal desde Resultados Consolidados.xlsx (fuente oficial).
+    La hoja principal general para consumo en app es Consolidado Semestral.
 
     Pipeline interno (cada paso tiene una sola responsabilidad):
       1. _leer_consolidado_semestral()    → IO + renombrar columnas
@@ -257,6 +268,25 @@ def cargar_dataset() -> pd.DataFrame:
         return pd.DataFrame()
 
     df = _leer_consolidado_semestral(path)
+    df = _enriquecer_clasificacion(df, path)
+    df = _enriquecer_cmi_y_procesos(df)
+    df = _reconstruir_columnas_formula(df)
+    df = _aplicar_calculos_cumplimiento(df)
+    return df
+
+
+@st.cache_data(ttl=300, show_spinner="Cargando datos históricos para Gestión OM...")
+def cargar_dataset_historico() -> pd.DataFrame:
+    """
+    Carga la hoja Consolidado Historico para casos específicos de Gestión OM.
+    No reemplaza la fuente general del resto de módulos.
+    """
+    path = DATA_OUTPUT / "Resultados Consolidados.xlsx"
+    if not path.exists():
+        st.error(f"Archivo no encontrado: {path}")
+        return pd.DataFrame()
+
+    df = _leer_consolidado_historico(path)
     df = _enriquecer_clasificacion(df, path)
     df = _enriquecer_cmi_y_procesos(df)
     df = _reconstruir_columnas_formula(df)

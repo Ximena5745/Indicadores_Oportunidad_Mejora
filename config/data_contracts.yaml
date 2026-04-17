@@ -27,8 +27,77 @@ resultados_consolidados:
   actualizado_por: "scripts/actualizar_consolidado.py"
   frecuencia_actualizacion: "Manual (cuando hay nuevos datos en API)"
   hojas:
+    "Consolidado Historico":
+      descripcion: "Consolidación histórica de soporte para análisis longitudinal y Gestión OM"
+      columnas:
+        Anio:
+          tipo: "integer"
+          requerida: true
+          min: 2022
+          max: 2030
+          descripcion: "Año del dato"
+        Fecha:
+          tipo: "datetime"
+          requerida: true
+          formato: "YYYY-MM-DD"
+          descripcion: "Fecha de corte del registro"
+        Mes:
+          tipo: "string"
+          requerida: true
+          descripcion: "Nombre del mes asociado al corte"
+        Periodo:
+          tipo: "string"
+          requerida: true
+          descripcion: "Periodo consolidado en formato AAAA-S"
+        Id:
+          tipo: "string"
+          requerida: true
+          patron: "^[0-9a-zA-Z\\-]+$"
+          descripcion: "ID único del indicador"
+        Indicador:
+          tipo: "string"
+          requerida: true
+          longitud_min: 5
+          longitud_max: 200
+          descripcion: "Nombre del indicador"
+        Proceso:
+          tipo: "string"
+          requerida: true
+          descripcion: "Proceso padre (macroproceso)"
+        Periodicidad:
+          tipo: "categorical"
+          requerida: true
+          valores_permitidos: ["Mensual", "Trimestral", "Semestral", "Anual", "Bimestral"]
+          descripcion: "Frecuencia de medición del indicador"
+        Meta:
+          tipo: "float"
+          requerida: false
+          min: 0.0
+          descripcion: "Meta del período"
+        Ejecucion:
+          tipo: "float"
+          requerida: false
+          descripcion: "Valor ejecutado"
+        Cumplimiento:
+          tipo: "float"
+          requerida: false
+          descripcion: "Porcentaje de cumplimiento (calculado)"
+        Sentido:
+          tipo: "categorical"
+          requerida: true
+          valores_permitidos: ["Positivo", "Negativo"]
+          descripcion: "Sentido operativo del indicador en la fuente consolidada"
+        Tipo_Registro:
+          tipo: "categorical"
+          requerida: false
+          valores_permitidos: ["Metrica", "No Aplica"]
+          descripcion: "Marcador auxiliar para registros especiales"
+      validaciones:
+        - "Fecha y Anio deben ser coherentes"
+        - "Periodo debe corresponder al corte temporal"
+        - "Cumplimiento puede existir aunque Meta o Ejecucion sean nulos en registros especiales"
     "Consolidado Semestral":
-      descripcion: "Consolidación histórica por periodo de todas las fuentes"
+      descripcion: "Consolidación principal para consumo general de la aplicación"
       columnas:
         Anio:
           tipo: "integer"

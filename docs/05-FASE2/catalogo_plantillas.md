@@ -10,7 +10,7 @@
 | Indicadores por CMI | `data/raw/Indicadores por CMI.xlsx` | Excel | - | Activo |
 | LMI Reporte | `data/raw/lmi_reporte.xlsx` | Excel | - | Activo |
 | OM | `data/raw/OM.xlsx` | Excel | - | Activo |
-| Resultados Consolidados | `data/raw/Resultados_Consolidados_Fuente.xlsx` | Excel | - | Activo |
+| Resultados Consolidados | `data/output/Resultados Consolidados.xlsx` | Excel | - | Activo |
 | Salidas No Conformes | `data/raw/salidas_no_conformes.xlsx` | Excel | - | Activo |
 | Subproceso-Proceso-Area | `data/raw/Subproceso-Proceso-Area.xlsx` | Excel | - | Activo |
 | API | `data/raw/API/YYYY.xlsx` | Excel | Anual | Activo |
@@ -22,6 +22,8 @@
 ---
 
 ## 2. Detalle de plantillas
+
+**Nota oficial:** para consumo en la app y Gestión OM, la hoja principal es **Consolidado Historico**.
 
 ### 2.1 acciones_mejora.xlsx
 

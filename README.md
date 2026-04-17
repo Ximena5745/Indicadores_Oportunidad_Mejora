@@ -21,6 +21,10 @@ Consolidación de visión completa: 3 Fases + 15 Pilares + roadmap semanal + mé
 
 🗂️ **[Fuentes oficiales Meta/Ejecución](docs/02-CALCULOS/formato_meta_ejecucion_global.md#fuentes-oficiales-de-meta-y-ejecucion)** — Consideraciones de Consolidado Histórico/Semestral/Cierres por vista
 
+🧭 **[Inventario de Fuentes del Proyecto](docs/FUENTES_DATOS_PROYECTO.md)** — Catálogo integral de fuentes operativas, persistencia y configuración
+
+📑 **[Fuentes por Página](docs/FUENTES_POR_PAGINA.md)** — Listado completo de fuente/hoja utilizado en cada página de la aplicación
+
 ---
 
 ## 📋 Descripción General

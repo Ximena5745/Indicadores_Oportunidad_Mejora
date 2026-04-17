@@ -170,13 +170,17 @@ def validate_cumplimiento_logic(df: pd.DataFrame, contract):
 ### `resultados_consolidados` (Fuente Oficial)
 
 **Hojas:**
-1. `Consolidado Semestral` — Datos principales
+1. `Consolidado Semestral` — Datos principales (consumo general)
    - Columnas: Anio, Semestre, Id, Indicador, Proceso, Meta, Ejecución, Cumplimiento, etc.
    - Reglas: Sin nulos en campos críticos, cumplimiento coherente
 
-2. `Catalogo Indicadores` — Metadatos
+2. `Consolidado Historico` — Soporte para análisis longitudinal y Gestión OM
+  - Columnas: estructura equivalente por período histórico
+  - Reglas: coherencia temporal por Id, Año, Mes y Periodo
+
+3. `Catalogo Indicadores` — Metadatos
    - Columnas: Id, Indicador, Tipo, Periodicidad, Clasificación
-   - Reglas: Todos los Ids deben existir en Consolidado Semestral
+  - Reglas: Todos los Ids deben existir en Consolidado Semestral
 
 ### `kawak_consolidado`
 

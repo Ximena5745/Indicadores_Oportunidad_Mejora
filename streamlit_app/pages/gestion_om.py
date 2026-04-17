@@ -32,7 +32,7 @@ def _guardar_kpi_diag(con_ia: bool, elapsed: float) -> None:
 
 try:
     from services.ai_analysis import analizar_texto_indicador as _analizar_texto_puro
-    from services.data_loader import cargar_acciones_mejora, cargar_dataset
+    from services.data_loader import cargar_acciones_mejora, cargar_dataset_historico
     from core.config import CACHE_TTL
     from core.db_manager import registros_om_como_dict, guardar_registro_om
     from streamlit_app.utils.formatting import ejecucion_his_signo, meta_his_signo
@@ -42,7 +42,7 @@ except (ImportError, ModuleNotFoundError):
     sys.path.insert(0, str(Path(__file__).parents[2]))
     sys.path.insert(0, str(Path(__file__).parents[2] / "services"))
     from ai_analysis import analizar_texto_indicador as _analizar_texto_puro
-    from data_loader import cargar_acciones_mejora, cargar_dataset
+    from data_loader import cargar_acciones_mejora, cargar_dataset_historico
     from core.config import CACHE_TTL
     from core.db_manager import registros_om_como_dict, guardar_registro_om
     from streamlit_app.utils.formatting import ejecucion_his_signo, meta_his_signo
@@ -314,7 +314,7 @@ def _color_tipo_accion(tipo: str) -> str:
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def _cargar_indicadores_riesgo() -> pd.DataFrame:
-    df = cargar_dataset()
+    df = cargar_dataset_historico()
     if df.empty:
         return df
 
