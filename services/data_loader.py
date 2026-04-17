@@ -154,15 +154,17 @@ def _reconstruir_columnas_formula(df: pd.DataFrame) -> pd.DataFrame:
             df["Mes"].notna() & (df["Mes"] != ""),
             _fecha.dt.month.map(_MESES_ES),
         )
+    _periodo_calc = (
+        _fecha.dt.year.astype("Int64").astype(str)
+        + "-"
+        + _fecha.dt.month.apply(lambda m: "1" if m <= 6 else "2")
+    )
     if "Periodo" in df.columns:
-        _periodo_calc = (
-            _fecha.dt.year.astype("Int64").astype(str)
-            + "-"
-            + _fecha.dt.month.apply(lambda m: "1" if m <= 6 else "2")
-        )
         df["Periodo"] = df["Periodo"].where(
             df["Periodo"].notna() & (df["Periodo"] != ""), _periodo_calc
         )
+    else:
+        df["Periodo"] = _periodo_calc
     return df
 
 

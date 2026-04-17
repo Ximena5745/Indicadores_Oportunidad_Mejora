@@ -969,6 +969,7 @@ def _icono_cumplimiento(cumpl_val) -> str:
 def render():
     st.title("Gestión OM")
     st.caption("Filtrado por mes, año, proceso y subproceso. Registra OM abiertas o pendientes sobre indicadores en Peligro.")
+    st.caption("Fuente: Consolidado Historico")
 
     df_riesgo = _cargar_indicadores_riesgo()
     if df_riesgo.empty:
@@ -981,7 +982,11 @@ def render():
         df_riesgo["Mes"] = ""
 
     meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    anios = ["2025", "2026"]
+    anios = []
+    if "Anio" in df_riesgo.columns:
+        anios = [str(int(x)) for x in sorted(df_riesgo["Anio"].dropna().astype(int).unique())]
+    if not anios:
+        anios = ["2025", "2026"]
 
     procesos = ["Todos"]
     if "Proceso" in df_riesgo.columns:
