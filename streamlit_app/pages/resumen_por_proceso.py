@@ -8,16 +8,22 @@ import plotly.express as px
 import streamlit as st
 
 try:
-    from ..components.charts import grafico_historico_indicador, tabla_historica_indicador
+    from components.charts import grafico_historico_indicador, tabla_historica_indicador
     from ..services.data_service import DataService
     from ..utils.formatting import formatear_meta_ejecucion_df
 except ImportError:
     import sys
+    from pathlib import Path
 
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from components.charts import grafico_historico_indicador, tabla_historica_indicador
-    from services.data_service import DataService
-    from utils.formatting import formatear_meta_ejecucion_df
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    try:
+        from components.charts import grafico_historico_indicador, tabla_historica_indicador
+        from services.data_service import DataService
+        from utils.formatting import formatear_meta_ejecucion_df
+    except ImportError:
+        from components.charts import grafico_historico_indicador, tabla_historica_indicador
+        from streamlit_app.services.data_service import DataService
+        from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
 
 
 MESES_OPCIONES = [
