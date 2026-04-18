@@ -1,4 +1,5 @@
 ﻿from pathlib import Path
+import importlib
 import re
 import unicodedata
 
@@ -7,12 +8,14 @@ import plotly.express as px
 import streamlit as st
 
 try:
+    from ..components.charts import grafico_historico_indicador, tabla_historica_indicador
     from ..services.data_service import DataService
     from ..utils.formatting import formatear_meta_ejecucion_df
 except ImportError:
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
+    from components.charts import grafico_historico_indicador, tabla_historica_indicador
     from services.data_service import DataService
     from utils.formatting import formatear_meta_ejecucion_df
 
@@ -130,6 +133,73 @@ def _period_col_for_month(df: pd.DataFrame, month_num: int | None) -> str | None
     return None
 
 
+def _categoria_por_pct(pct: float | None) -> str:
+    if pct is None or pd.isna(pct):
+        return "Sin dato"
+    if pct >= 105:
+        return "Sobrecumplimiento"
+    if pct >= 100:
+        return "Cumplimiento"
+    if pct >= 80:
+        return "Alerta"
+    return "Peligro"
+
+
+def _available_months_with_data(df: pd.DataFrame) -> list[int]:
+    if df.empty:
+        return []
+    months = sorted(
+        set(
+            int(m)
+            for m in pd.to_numeric(df.get("Mes"), errors="coerce").dropna().unique()
+            if 1 <= int(m) <= 12
+        )
+    )
+    valid = []
+    for month in months:
+        period_col = _period_col_for_month(df, month)
+        if period_col and df[period_col].notna().any():
+            valid.append(month)
+    return valid
+
+
+def _default_month_num(df: pd.DataFrame) -> int:
+    valid_months = _available_months_with_data(df)
+    if valid_months:
+        return valid_months[-1]
+    return MESES_OPCIONES.index("Diciembre") + 1
+
+
+def _ensure_historic_tracking(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["Cumplimiento_pct"] = _cumplimiento_pct(out)
+    out["Cumplimiento_norm"] = pd.to_numeric(out["Cumplimiento_pct"], errors="coerce") / 100
+    out["Categoria"] = out["Cumplimiento_pct"].apply(_categoria_por_pct)
+    if "Año" in out.columns and "Mes" in out.columns:
+        out["Fecha"] = pd.to_datetime(
+            out["Año"].astype(str).str.replace("<NA>", "NaN", regex=False)
+            + "-"
+            + out["Mes"].astype(str).str.replace("<NA>", "NaN", regex=False).str.zfill(2)
+            + "-01",
+            errors="coerce",
+        )
+    elif "Periodo" in out.columns:
+        out["Fecha"] = pd.to_datetime(out["Periodo"].astype(str), errors="coerce")
+    else:
+        out["Fecha"] = pd.NaT
+    return out
+
+
+def _build_indicator_history(df: pd.DataFrame, indicador: str) -> pd.DataFrame:
+    if df.empty or indicador is None:
+        return df.copy()
+    history = df[df["Indicador"].astype(str) == str(indicador)].copy()
+    if history.empty:
+        return history
+    history = _ensure_historic_tracking(history)
+    return history.sort_values("Fecha").reset_index(drop=True)
+
+
 def _cumpl_icon(pct: float | None) -> str:
     if pct is None or pd.isna(pct):
         return "⚪"
@@ -202,11 +272,20 @@ def _prepare_tracking(df: pd.DataFrame, map_df: pd.DataFrame, month_num: int | N
     else:
         out["Meta"] = pd.NA
 
-    period_col = _period_col_for_month(out, month_num)
     ejec_col = _first_col(out, ["Ejecución", "Ejecucion"])
+    period_col = _period_col_for_month(out, month_num) if month_num is not None else None
 
     if period_col is not None:
         out["Ejecucion"] = out[period_col].apply(_to_float)
+    elif month_num is None and "Mes" in out.columns:
+        def _row_ejec(row):
+            month = _mes_to_num(row.get("Mes"))
+            if month is None:
+                return None
+            col_name = _period_col_for_month(out, int(month))
+            return _to_float(row.get(col_name)) if col_name is not None and col_name in row else None
+
+        out["Ejecucion"] = out.apply(_row_ejec, axis=1)
     elif ejec_col is not None:
         out["Ejecucion"] = out[ejec_col].apply(_to_float)
     else:
@@ -263,10 +342,18 @@ def _load_auditoria_mentions(processes: list[str]) -> tuple[pd.DataFrame, str | 
     if not pdf_files:
         return pd.DataFrame(), "No hay PDFs en data/raw/auditoria."
 
-    try:
-        from pypdf import PdfReader
-    except Exception:
-        return pd.DataFrame(), "No está instalado pypdf. Instala la dependencia para extraer texto de auditoría."
+    PdfReader = None
+    for package in ("pypdf", "PyPDF2"):
+        try:
+            module = importlib.import_module(package)
+            PdfReader = getattr(module, "PdfReader", None)
+            if PdfReader is not None:
+                break
+        except Exception:
+            continue
+
+    if PdfReader is None:
+        return pd.DataFrame(), "No está instalado pypdf ni PyPDF2. Instala uno de esos paquetes para extraer texto de auditoría."
 
     if not processes:
         return pd.DataFrame(), "No hay procesos disponibles para buscar en los PDFs."
@@ -528,10 +615,11 @@ def render() -> None:
         return
 
     years = sorted([int(y) for y in pd.to_numeric(tracking_df.get("Año"), errors="coerce").dropna().unique().tolist()])
-    default_month = "Diciembre"
-    default_month_num = MESES_OPCIONES.index(default_month) + 1
-    work_df = _prepare_tracking(tracking_df, map_df, month_num=default_month_num)
-    procesos_all = sorted(work_df["Proceso_padre"].dropna().astype(str).unique().tolist())
+    default_month_num = _default_month_num(tracking_df)
+    default_month = MESES_OPCIONES[default_month_num - 1]
+    full_work_df = _prepare_tracking(tracking_df, map_df, month_num=None)
+    snapshot_df = _prepare_tracking(tracking_df, map_df, month_num=default_month_num)
+    procesos_all = sorted(full_work_df["Proceso_padre"].dropna().astype(str).unique().tolist())
 
     st.markdown("#### Filtros")
     c1, c2, c3 = st.columns(3)
@@ -541,11 +629,13 @@ def render() -> None:
         anio = st.selectbox("Año", options=years, index=default_year_idx if years else None)
     with c2:
         mes = st.selectbox("Mes", options=MESES_OPCIONES, index=MESES_OPCIONES.index(default_month))
+    with c3:
+        proceso_placeholder = st.empty()
 
     # Recalcular datos del corte según mes seleccionado para que Meta/Ejecución/Cumplimiento respondan al filtro
     selected_month_num = MESES_OPCIONES.index(mes) + 1 if mes in MESES_OPCIONES else default_month_num
-    work_df = _prepare_tracking(tracking_df, map_df, month_num=selected_month_num)
-    base_filtered = work_df.copy()
+    snapshot_df = _prepare_tracking(tracking_df, map_df, month_num=selected_month_num)
+    base_filtered = snapshot_df.copy()
 
     if anio is not None and "Año" in base_filtered.columns:
         base_filtered = base_filtered[pd.to_numeric(base_filtered["Año"], errors="coerce") == int(anio)]
@@ -558,25 +648,43 @@ def render() -> None:
     opciones_proceso = ["Todos"] + (procesos_filtrados if procesos_filtrados else procesos_all)
     default_index = 1 if len(opciones_proceso) > 1 else 0
 
-    with c3:
-        proceso_sel = st.selectbox("Proceso (Filtro Padre)", options=opciones_proceso, index=default_index)
+    proceso_sel = proceso_placeholder.selectbox("Proceso (Filtro Padre)", options=opciones_proceso, index=default_index)
 
     filtered = base_filtered.copy()
     if proceso_sel != "Todos":
         filtered = filtered[filtered["Proceso_padre"].astype(str) == proceso_sel]
+
+    subproceso_sel = "Todos"
+    if proceso_sel != "Todos":
+        subprocesos_filtrados = sorted(filtered["Subproceso_final"].dropna().astype(str).unique().tolist())
+        if subprocesos_filtrados:
+            sub_options = ["Todos"] + subprocesos_filtrados
+            subproceso_sel = st.selectbox("Subproceso", options=sub_options, index=0)
+            if subproceso_sel != "Todos":
+                filtered = filtered[filtered["Subproceso_final"].astype(str) == subproceso_sel]
 
     if filtered.empty:
         st.info("No hay datos para la combinación de filtros seleccionada. Se muestran las pestañas en modo informativo.")
 
     latest = _latest_per_indicator(filtered) if not filtered.empty else filtered.copy()
     selected_process_label = proceso_sel if proceso_sel != "Todos" else "Todos los procesos"
+    selected_subprocess_label = subproceso_sel if subproceso_sel != "Todos" else "Todos los subprocesos"
 
-    st.caption(f"Filtro Padre activo: {selected_process_label} | Corte: {mes} {anio}")
+    historic_base = full_work_df.copy()
+    if anio is not None and "Año" in historic_base.columns:
+        historic_base = historic_base[pd.to_numeric(historic_base["Año"], errors="coerce") == int(anio)]
+    if proceso_sel != "Todos":
+        historic_base = historic_base[historic_base["Proceso_padre"].astype(str) == proceso_sel]
+    if subproceso_sel != "Todos":
+        historic_base = historic_base[historic_base["Subproceso_final"].astype(str) == subproceso_sel]
+
+    st.caption(f"Filtro Padre activo: {selected_process_label} | Subproceso: {selected_subprocess_label} | Corte: {mes} {anio}")
 
     tabs = st.tabs([
         "📋 Resumen general",
         "ℹ️ Información por proceso",
         "📊 Indicadores",
+        "📈 Evolución",
         "✅ Calidad",
         "🔍 Auditoría",
         "💡 Propuestos",
@@ -658,6 +766,32 @@ def render() -> None:
             st.dataframe(ind_df, use_container_width=True, hide_index=True)
 
     with tabs[3]:
+        st.markdown("### Evolución de indicadores")
+        if historic_base.empty:
+            st.warning("No hay datos históricos para el filtro activo.")
+        else:
+            indicador_options = sorted(historic_base["Indicador"].dropna().astype(str).unique().tolist())
+            if not indicador_options:
+                st.info("No hay indicadores históricos disponibles para el filtro activo.")
+            else:
+                selected_indicator = st.selectbox("Indicador para evolución", options=indicador_options, index=0)
+                if selected_indicator:
+                    hist_df = _build_indicator_history(historic_base, selected_indicator)
+                    if hist_df.empty:
+                        st.info("No hay histórico disponible para el indicador seleccionado.")
+                    else:
+                        st.plotly_chart(
+                            grafico_historico_indicador(hist_df, titulo=f"Evolución de {selected_indicator}"),
+                            use_container_width=True,
+                        )
+                        hist_table = tabla_historica_indicador(hist_df)
+                        if hist_table.empty:
+                            st.info("No hay registros históricos con cumplimiento calculado.")
+                        else:
+                            st.markdown("#### Detalle histórico")
+                            st.dataframe(hist_table, use_container_width=True, hide_index=True)
+
+    with tabs[4]:
         st.markdown("### Calidad")
         calidad_df, calidad_msg = _load_calidad_data()
         if calidad_msg:
@@ -667,7 +801,7 @@ def render() -> None:
                 calidad_df = calidad_df[calidad_df["Proceso"].astype(str) == proceso_sel]
             st.dataframe(calidad_df, use_container_width=True, hide_index=True)
 
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("### Auditoría")
         auditoria_df, auditoria_msg = _load_auditoria_mentions(procesos_all)
         if auditoria_msg:
@@ -677,11 +811,11 @@ def render() -> None:
                 auditoria_df = auditoria_df[auditoria_df["Proceso"].astype(str) == proceso_sel]
             st.dataframe(auditoria_df, use_container_width=True, hide_index=True)
 
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("### Propuestos")
         st.dataframe(_build_propuestos(latest, selected_process_label), use_container_width=True, hide_index=True)
 
-    with tabs[6]:
+    with tabs[7]:
         st.markdown("### Análisis IA")
         cumplimiento = pd.to_numeric(latest.get("Cumplimiento_pct"), errors="coerce")
         riesgos = latest[cumplimiento < 80]
