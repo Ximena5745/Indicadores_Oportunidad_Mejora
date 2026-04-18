@@ -59,10 +59,9 @@ def main():
     _inject_styles()
 
     # Importar páginas bajo demanda para evitar circular imports durante la carga
-    # Usar imports relativos que funcionan en ambos contextos (local y cloud)
+    # Usar imports absolutos primero para evitar problemas de paquete en cloud.
     try:
-        # Intención: import relativo/absoluto correcto dentro del paquete streamlit_app
-        from .pages import (
+        from streamlit_app.pages import (
             cmi_estrategico,
             gestion_om,
             plan_mejoramiento,
@@ -73,8 +72,7 @@ def main():
             pdi_acreditacion,
         )
     except (ImportError, ModuleNotFoundError):
-        # Fallback: sys.path ya modificado, importar como paquete raíz
-        from streamlit_app.pages import (
+        from .pages import (
             cmi_estrategico,
             gestion_om,
             plan_mejoramiento,

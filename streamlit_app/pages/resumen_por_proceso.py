@@ -7,24 +7,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-try:
-    from components.charts import grafico_historico_indicador, tabla_historica_indicador
-    from ..services.data_service import DataService
-    from ..utils.formatting import formatear_meta_ejecucion_df
-except ImportError:
-    import sys
-    from pathlib import Path
-
-    # Asegurar que el directorio raíz del proyecto esté en sys.path para poder importar
-    # el paquete `components` desde el módulo `streamlit_app.pages.resumen_por_proceso`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from components.charts import grafico_historico_indicador, tabla_historica_indicador
-    try:
-        from services.data_service import DataService
-        from utils.formatting import formatear_meta_ejecucion_df
-    except ImportError:
-        from streamlit_app.services.data_service import DataService
-        from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
+from components.charts import grafico_historico_indicador, tabla_historica_indicador
+from streamlit_app.services.data_service import DataService
+from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
 
 
 MESES_OPCIONES = [
