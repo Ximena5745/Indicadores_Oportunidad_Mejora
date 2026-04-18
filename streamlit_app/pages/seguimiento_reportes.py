@@ -6,8 +6,9 @@ import plotly.express as px
 import streamlit as st
 
 
-from streamlit_app.components.charts import exportar_excel
+from components.charts import exportar_excel
 from streamlit_app.utils.formatting import id_limpio
+from core.config import CACHE_TTL
 
 
 RUTA_SEGUIMIENTO = Path(__file__).resolve().parents[2] / "data" / "output" / "Seguimiento_Reporte.xlsx"

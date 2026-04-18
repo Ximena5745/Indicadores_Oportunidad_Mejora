@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit as st
 
 
-from streamlit_app.components.charts import grafico_historico_indicador, tabla_historica_indicador
+from components.charts import grafico_historico_indicador, tabla_historica_indicador
 from streamlit_app.services.data_service import DataService
 from streamlit_app.utils.formatting import formatear_meta_ejecucion_df
 
