@@ -306,9 +306,12 @@ def _load_calidad_data() -> tuple[pd.DataFrame, str | None]:
     df.columns = [str(c).strip() for c in df.columns]
 
     norm_cols = {_norm_text(c): c for c in df.columns}
+    # Buscar columna Proceso
     proc_col = next((v for k, v in norm_cols.items() if "PROCESO" in k), None)
-    subproc_col = next((v for k, v in norm_cols.items() if "SUBPROCESO" in k), None)
-    tem_col = next((v for k, v in norm_cols.items() if "TEMATICA" in k), None)
+    # Buscar columna Subproceso con variantes
+    subproc_col = next((v for k, v in norm_cols.items() if "SUBPROCESO" in k or "SUB PROCESO" in k or "SUB-PROCESO" in k), None)
+    # Buscar columna Temática con variantes
+    tem_col = next((v for k, v in norm_cols.items() if "TEMATICA" in k or "TEMÁTICA" in k or "TEMAT" in k), None)
 
     # Si no hay columna Proceso, intentar mapear desde Subproceso
     if proc_col is None and subproc_col is not None:
@@ -324,8 +327,11 @@ def _load_calidad_data() -> tuple[pd.DataFrame, str | None]:
                 mapeo.append({"Proceso": proc.strip(), "Subproceso": sub.strip()})
         df_mapeo = pd.DataFrame(mapeo)
         # Normalizar textos para merge
-        df_mapeo["sub_norm"] = df_mapeo["Subproceso"].str.upper().str.normalize('NFKD').str.encode('ascii', 'ignore').str.decode('utf-8')
-        df["sub_norm"] = df[subproc_col].astype(str).str.upper().str.normalize('NFKD').str.encode('ascii', 'ignore').str.decode('utf-8')
+        def norm_txt(x):
+            import unicodedata
+            return unicodedata.normalize('NFKD', str(x or '').strip().upper()).encode('ascii', 'ignore').decode('utf-8')
+        df_mapeo["sub_norm"] = df_mapeo["Subproceso"].map(norm_txt)
+        df["sub_norm"] = df[subproc_col].map(norm_txt)
         # Merge
         df = df.merge(df_mapeo[["sub_norm", "Proceso"]], on="sub_norm", how="left")
         proc_col = "Proceso"
@@ -335,7 +341,7 @@ def _load_calidad_data() -> tuple[pd.DataFrame, str | None]:
     if proc_col is None:
         return pd.DataFrame(), "No se encontró la columna Proceso ni Subproceso en el archivo de calidad."
     if tem_col is None:
-        return pd.DataFrame(), "No se encontró la columna Temática en el archivo de calidad."
+        return pd.DataFrame(), f"No se encontró la columna Temática (ni variantes) en el archivo de calidad. Columnas detectadas: {list(df.columns)}"
 
     metric_cols = [
         c
